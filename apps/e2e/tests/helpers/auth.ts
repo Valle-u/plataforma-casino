@@ -1,10 +1,11 @@
 /**
  * Helper para logearse al player via UI.
  *
- * Asunción del DOM: la página `/play/login` tiene inputs con
- * `name="username"` y `name="password"` (o `id` equivalente) + un botón
- * submit. Si emerge "no encuentra el input", chequear el componente
- * `app/play/login/page.tsx` y ajustar los selectors acá.
+ * El auth del jugador pasó a MODALES: `app/play/login/page.tsx` quedó como
+ * stub de compatibilidad que hace `router.replace('/play?auth=login')` y no
+ * renderiza formulario. La versión anterior de este helper iba a
+ * `/play/login` y esperaba inputs que ahí no existen — colgaba hasta el
+ * timeout. Ahora se entra directo por el query param que abre el modal.
  */
 
 import { expect, type Page } from '@playwright/test';
@@ -14,21 +15,20 @@ export async function loginPlayerViaUi(
   username: string,
   password: string,
 ): Promise<void> {
-  await page.goto('/play/login');
-  // Selectores flexibles: aceptan placeholder o name.
-  const usernameInput = page
-    .locator('input[name="username"], input[id="username"], input[type="text"]')
-    .first();
-  const passwordInput = page.locator('input[type="password"]').first();
+  await page.goto('/play?auth=login');
+  const usernameInput = page.locator('input[name="username"]').first();
+  await usernameInput.waitFor({ state: 'visible', timeout: 20_000 });
   await usernameInput.fill(username);
-  await passwordInput.fill(password);
+  await page.locator('input[name="password"]').first().fill(password);
   await page
-    .getByRole('button', { name: /entrar|login|iniciar/i })
+    .getByRole('button', { name: /^(entrar|ingresar)$/i })
     .first()
     .click();
-  // Esperar redirect post-login. El layout protege /play/* y redirige
-  // si no hay user — al loguearse, el `useEffect` no redirige y queda en
-  // /play (home).
+  // El modal se desmonta al loguear: es la señal fiable de éxito (la URL
+  // ya era /play antes de entrar, así que no distingue).
+  await expect(page.locator('input[name="password"]')).toHaveCount(0, {
+    timeout: 20_000,
+  });
   await expect(page).toHaveURL(/\/play(?:\/.*)?$/, { timeout: 10_000 });
 }
 
