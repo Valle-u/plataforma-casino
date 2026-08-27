@@ -13013,3 +13013,59 @@ Retomamos el launch de juegos, que seguía sin abrir. Descartamos, uno por uno, 
 - **Deploy pendiente**: los 2 commits de buscadores necesitan redeploy manual (api por el cambio de search backend; web por el frontend). Sin migración nueva.
 - **Forever**: ver el diagnóstico completo arriba — el 404 es del game server de Forever (su propio test tool lo reproduce). No tocar código; esperar a Forever.
 - **Privacidad**: se agregó `"disableRemoteControl": true` a `~/.claude/settings.json` (corta Remote Control). El listado de sesiones en la app del celular es sync de cuenta (sin toggle hoy, feature request Issue #42342).
+
+---
+
+## [2026-08-27 18:35 AR] — Claude Code (Opus 5)
+
+**Duración**: ~4h.
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**0. Corrección del estado heredado.**
+El handoff daba la entrada de SESSION_LOG de la sesión anterior como pendiente, pero ya estaba commiteada y pusheada (`299404b`). El repo, no el handoff, es la fuente de verdad.
+
+**1. Deploy — diagnosticado, sigue bloqueado.**
+El `CASINO_DOKPLOY_TOKEN` del entorno **existe** (64 chars, scope Usuario de Windows) pero es el viejo: probado contra la API da **HTTP 401**. Además el endpoint del handoff (`147.93.32.111:3000`) ya no responde — timeout. El correcto hoy es **`https://dokploy.miamihub.vip/api`** (Dokploy quedó proxeado por Cloudflare el 2026-08-24, ver DEVLOG). O sea: el bloqueo es **solo el token**, no la red. Los buscadores de la sesión anterior siguen sin deployar, y ahora se suma todo lo de esta sesión.
+
+**2. Auditoría de UI móvil del panel Cajero/Socio (ítem soft de Fase 6).**
+Se levantó el entorno local, se crearon `socio_mobile` y `cajero_mobile` en `tenant_demo_dev` y se recorrió el panel a 375×812 con medición programática (overflow real + tap targets), no a ojo. Hallazgos y arreglos:
+- **Tab strips cortados sin pista visual (sistémico, 14 lugares)**: el patrón `overflow-x-auto hide-scrollbar` copiado en 14 archivos. En `/withdrawals` la fila pedía **573px en un contenedor de 341px** → "Rechazados/fallidos" y "Todos" quedaban enteramente fuera de pantalla, sin scrollbar visible que lo delatara. → Nuevo `components/ui/tab-strip.tsx` con degradé de borde que aparece solo del lado con contenido oculto. Reemplaza los 14 usos.
+- **Tap targets por debajo de 44px**, transversales: header (buscador 34×32, campana 36, menú 64×36, chip de balance 41×28), `Button` sm/md (28/32), tabs (32), paginación (28, **22 botones copiados en 11 archivos**), drawer (links 41, cierres 40). → Todo a 44px por debajo de `lg`, con el idioma `h-N lg:h-N` que el repo ya usaba. Desktop intacto.
+- **Copy engañoso (LEYES R3)**: el dashboard ofrecía CTA "Aprobar depósitos" a quien solo tiene `deposits.view`. El rol `cajero` solo tiene `deposits.view` / `withdrawals.view` / `wallet.view_any` → R3 se respeta a nivel permisos; el problema era el label. Ahora dice "Ver depósitos" si no puede aprobar.
+- **Sin overflow horizontal de página** en ninguna ruta probada, y el drawer estaba bien construido (backdrop, scroll lock, ESC).
+
+**3. Banner del lobby — lado del texto elegible por slide.**
+Pedido del dueño. Campo `align?: 'left' | 'right'` por slide + selector "Lado del texto" en Ajustes → Home del jugador. El degradé que oscurece el fondo **acompaña al texto** (si no, el copy a la derecha cae sobre la parte clara de la foto y no se lee): se renderizan las dos direcciones y se crossfadean por opacity, porque los gradients no transicionan. **Solo aplica desde `lg`**: en mobile el copy ocupa el 88% del ancho, moverlo no cambia nada visible y empeora la lectura (decisión del dueño en la misma sesión).
+
+### Decisiones tomadas
+- **`Button` compartido tocado a propósito**: `md`/`lg`/`icon` → 44px en mobile, `sm` → 36px (vive en filas de tabla y acciones de card, donde 44 rompe el layout). Alcanza también a los **17 usos en `/play`**.
+- **Doc vs código**: `docs/10-panel-control.md` §2.2 decía que el sidebar colapsa en `< md`; el código usa `lg` desde el Sprint 53.2. **Se corrigió el doc, no el código** — a 800px la data del panel es demasiado densa para convivir con un sidebar fijo.
+- `align` es **opcional a propósito**: los slides guardados antes del cambio no lo tienen y caen en `left`. El backend pasa `slides` como `unknown` sin validar campo por campo, así que no hizo falta tocar la API.
+
+### Commits creados
+- `b4dfb28` — `feat(admin): tabs y tap targets usables en mobile`
+- `ea04419` — `fix(admin): el CTA de depositos sigue el permiso real`
+- `bd6c3e7` — `docs(panel): el sidebar colapsa en lg, no en md`
+- `7deb795` — `feat(player): elegir el lado del texto en cada banner`
+- `fc1bd4b` — `fix(player): el lado del texto del banner aplica solo en desktop`
+
+Todos verificados con `pnpm type-check` (5/5) y lint (0 errores, las 318 warnings son preexistentes).
+
+### Estado al cerrar
+- **Fase actual**: MVP en prod. Se cerraron 2 de los 4 ítems soft de Fase 6 (mobile del panel, y parte de a11y por los tap targets).
+- **Próximo paso lógico**: **redeploy de `api` + `web`** (ya son 7 commits sin deployar, ninguno con migración) y completar la auditoría del **independiente**.
+- **Bloqueos**: token de Dokploy muerto; migraciones locales pendientes (abajo); Forever sigue del lado de ellos, sin cambios.
+
+### Notas para próximo agente
+
+- **⚠️ El entorno local está atrasado de migraciones.** `tenant_demo_dev` no tiene `0103_branch_flip_events` (ni varias previas). **Eso causa TODOS los 500 del log local** (`withdrawals`, `bank_transactions`, `wallet_transactions`, `branch/toggle-independence`) — **no son bugs del producto**, no los persigas. Corré `pnpm --filter @casino/db db:migrate:tenants` antes de tocar nada local. En esta sesión el clasificador de auto-mode bloqueó ese comando, así que quedó sin correr.
+- **Auditoría del independiente PENDIENTE**: las pantallas *mobile-prioritario* del doc (Cargar fichas, Mis solicitudes, Mi stock) **no se auditaron** porque activar `is_independent_branch` falla por la migración faltante. Es lo primero que hay que retomar del pulido móvil.
+- **`/play` necesita ojo humano**: el cambio del `Button` compartido hace más altos 17 botones del sitio del jugador en mobile. Se verificó que el lobby no rompe, pero **las páginas internas (depósitos, retiros, bonos, ruleta) no se vieron logueado como jugador** — no había credenciales de los `e2e_push_*`.
+- **El lobby del jugador tiene 18 tap targets chicos.** Otra superficie, no se tocó. Candidato a la próxima tanda de a11y.
+- **Datos de prueba en la DB local**: quedaron `socio_mobile` y `cajero_mobile` (password `Test-mobile-2026`) en `tenant_demo_dev`, a propósito, para retomar la auditoría del independiente. Borralos cuando no los necesites.
+- **Dos discrepancias de convención sin resolver** (las dejo señaladas, no las toqué):
+  1. `CLAUDE.md:49` pide mensajes de commit **en inglés**, pero toda la historia reciente está en español. Se siguió la historia. Hay que alinear una de las dos.
+  2. `docs/24-entornos-deploy.md` describe el flujo `staging` → `main`, pero `staging` no tiene remoto y hace sesiones que se commitea directo a `main`. El doc no refleja la práctica.
+- **Gotcha del entorno de agente**: con el panel del navegador oculto, Chrome **no despacha eventos `scroll` ni avanza transiciones CSS** (el compositor no produce frames). Dos veces pareció un bug del código y no lo era. Si algo "no reacciona", verificalo despachando el evento a mano o con `transition: none` antes de diagnosticar.
