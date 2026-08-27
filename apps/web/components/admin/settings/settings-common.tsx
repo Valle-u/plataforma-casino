@@ -82,7 +82,7 @@ export function SaveButton({
         type="button"
         onClick={onClick}
         disabled={isSaving || disabled}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-white py-2.5 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-white py-2.5 min-h-11 lg:min-h-0 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100"
       >
         {isSaving ? (
           <Loader2 className="size-4 animate-spin" />

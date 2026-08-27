@@ -307,7 +307,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={() => setActiveSection(section.id)}
                   className={cn(
-                    'flex shrink-0 items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors text-left whitespace-nowrap',
+                    'flex shrink-0 items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 min-h-11 lg:min-h-0 text-sm font-medium transition-colors text-left whitespace-nowrap',
                     activeSection === section.id && !isSearching
                       ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]'
                       : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)]',

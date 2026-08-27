@@ -186,7 +186,7 @@ function Knob({
               type="button"
               onClick={() => onChange(p.value)}
               title={p.label}
-              className="flex items-center gap-1.5 h-6 pl-1 pr-2 rounded-full border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors"
+              className="flex items-center gap-1.5 h-11 lg:h-6 pl-1 pr-2 rounded-full border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors"
             >
               <span
                 className="size-3.5 rounded-full border border-[var(--color-border)]"
