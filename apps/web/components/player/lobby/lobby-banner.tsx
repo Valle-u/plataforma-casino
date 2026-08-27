@@ -180,9 +180,14 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
           </p>
         )}
 
-        {/* Indicadores — 4 barras. */}
+        {/* Indicadores — 4 barras.
+            La barra mide 3px de alto: como target táctil es inusable. En vez
+            de agrandarla (arruinaría el diseño), se le cuelga un ::after
+            invisible que lleva el área de toque a 44x44 sin ocupar layout.
+            El `gap-3` da 12px entre barras para que dos áreas contiguas —que
+            se extienden 5px por lado— no se pisen. */}
         {total > 1 && (
-          <div className="pointer-events-auto mt-auto flex gap-2 pb-6 lg:pb-8">
+          <div className="pointer-events-auto mt-auto flex gap-3 pb-6 lg:pb-8">
             {slides.map((s, i) => (
               <button
                 key={s.id}
@@ -190,7 +195,7 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
                 aria-label={`Ir al slide ${i + 1}`}
                 aria-current={i === index}
                 onClick={() => setIndex(i)}
-                className="h-[3px] w-[34px] rounded-[2px] transition-colors"
+                className="relative h-[3px] w-[34px] rounded-[2px] transition-colors after:absolute after:-inset-x-[5px] after:-inset-y-[20.5px] after:content-['']"
                 style={{
                   background:
                     i === index ? 'var(--color-accent)' : 'rgba(255,255,255,.22)',
