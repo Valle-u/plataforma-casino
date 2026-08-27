@@ -12973,3 +12973,43 @@ Sesión de **debugging crítico + fixes de UI + performance** sobre el sitio del
 - **GOTCHA React 19 (importante)**: NO manipular imperativamente nodos del `<head>` que React iza como HostHoistable (`<title>`, `<link rel=icon>`, `<meta>`, `<style precedence>`). Se reconocen porque el nodo tiene keys `__reactFiber$/__reactMarker$`. Borrarlos con `.remove()` crashea el commit de React en loop (`removeChild` sobre null). Ver DEVLOG 2026-08-26. `use-dynamic-title.ts` toca `document.title` (hoistable) pero NO detacha nodos, así que no crashea — dejarlo como está salvo que aparezca churn.
 - **Pendientes no bloqueantes**: (1) cap de tamaño en las subidas de banners de tenant + recomprimir el `welcome.webp` de origen (1MB); (2) rotar los **secretos de prod expuestos** (JWT_ACCESS/REFRESH_SECRET, password de DB, R2 keys, Redis) — lo hace el dueño en Dokploy, el agente NO ingresa credenciales.
 - Deploy web via Dokploy API (app `nhixQ81wm-GcO1UOSeZom`). `MIGRATE_ON_BOOT=1` aplica migraciones solo.
+
+---
+
+## [2026-08-27 AR] — Claude Code (Opus 4.8)
+
+**Duración**: ~sesión larga (retomada de la integración de Forever + buscadores).
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**1. Forever — debug en vivo del launch (STAND-BY, bloqueado del lado de Forever).**
+Retomamos el launch de juegos, que seguía sin abrir. Descartamos, uno por uno, TODO lo controlable de nuestro lado:
+- Sync OK (32 vendors / 4791 juegos), conexión OK, firma OK, callback vivo (mi curl a `https://api.miamihub.vip/api/v1/game-provider/forever/callback` → HTTP 200).
+- Corregido histórico: los errores del 23/8 en el Error log de Forever eran `GetBalance → InvalidPostResult` porque la Site endpoint apuntaba a `…railway.app/…/palace/callback` (dominio Y path equivocados). Ya estaba corregida a la URL correcta de Forever.
+- WhiteIP cargado (`147.93.32.111`, IP del VPS) — no rompió el sync. Activación de juegos probada (panel **Game Switch** de Forever, toggles por juego). Cuenta aprobada. RTP 82%. Currency ARS (matchea la cuenta).
+- **Síntoma raíz**: el juego 404ea en el *game server* de Forever (ej. `amatic.foreverslot.win/…` y `6bdc4r8k.aicvgdbi.win/gs2c/game/load`), con la **launchUrl SIN token de sesión**. El **propio "Test launch url" del panel de Forever da el mismo 404** (no pasa por nuestro código, ni IP, ni callback) → **es 100% del lado de Forever**: su generación de sesión de juego para la cuenta `redgardel` produce una URL incompleta. Nuestra integración está completa y correcta.
+- **Próximo paso**: Uriel le reclama a Forever (mensaje técnico preparado citando el 404 de su propio test tool + launchUrl sin token). Cuando destraben, reprobar — no debería tocar código.
+
+**2. Buscadores — HECHO, pusheado a `main` (falta deployar).**
+- **Lobby del jugador** (`067b958`): la búsqueda del lobby (`games.service.listActiveForPlayer`) ahora matchea también `provider_code`, vendor de Forever (`config.forever.vendorCode`) y estudio de Palace (por nombre). El buscador del **header del jugador**, antes decorativo, navega a `/play/lobby?q=` al Enter; el lobby lo lee. +4 tests e2e (`games.e2e` 23/23).
+- **Buscador global del panel admin** (`76f9d22`): el placeholder ⌘K del header ahora es un **command palette real** (`components/admin/command-palette.tsx`). Busca en **Páginas + Usuarios + Juegos + Transferencias**, respetando permisos por fuente; navegación por teclado, debounce, atajo ⌘K/Ctrl+K. `useUsersList`/`useActiveGames` ganaron flag `enabled`. Páginas destino (`games`, `bank-transactions`) leen `?q=`.
+- Verificado: type-check raíz 5/5, lint limpio, e2e 23/23.
+
+### Decisiones tomadas
+- Alcance del buscador global = "todo lo buscable hoy" (Páginas/Usuarios/Juegos/Transferencias). Depósitos/retiros NO tienen search backend → quedaron afuera (requerirían endpoints nuevos).
+- Buscador del header del jugador: se dejó como Enter→lobby (decisión del dueño), no dropdown de resultados en vivo.
+
+### Commits creados
+- `067b958` — feat(lobby): buscar por proveedor + activar el buscador del header
+- `76f9d22` — feat(admin): buscador global del panel (command palette, Cmd+K)
+
+### Estado al cerrar
+- **Fase actual**: MVP en prod. Buscadores en `main`, **sin deployar** (auto-deploy VPS roto).
+- **Próximo paso lógico**: **redeploy MANUAL en Dokploy de `api` + `web`** (SIN migración → bajo riesgo) y verificar los buscadores vivos en `miamihub.vip`.
+- **Bloqueos**: Forever (externo). Deploy: `CASINO_DOKPLOY_TOKEN` del entorno está MUERTO (rotado); token nuevo guardado en Bitwarden ("Dokploy API") — para deploy por API hay que actualizar ese env var (nivel usuario Windows) + reiniciar Claude, o redeploy a mano.
+
+### Notas para próximo agente
+- **Deploy pendiente**: los 2 commits de buscadores necesitan redeploy manual (api por el cambio de search backend; web por el frontend). Sin migración nueva.
+- **Forever**: ver el diagnóstico completo arriba — el 404 es del game server de Forever (su propio test tool lo reproduce). No tocar código; esperar a Forever.
+- **Privacidad**: se agregó `"disableRemoteControl": true` a `~/.claude/settings.json` (corta Remote Control). El listado de sesiones en la app del celular es sync de cuenta (sin toggle hoy, feature request Issue #42342).
