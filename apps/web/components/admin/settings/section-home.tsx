@@ -127,9 +127,11 @@ function SlideEditor({
           <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">{index + 1}</span>
         </div>
         <div className="flex-1 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          {/* En mobile va apilado: dos columnas dejan ~165px por campo y la
+              fila (URL + Subir + miniatura) no entra. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(['imageDesktop', 'imageMobile'] as const).map((type) => (
-              <div key={type}>
+              <div key={type} className="min-w-0">
                 <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
                   {type === 'imageDesktop' ? 'Desktop' : 'Mobile'}
                 </label>
@@ -137,7 +139,10 @@ function SlideEditor({
                   <input
                     value={slide[type] || ''}
                     onChange={(e) => onUpdate(type, e.target.value)}
-                    className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] font-mono"
+                    // min-w-0: sin esto el input no baja de su ancho
+                    // intrinseco (~246px) por mas `flex-1` que tenga, y
+                    // desbordaba la pagina 154px.
+                    className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] font-mono"
                     placeholder="URL o /hero/..."
                   />
                   <button
