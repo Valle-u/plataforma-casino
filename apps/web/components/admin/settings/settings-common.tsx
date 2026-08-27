@@ -71,8 +71,13 @@ export function SaveButton({
   savingLabel?: string;
   disabled?: boolean;
 }) {
+  // Sin `-mx-5 -mb-4`: este bloque va en el slot `footer` de SectionCard, que
+  // es hermano de los divs con `px-5` — no hijo. Los márgenes negativos
+  // cancelaban un padding que a este nivel no existe, así que el footer
+  // sobresalía 20px por lado (381px dentro de una card de 343) y 16px por
+  // abajo. En desktop pasaba desapercibido; en 375px desbordaba la página.
   return (
-    <div className="sticky bottom-0 -mx-5 -mb-4 mt-2 border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-5 pb-4 pt-3">
+    <div className="sticky bottom-0 mt-2 border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-5 pb-4 pt-3">
       <button
         type="button"
         onClick={onClick}
