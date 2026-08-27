@@ -24,6 +24,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatTile } from '@/components/ui/stat-tile';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { isApiError } from '@/lib/api-client';
 import {
   useConfirmFraudLink,
@@ -207,7 +208,7 @@ export function FraudPanel() {
         </section>
 
         {/* Filtro por estado */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] self-start">
+        <TabStrip className="self-start" label="Filtrar cuentas duplicadas">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -217,7 +218,7 @@ export function FraudPanel() {
                 setPage(0);
               }}
               className={cn(
-                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -227,7 +228,7 @@ export function FraudPanel() {
               {t.label}
             </button>
           ))}
-        </div>
+        </TabStrip>
 
         {/* Tabla */}
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
