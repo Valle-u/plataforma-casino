@@ -71,7 +71,11 @@ apps/panel/
   - "Solicitudes de retiro" con aprobación rápida.
   - "Livechat" con UX tipo WhatsApp.
 - Breakpoints Tailwind estándar: `sm 640 / md 768 / lg 1024 / xl 1280 / 2xl 1536`.
-- Sidebar colapsa a drawer en `< md`. Topbar siempre visible.
+- Sidebar colapsa a drawer en `< lg`. Topbar siempre visible. (El doc decía
+  `< md`; el código usa `lg` desde el Sprint 53.2 — `<aside class="hidden lg:flex">`
+  en `sidebar.tsx` y `lg:hidden` en `mobile-nav.tsx`. Se corrigió el doc, no el
+  código: a 800px de ancho la data del panel es demasiado densa para convivir
+  con un sidebar fijo, así que la tablet también va con drawer.)
 
 ### 2.3 Dark mode
 
