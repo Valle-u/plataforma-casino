@@ -207,6 +207,65 @@ describe('Games catalog (E2E, Sprint 34)', () => {
     });
   });
 
+  describe('búsqueda por proveedor / vendor (search)', () => {
+    // Juego de Forever con un vendor reconocible: vendorCode 'slot-pragmatic'
+    // (así se puede buscar por "pragmatic" además de por nombre/código).
+    beforeEach(async () => {
+      await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_search_forever_prag',
+          name: 'Gates Test',
+          category: 'slots',
+          providerCode: 'forever',
+          config: { forever: { vendorCode: 'slot-pragmatic', gameCode: 'gatestest', gameType: 1 } },
+        });
+    });
+    afterEach(async () => {
+      await ctx.tenantDb.execute(
+        sql`DELETE FROM games WHERE code = 'e2e_search_forever_prag'`,
+      );
+    });
+
+    it('search por provider_code "forever" trae los juegos de Forever', async () => {
+      const res = await ctx.request
+        .get('/tenant/games/active?search=forever')
+        .set('Host', TEST_TENANT.host);
+      expect(res.status).toBe(200);
+      const data = (res.body as { data: Array<{ code: string; providerCode: string }> }).data;
+      expect(data.some((g) => g.code === 'e2e_search_forever_prag')).toBe(true);
+      expect(data.every((g) => g.providerCode === 'forever')).toBe(true);
+    });
+
+    it('search por vendor de Forever ("pragmatic" vía vendorCode slot-pragmatic)', async () => {
+      const res = await ctx.request
+        .get('/tenant/games/active?search=pragmatic')
+        .set('Host', TEST_TENANT.host);
+      expect(res.status).toBe(200);
+      const codes = (res.body as { data: Array<{ code: string }> }).data.map((g) => g.code);
+      expect(codes).toContain('e2e_search_forever_prag');
+    });
+
+    it('search por nombre del juego sigue funcionando', async () => {
+      const res = await ctx.request
+        .get('/tenant/games/active?search=gates')
+        .set('Host', TEST_TENANT.host);
+      const codes = (res.body as { data: Array<{ code: string }> }).data.map((g) => g.code);
+      expect(codes).toContain('e2e_search_forever_prag');
+    });
+
+    it('search por "palace" trae Palace pero NO el de Forever', async () => {
+      const res = await ctx.request
+        .get('/tenant/games/active?search=palace')
+        .set('Host', TEST_TENANT.host);
+      const codes = (res.body as { data: Array<{ code: string }> }).data.map((g) => g.code);
+      expect(codes).not.toContain('e2e_search_forever_prag');
+      expect(codes).toContain('e2e_seed_slot_1');
+    });
+  });
+
   describe('GET /tenant/games/code/:code', () => {
     it('200 con detalle si activo', async () => {
       const player = await createTestUser(ctx.request, adminToken, {

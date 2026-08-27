@@ -24,6 +24,7 @@ import {
   inArray,
   isNotNull,
   notInArray,
+  or,
   sql,
 } from 'drizzle-orm';
 import {
@@ -292,10 +293,30 @@ export class GamesService {
       if (namedIds.length > 0) conditions.push(notInArray(games.palaceProviderId, namedIds));
     }
     if (filters.featuredOnly) conditions.push(eq(games.featured, true));
-    if (filters.search) {
-      const searchLower = `%${filters.search.toLowerCase()}%`;
+    if (filters.search && filters.search.trim() !== '') {
+      const term = filters.search.trim().toLowerCase();
+      const like = `%${term}%`;
+      // Palace: el nombre del estudio NO está en la tabla `games` sino en el
+      // mapa provider_id → nombre (tenant_settings). Resolvemos qué provider_ids
+      // matchean el término para poder buscar "pragmatic", "pgsoft", etc.
+      const names = await this.getProviderNames(db);
+      const matchedProviderIds = Object.entries(names)
+        .filter(([, name]) => name.toLowerCase().includes(term))
+        .map(([id]) => Number(id))
+        .filter((n) => Number.isFinite(n));
+      // Busca por: nombre/código del juego, código del adapter
+      // (palace/forever), vendor de Forever (config.forever.vendorCode, ej.
+      // 'slot-pragmatic') y estudio de Palace (provider_ids resueltos arriba).
       conditions.push(
-        sql`(LOWER(${games.name}) LIKE ${searchLower} OR LOWER(${games.code}) LIKE ${searchLower})`,
+        or(
+          sql`LOWER(${games.name}) LIKE ${like}`,
+          sql`LOWER(${games.code}) LIKE ${like}`,
+          sql`LOWER(${games.providerCode}) LIKE ${like}`,
+          sql`LOWER(${games.config} -> 'forever' ->> 'vendorCode') LIKE ${like}`,
+          matchedProviderIds.length > 0
+            ? inArray(games.palaceProviderId, matchedProviderIds)
+            : undefined,
+        )!,
       );
     }
 

@@ -119,6 +119,7 @@ function GameLobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get('category');
+  const queryParam = searchParams.get('q');
 
   // Las categorías de la home (/play) apuntan a este lobby con ?category=slots|
   // crash|live|table|mini. Sincronizamos el tab con la URL de forma reactiva
@@ -132,6 +133,16 @@ function GameLobbyContent() {
       setTab('all');
     }
   }, [categoryParam]);
+
+  // Buscador global del header (/play/lobby?q=<término>): siembra el buscador
+  // del lobby con el término y resetea la paginación. Reactivo: si el header
+  // vuelve a buscar mientras el lobby ya está montado, se re-aplica.
+  useEffect(() => {
+    if (queryParam !== null) {
+      setSearch(queryParam);
+      setPage(0);
+    }
+  }, [queryParam]);
 
   // Deep-link de estudio desde la home (/play/lobby?studio=<id>). Pre-selecciona
   // el filtro de estudio al montar / cuando cambia el param; los clicks en los
@@ -245,8 +256,9 @@ function GameLobbyContent() {
     setSearch('');
     // Mantener la URL sincronizada con el tab (refrescar/back no pierden el filtro).
     const params = new URLSearchParams(searchParams.toString());
-    // Cambiar de categoría descarta el deep-link de estudio.
+    // Cambiar de categoría descarta el deep-link de estudio y la búsqueda.
     params.delete('studio');
+    params.delete('q');
     if (newTab === 'all') params.delete('category');
     else params.set('category', newTab);
     const qs = params.toString();
