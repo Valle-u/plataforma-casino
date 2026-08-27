@@ -141,7 +141,7 @@ export function PlayerMobileSidebar({ open, onClose }: PlayerMobileSidebarProps)
           <button
             type="button"
             onClick={onClose}
-            className="ml-3 grid size-8 shrink-0 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]"
+            className="ml-3 grid size-11 shrink-0 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]"
             aria-label="Cerrar menú"
           >
             <X size={16} />

@@ -61,7 +61,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
     <button
       type="button"
       onClick={onOpenSidebar}
-      className="grid size-9 shrink-0 place-items-center rounded-full border border-white/15 bg-[rgba(10,0,8,.4)] text-[var(--color-fg-muted)] backdrop-blur-sm"
+      className="grid size-11 shrink-0 place-items-center rounded-full border border-white/15 bg-[rgba(10,0,8,.4)] text-[var(--color-fg-muted)] backdrop-blur-sm"
       aria-label="Abrir menú"
     >
       <Menu className="size-4" />
@@ -82,7 +82,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
             type="button"
             onClick={() => openLoginModal()}
             aria-label="Iniciar sesión"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-white/15 px-3 text-[12px] font-medium text-[var(--color-fg)] backdrop-blur-sm"
+            className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-[var(--radius)] border border-white/15 px-3 text-[12px] font-medium text-[var(--color-fg)] backdrop-blur-sm"
           >
             <LogIn className="size-3.5" />
             <span className="hidden min-[420px]:inline">Entrar</span>
@@ -91,7 +91,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
             type="button"
             onClick={() => openRegisterModal()}
             aria-label="Registrarse"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
+            className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-[var(--radius)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
             style={{ background: 'var(--gradient-accent)' }}
           >
             <UserPlus className="size-3.5" />
@@ -122,7 +122,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {/* Billetera segmentada: saldo + depositar pegados. */}
-        <div className="flex h-[34px] items-center overflow-hidden rounded-[11px] border border-white/18 bg-[rgba(10,0,8,.55)] backdrop-blur-sm">
+        <div className="flex h-11 items-center overflow-hidden rounded-[14px] border border-white/18 bg-[rgba(10,0,8,.55)] backdrop-blur-sm">
           <span className="flex items-center gap-1.5 pl-2.5 pr-2">
             <span className="size-1.5 shrink-0 rounded-full bg-[var(--color-accent)] animate-tg-live" />
             <span className="text-[13px] font-semibold tabular-nums text-[var(--color-fg)]">
@@ -132,7 +132,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
           <Link
             href="/play/deposits?new=1"
             aria-label="Depositar"
-            className="grid h-[34px] w-[34px] place-items-center text-[var(--color-accent-fg)]"
+            className="grid size-11 place-items-center text-[var(--color-accent-fg)]"
             style={{ background: 'var(--gradient-accent)' }}
           >
             <ArrowDownToLine className="size-4" />
@@ -143,7 +143,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
         <Link
           href="/play/notifications"
           aria-label="Notificaciones"
-          className="relative grid size-9 shrink-0 place-items-center rounded-full border border-white/15 bg-[rgba(10,0,8,.4)] text-[var(--color-fg-muted)] backdrop-blur-sm"
+          className="relative grid size-11 shrink-0 place-items-center rounded-full border border-white/15 bg-[rgba(10,0,8,.4)] text-[var(--color-fg-muted)] backdrop-blur-sm"
         >
           <Bell className="size-4" />
           {unreadCount > 0 && (
