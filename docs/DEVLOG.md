@@ -7863,3 +7863,71 @@ Conviene hacerlo para Forever y Gregmorn a la vez, porque comparten la mecánica
 
 **Disparador para revisarlo**: el primer rollback real en producción, o el
 primer jugador con bono activo jugando a un proveedor seamless.
+
+---
+
+## 2026-08-28 — Comisiones: cascada del carryover + tasa histórica al recomputar
+
+**Contexto**: al explicar el motor de comisiones salieron a la luz tres límites
+documentados como "MVP" en el docblock de `NetworkCommissionsService`. Dos de
+ellos producen números mal **en silencio**, y el dueño pidió cerrarlos antes de
+liquidar por primera vez (todavía no hay períodos pagados ni jugadores reales —
+el momento correcto para tocar esto).
+
+### 1 · La cascada del carryover
+
+**Problema**: el `carryover` encadena mes a mes. Recomputar marzo dejaba a abril
+y mayo con un arrastre viejo: nada falla, ninguna excepción, simplemente los
+números pasan a estar mal. Dependía de que un humano se acordara de recomputar en
+orden ascendente a mano.
+
+**Decisión**: `computePeriodCascade()` — computa el período pedido y después
+recorre, de más viejo a más nuevo, **todos los períodos posteriores que ya tienen
+filas**. El endpoint `POST /tenant/commissions/network/compute` ahora lo usa
+siempre. Los períodos ya liquidados (`paid`) los saltea el propio
+`computePeriod`, así que la cadena no los toca.
+
+**Implicaciones**: la respuesta y la auditoría incluyen `cascadedPeriods`, para
+que quede registro de qué otros meses se recalcularon por arrastre. En `dryRun`
+no cascadea (un estimado no cambia nada que arrastre).
+
+### 2 · La tasa al recomputar
+
+**Problema**: `rate_snapshot` ya guardaba el % del operador al momento del
+compute, pero **solo para auditoría**: al recomputar se leía `users.commission_rate`
+(la actual). Consecuencia: cambiar la tasa de un socio hoy alteraba en silencio
+lo devengado en meses pasados, y un mismo período daba distinto según cuándo se
+recomputara.
+
+**Opciones**: (a) usar siempre la tasa de entonces; (b) usar siempre la actual
+(comportamiento previo); (c) la de entonces por default, con la actual como
+acción explícita.
+
+**Decisión del dueño**: **(c)**. Por default se reusa el `rate_snapshot`; el flag
+`useCurrentRates: true` fuerza el comportamiento viejo, que es la vía legítima
+para corregir un período computado con una tasa mal cargada.
+
+**Implicaciones**: `computePeriod(db, params, { useCurrentRates })`. No hay
+cambio de esquema — la columna ya existía.
+
+**Lo que sigue sin snapshot**: la **estructura** de la red (quién colgaba de
+quién). Un recompute usa la jerarquía actual. Modelarlo históricamente es de otra
+magnitud (tabla de vigencias) y se deja para cuando haga falta; hoy
+`branch_flip_events` cubre solo las transiciones dep↔indep.
+
+### 3 · Clawback de rollbacks post-liquidación — PENDIENTE
+
+Un rollback que llega sobre una ronda de un período ya pagado no revierte la
+comisión. Los datos están (`game_rounds.rolled_back_at` contra el `paid_at` del
+período) y la salida natural es descontarlo del período abierto, como un
+carryover negativo. **No se hizo**: toca el cálculo de la base y es el menos
+urgente (requiere estar liquidando Y que el proveedor anule rondas).
+
+**Leyes que aplican**: C1 (diferencial), C3 (deuda arrastrada), C4 (liquidación
+mensual). Ninguna se rompe: la cascada y el snapshot hacen que el motor cumpla
+C3 de forma más fiel, no menos.
+
+**Tests**: 2 nuevos en `commissions-network-engine.e2e.ts` — la cascada verifica
+que recomputar septiembre recalcula octubre con el arrastre nuevo; el de la tasa
+verifica que bajar el % hoy no cambia lo devengado en noviembre. Los 5 suites del
+motor (25 tests previos) siguen en verde.

@@ -441,14 +441,66 @@ export class NetworkCommissionsService {
   }
 
   /**
+   * Computa un período **y recomputa en cascada todos los posteriores**.
+   *
+   * El `carryover` encadena mes a mes: el arrastre de un período sale del
+   * anterior. Si se recomputa marzo y no se recomputan abril y mayo, esos dos
+   * quedan con un arrastre viejo y **sus números pasan a estar mal, en
+   * silencio** — nada falla, solo dan distinto de lo que corresponde.
+   *
+   * Antes esto dependía de que un humano se acordara de recomputar en orden
+   * ascendente. Ahora es automático: se recorren, de más viejo a más nuevo,
+   * todos los períodos que ya tienen filas. Los ya liquidados (`paid`) los
+   * saltea el propio `computePeriod`, así que la cadena no los toca.
+   *
+   * En `dryRun` no cascadea: un estimado no cambia nada que arrastre.
+   */
+  async computePeriodCascade(
+    db: TenantDb,
+    params: { periodStart: Date; periodEnd: Date },
+    opts: { dryRun?: boolean; useCurrentRates?: boolean } = {},
+  ): Promise<{
+    target: NetworkPeriodComputeResult;
+    cascaded: { periodStart: Date; result: NetworkPeriodComputeResult }[];
+  }> {
+    const target = await this.computePeriod(db, params, opts);
+    if (opts.dryRun === true) return { target, cascaded: [] };
+
+    const later = await db
+      .selectDistinct({ periodStart: commissionNetworkPeriods.periodStart })
+      .from(commissionNetworkPeriods)
+      .where(gt(commissionNetworkPeriods.periodStart, params.periodStart))
+      .orderBy(commissionNetworkPeriods.periodStart);
+
+    const cascaded: { periodStart: Date; result: NetworkPeriodComputeResult }[] =
+      [];
+    for (const p of later) {
+      const bounds =
+        NetworkCommissionsService.monthBoundsContaining(p.periodStart);
+      this.logger.log(
+        `Cascada de comisiones: recomputando ${p.periodStart.toISOString().slice(0, 7)}`,
+      );
+      cascaded.push({
+        periodStart: p.periodStart,
+        result: await this.computePeriod(db, bounds, opts),
+      });
+    }
+    return { target, cascaded };
+  }
+
+  /**
    * Computa (o recomputa, idempotente) las comisiones por red del período.
    * Persiste filas 'accrued' en commission_network_periods. Todo en una
    * transacción con advisory lock por período.
+   *
+   * ⚠️ **No cascadea.** Si estás recomputando un período que puede tener
+   * posteriores, usá `computePeriodCascade` — si no, el carryover de los meses
+   * siguientes queda viejo.
    */
   async computePeriod(
     db: TenantDb,
     params: { periodStart: Date; periodEnd: Date },
-    opts: { dryRun?: boolean } = {},
+    opts: { dryRun?: boolean; useCurrentRates?: boolean } = {},
   ): Promise<NetworkPeriodComputeResult> {
     const { periodStart, periodEnd } = params;
     const dryRun = opts.dryRun === true;
@@ -514,6 +566,29 @@ export class NetworkCommissionsService {
           userMap.set(r.id, u);
         }
         if (r.roleCode) u.roles.add(r.roleCode);
+      }
+
+      // ── Tasas históricas al RECOMPUTAR ─────────────────────────────────
+      // Un período ya computado se recalcula con la tasa que tenía ENTONCES
+      // (`rate_snapshot`), no con la actual. Si no, cambiar la tasa de un
+      // operador hoy alteraría en silencio lo que ya se devengó en meses
+      // pasados, y un mismo período daría distinto según cuándo se recompute.
+      //
+      // `useCurrentRates: true` fuerza el comportamiento viejo — es la vía para
+      // corregir a propósito un período que se computó con una tasa mal
+      // cargada. Decisión del dueño (2026-08-28).
+      if (!opts.useCurrentRates) {
+        const priorRates = await tx
+          .select({
+            op: commissionNetworkPeriods.operatorUserId,
+            rate: commissionNetworkPeriods.rateSnapshot,
+          })
+          .from(commissionNetworkPeriods)
+          .where(eq(commissionNetworkPeriods.periodStart, periodStart));
+        for (const r of priorRates) {
+          const u = userMap.get(r.op);
+          if (u) u.rate = r.rate;
+        }
       }
 
       const edges = await tx

@@ -305,6 +305,66 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     expect(res.baseConsistency.ok).toBe(true);
   });
 
+  it('recomputar un período viejo recomputa EN CASCADA los posteriores', async () => {
+    // Sin cascada, el carryover del mes siguiente queda viejo y sus números
+    // pasan a estar mal en silencio.
+    const prev = '2025-09';
+    const next = '2025-10';
+    const socio = await mkUser('casc_socio', 'socio');
+    const player = await mkUser('casc_player', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await setRate(socio.id, 10);
+
+    await insertRound(player.id, 0, 500, 'settled', P(prev)); // NetWin −500
+    await compute(prev);
+    await insertRound(player.id, 1000, 0, 'settled', P(next)); // NetWin +1000
+    await compute(next);
+
+    expect(Number((await getRow(socio.id, P(next)))!.carryover_in)).toBeCloseTo(
+      -50,
+      2,
+    );
+
+    // Aparece una jugada más en el mes VIEJO → su arrastre cambia.
+    await insertRound(player.id, 0, 500, 'settled', P(prev)); // NetWin −1000
+    const res = await compute(prev);
+
+    expect(Number((await getRow(socio.id, P(prev)))!.carryover_out)).toBeCloseTo(
+      -100,
+      2,
+    );
+    // Lo que importa: octubre se recalculó solo, con el arrastre nuevo.
+    const oct = (await getRow(socio.id, P(next)))!;
+    expect(Number(oct.carryover_in)).toBeCloseTo(-100, 2);
+    expect(Number(oct.payable)).toBeCloseTo(0, 2); // 100 de gross − 100 de deuda
+    // Y la respuesta declara qué períodos arrastró.
+    expect(
+      (res as unknown as { cascadedPeriods: string[] }).cascadedPeriods.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('recomputar usa la tasa DE ENTONCES, no la actual', async () => {
+    const period = '2025-11';
+    const socio = await mkUser('snap_socio', 'socio');
+    const player = await mkUser('snap_player', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await setRate(socio.id, 20);
+
+    await insertRound(player.id, 1000, 0, 'settled', P(period)); // NetWin +1000
+    await compute(period);
+    expect(Number((await getRow(socio.id, P(period)))!.gross_commission)).toBeCloseTo(
+      200,
+      2,
+    );
+
+    // Se le baja la tasa HOY. El pasado no se toca.
+    await setRate(socio.id, 5);
+    await compute(period);
+
+    const r = (await getRow(socio.id, P(period)))!;
+    expect(Number(r.gross_commission)).toBeCloseTo(200, 2); // 20%, no 5%
+  });
+
   it('carryover: período negativo se arrastra y se recupera', async () => {
     const prev = '2025-06';
     const next = '2025-07';

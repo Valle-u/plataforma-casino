@@ -154,8 +154,13 @@ export class CommissionsController {
     }
 
     let result;
+    let cascaded: { periodStart: Date }[] = [];
     try {
-      result = await this.network.computePeriod(db, period);
+      // Cascada: recomputar un período deja viejo el carryover de los
+      // siguientes. Ver computePeriodCascade.
+      const out = await this.network.computePeriodCascade(db, period);
+      result = out.target;
+      cascaded = out.cascaded.map((c) => ({ periodStart: c.periodStart }));
     } catch (err) {
       if (err instanceof PeriodAlreadySettledError) {
         throw new ConflictException({
@@ -186,10 +191,15 @@ export class CommissionsController {
       actionCode: 'commissions.compute_network',
       targetType: 'commission_network_period',
       targetId: result.periodStart,
-      metadata: { ...result, severity: 'medium' },
+      metadata: {
+        ...result,
+        // Queda en la auditoría qué otros períodos se recalcularon por arrastre.
+        cascadedPeriods: cascaded.map((c) => c.periodStart.toISOString()),
+        severity: 'medium',
+      },
       ...extractRequestContext(req),
     });
-    return result;
+    return { ...result, cascadedPeriods: cascaded.map((c) => c.periodStart) };
   }
 
   /**
