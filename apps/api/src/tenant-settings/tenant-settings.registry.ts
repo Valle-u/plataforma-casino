@@ -220,6 +220,73 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .min(1, { message: 'game_provider.forever.currency no puede estar vacío.' })
     .max(10, { message: 'game_provider.forever.currency muy larga (máx 10).' }),
 
+  // ── games / Gregmorn (apps/api/src/games/providers/gregmorn) ───────────
+  // 3er proveedor de juegos (seamless, HMAC-SHA256). Ver docs/gregmorn/*.
+  // Convive con Palace y Forever. Mismo namespacing provider-agnóstico que
+  // Forever: `game_provider.gregmorn.*`.
+  //
+  // OJO: usa DOS hosts distintos según la operación. No es un error tener dos
+  // URLs — Stage y Prod difieren en ambas.
+
+  // Host de auth (`/auth/login`) y catálogo (`getUserGames`).
+  // Stage: https://office-api-dev.gregmorn.org
+  'game_provider.gregmorn.api_url_office': z
+    .string()
+    .url({ message: 'game_provider.gregmorn.api_url_office debe ser una URL válida.' })
+    .startsWith('https://', {
+      message: 'game_provider.gregmorn.api_url_office debe usar HTTPS.',
+    })
+    .max(500, { message: 'game_provider.gregmorn.api_url_office muy larga (máx 500).' }),
+
+  // Host de `openGame` (abrir juego). Stage: https://client-api-dev.gregmorn.org
+  'game_provider.gregmorn.api_url_client': z
+    .string()
+    .url({ message: 'game_provider.gregmorn.api_url_client debe ser una URL válida.' })
+    .startsWith('https://', {
+      message: 'game_provider.gregmorn.api_url_client debe usar HTTPS.',
+    })
+    .max(500, { message: 'game_provider.gregmorn.api_url_client muy larga (máx 500).' }),
+
+  // Usuario de la API de Gregmorn (`/auth/login`).
+  'game_provider.gregmorn.login': z
+    .string()
+    .min(1, { message: 'game_provider.gregmorn.login no puede estar vacío.' })
+    .max(100),
+
+  // Password del usuario de la API. SECRETO.
+  'game_provider.gregmorn.password': z
+    .string()
+    .min(1, { message: 'game_provider.gregmorn.password no puede estar vacío.' }),
+
+  // Clave del HMAC-SHA256 del header `X-Signature`, en los dos sentidos
+  // (firmamos `openGame`, verificamos los callbacks). SECRETO. Stage y Prod
+  // tienen claves distintas.
+  'game_provider.gregmorn.secret_api_key': z
+    .string()
+    .min(1, { message: 'game_provider.gregmorn.secret_api_key no puede estar vacío.' }),
+
+  // Id del usuario de API. Obligatorio en `openGame` y en `getUserGames`; ellos
+  // lo usan para resolver qué secret key valida la firma. NO es el id del
+  // jugador. Podría ser el `user.id` que devuelve `/auth/login`, sin confirmar.
+  'game_provider.gregmorn.user_id': z
+    .string()
+    .min(1, { message: 'game_provider.gregmorn.user_id no puede estar vacío.' })
+    .max(100),
+
+  // Moneda de las sesiones de juego (`openGame.currency` + el `currencyISO` del
+  // catálogo). Ellos confirmaron soporte de ARS. Si no se setea, se usa ARS.
+  'game_provider.gregmorn.currency': z
+    .string()
+    .min(1, { message: 'game_provider.gregmorn.currency no puede estar vacío.' })
+    .max(10, { message: 'game_provider.gregmorn.currency muy larga (máx 10).' }),
+
+  // Tope de sanidad del premio (mint) de Gregmorn — LEY E7. Un win por encima se
+  // rechaza y alerta (defensa contra callback comprometido). 0 = sin tope.
+  // Espeja el de Palace y Forever.
+  'game_provider.gregmorn.win_max_amount': z
+    .number()
+    .min(0, { message: 'game_provider.gregmorn.win_max_amount debe ser >= 0.' }),
+
   // ── site (apps/api/src/tenant-info + player web) ──────────────────────
   // Master switch de mantenimiento: si true, el player web muestra una
   // pantalla de mantenimiento y no renderiza el sitio. El panel admin

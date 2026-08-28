@@ -15,6 +15,7 @@ import { GameProviderRegistry } from './providers/game-provider.registry';
 import { ProviderBackendRegistry } from './providers/provider-backend.registry';
 import { PalaceModule } from './providers/palace/palace.module';
 import { ForeverModule } from './providers/forever/forever.module';
+import { GregmornModule } from './providers/gregmorn/gregmorn.module';
 
 /**
  * GamesModule — catálogo + sessions + providers.
@@ -34,6 +35,7 @@ import { ForeverModule } from './providers/forever/forever.module';
     HouseModule,
     PalaceModule,
     ForeverModule,
+    GregmornModule,
     TenantSettingsModule,
     TenantResolverModule,
     GameProviderLogsModule,

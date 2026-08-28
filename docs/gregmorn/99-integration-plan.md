@@ -7,8 +7,8 @@ Estado y orden de trabajo. Se actualiza a medida que avanza.
 | Fase | Estado |
 |---|---|
 | 0 · Intake y documentación | ✅ hecho |
-| 1 · Settings y alta del proveedor | ⬜ |
-| 2 · Cliente y firma | ⬜ |
+| 1 · Settings y alta del proveedor | 🟡 **parcial** — claves hechas; el alta en los registries se pasó a las fases 4 y 6 (ver abajo) |
+| 2 · Cliente y firma | ✅ hecho |
 | 3 · Catálogo (sync) | ⬜ |
 | 4 · Launch (`openGame`) | ⬜ |
 | 5 · Callbacks de wallet | ⬜ **bloqueado en parte** — ver abajo |
@@ -33,19 +33,37 @@ implementación.
 
 ## Fases
 
-### 1 · Settings y alta del proveedor
+### 1 · Settings y alta del proveedor — 🟡 parcial
 
-- Claves `game_provider.gregmorn.*` en `tenant-settings.registry.ts` (lista en
-  `00-intake.md`).
-- Fila en `game_providers` con `code = 'gregmorn'`.
-- Alta en `game-provider.registry.ts` y `provider-backend.registry.ts`.
+- ✅ Claves `game_provider.gregmorn.*` en `tenant-settings.registry.ts` (lista en
+  `00-intake.md`). Son las 8 previstas: los dos hosts, `login`, `password`,
+  `secret_api_key`, `user_id`, `currency` y `win_max_amount`.
+- ⬜ Fila en `game_providers` con `code = 'gregmorn'`. **No hace falta crearla a
+  mano**: `GameProvidersService.ensureRow` la inserta (idempotente,
+  `onConflictDoNothing`) a partir del `displayName` del backend registrado.
+- ⬜ Alta en `game-provider.registry.ts` y `provider-backend.registry.ts`.
+  **Movido a las fases 4 y 6**: los registries reciben instancias de
+  `IGameProvider` / `IProviderBackend`, así que registrar antes de que existan
+  esas clases obliga a stubbear `syncGames`/`testConnection`. Y como el alta del
+  backend crea la fila, el proveedor aparecería en el panel con botones de sync y
+  test que todavía no hacen nada.
 
-### 2 · Cliente y firma
+### 2 · Cliente y firma — ✅ hecho
 
-- `gregmorn-signer.ts`: firmar y verificar HMAC-SHA256 hex sobre bytes crudos,
-  comparación en tiempo constante. **Con tests** — espeja `forever-signer.spec.ts`.
-- `gregmorn-client.ts`: `/auth/login` (form-urlencoded, ojo), cacheo del
-  `accessToken` con su TTL corto, `getUserGames`, `openGame` firmado.
+- ✅ `gregmorn-signer.ts`: `signGregmornBody` / `signGregmornRequest` /
+  `verifyGregmornCallback`. HMAC-SHA256 hex sobre bytes crudos, comparación en
+  tiempo constante (`timingSafeEqual`), lectura del header case-insensitive.
+  **19 tests** en `gregmorn-signer.spec.ts`, incluido el del re-serializado.
+- ✅ `gregmorn-client.ts`: `login()` (form-urlencoded), `getUserGames()` con
+  Bearer y `openGame()` firmado. El `accessToken` se cachea por
+  `host|login` hasta 30s antes de su `exp` (leído del JWT, sin verificarlo) y se
+  re-loguea al vencer — no hay endpoint de refresh. Timeouts por operación y
+  traducción del envelope `{ status: 'fail', ... }` a `GregmornApiError`.
+- ✅ `gregmorn.types.ts` / `gregmorn.errors.ts` / `gregmorn.module.ts`. El módulo
+  ya está importado en `GamesModule`.
+- El `openGame` manda **siempre** `callbackUrl` explícito, y `user_id` sale de
+  los settings: si no está cargado, `getSettings()` tira un `GregmornConfigError`
+  que lo nombra. Es el bloqueo #2 de arriba, hecho visible en vez de silencioso.
 
 ### 3 · Catálogo
 
