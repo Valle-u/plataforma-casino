@@ -121,11 +121,16 @@ export function useSyncProvider() {
 }
 
 /** Copia el agent code a la DB de control (activa el callback seamless de Forever). */
-export function useActivateForeverCallback() {
+/**
+ * Registra en el sistema el dato con el que el callback del proveedor resuelve
+ * el tenant. Cada proveedor devuelve lo suyo: Forever el `agentCode` que copió,
+ * Gregmorn la `callbackUrl` que generó (con el token adentro).
+ */
+export function useActivateProviderCallback() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (code: string) =>
-      apiPost<{ ok: boolean; agentCode: string }>(
+      apiPost<{ ok: boolean; agentCode?: string; callbackUrl?: string }>(
         `/tenant/game-providers/${code}/activate-callback`,
         {},
       ),

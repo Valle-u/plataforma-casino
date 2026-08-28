@@ -28,6 +28,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { tenants, type ControlDb } from '@casino/db';
 import { CONTROL_DB } from '../common/symbols';
@@ -57,12 +58,20 @@ export class GameProvidersController {
   ) {}
 
   /**
-   * POST /tenant/game-providers/forever/activate-callback
+   * POST /tenant/game-providers/:code/activate-callback
    *
-   * Copia el `game_provider.forever.agent_code` (tenant_settings) a
-   * `tenants.forever_agent_code` (DB de control), que es lo que el callback
-   * seamless de Forever usa para resolver el tenant. Sin esto, los juegos de
-   * Forever no pueden leer el saldo del jugador. Idempotente.
+   * Registra en la DB de CONTROL el dato con el que el callback seamless
+   * resuelve a qué tenant pertenece. Cada proveedor usa el suyo:
+   *
+   *   - `forever`  → copia el `agent_code` de tenant_settings a
+   *                  `tenants.forever_agent_code` (Forever lo manda en un header).
+   *   - `gregmorn` → GENERA un token opaco, lo guarda en
+   *                  `tenants.gregmorn_callback_token` y arma la callback URL
+   *                  que lo lleva adentro (Gregmorn no manda nada del que se
+   *                  pueda deducir el tenant, así que viaja en la URL).
+   *
+   * Sin esto, los juegos del proveedor no pueden leer ni mover el saldo del
+   * jugador. Idempotente en los dos casos.
    */
   @Post(':code/activate-callback')
   @HttpCode(HttpStatus.OK)
@@ -71,8 +80,11 @@ export class GameProvidersController {
     @Param('code') code: string,
     @Req() req: RequestWithTenantContext,
   ) {
+    if (code === 'gregmorn') {
+      return this.activateGregmornCallback(req);
+    }
     if (code !== 'forever') {
-      throw new BadRequestException('Solo Forever usa este endpoint.');
+      throw new BadRequestException('Ese proveedor no usa este endpoint.');
     }
     const agentCode = (
       await this.settings.get<string>(
@@ -100,6 +112,73 @@ export class GameProvidersController {
       throw err;
     }
     return { ok: true, agentCode };
+  }
+
+  /**
+   * Activación de Gregmorn: token opaco + callback URL que lo lleva adentro.
+   *
+   * El token se genera acá y **no se reemplaza si ya existe**: rotarlo dejaría
+   * ciegos a los juegos que estén abiertos en ese momento (sus callbacks
+   * apuntarían a una URL que ya no resuelve ningún tenant).
+   *
+   * La base de la URL sale del propio request — el panel le pega a la misma API
+   * que va a recibir los callbacks. Se respetan los headers `x-forwarded-*`
+   * porque la API vive detrás del proxy de Cloudflare.
+   */
+  private async activateGregmornCallback(req: RequestWithTenantContext) {
+    const tenantId = req.tenantContext!.tenant.id;
+
+    const [row] = await this.controlDb
+      .select({ token: tenants.gregmornCallbackToken })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+
+    let token = row?.token?.trim() ?? '';
+    if (!token) {
+      token = randomBytes(24).toString('hex');
+      try {
+        await this.controlDb
+          .update(tenants)
+          .set({ gregmornCallbackToken: token })
+          .where(eq(tenants.id, tenantId));
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            'Colisión al generar el token de callback. Probá de nuevo.',
+          );
+        }
+        throw err;
+      }
+    }
+
+    const callbackUrl = `${this.publicApiBaseUrl(req)}/api/v1/game-provider/gregmorn/callback/${token}`;
+
+    // Se guarda como setting porque es lo que el launch manda en cada openGame.
+    await this.settings.set(
+      req.tenantContext!.db,
+      'game_provider.gregmorn.callback_url',
+      callbackUrl,
+      null,
+    );
+
+    return { ok: true, callbackUrl };
+  }
+
+  /** Origen público de la API, respetando el proxy (Cloudflare). */
+  private publicApiBaseUrl(req: RequestWithTenantContext): string {
+    const headers = (req.headers ?? {}) as Record<string, string | string[] | undefined>;
+    const first = (v: string | string[] | undefined): string =>
+      (Array.isArray(v) ? v[0] : v)?.split(',')[0]?.trim() ?? '';
+
+    const proto = first(headers['x-forwarded-proto']) || 'https';
+    const host = first(headers['x-forwarded-host']) || first(headers.host);
+    if (!host) {
+      throw new BadRequestException(
+        'No se pudo determinar el host público de la API para armar la callback URL.',
+      );
+    }
+    return `${proto}://${host}`;
   }
 
   @Get()

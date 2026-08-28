@@ -24,7 +24,7 @@ import {
   useTestProvider,
   useDiagnoseProvider,
   useSyncProvider,
-  useActivateForeverCallback,
+  useActivateProviderCallback,
   type ProviderView,
   type DiagnoseCheck,
 } from '@/lib/hooks/use-game-providers';
@@ -192,6 +192,19 @@ const CRED_SCHEMAS: Record<string, CredField[]> = {
     { key: 'game_provider.forever.request_sign_private_key', label: 'Clave privada de firma (Ed25519, base64)', kind: 'secret' },
     { key: 'game_provider.forever.callback_verify_public_key', label: 'Clave pública de callbacks (Ed25519, base64)', kind: 'secret' },
   ],
+  // Gregmorn usa DOS hosts distintos (auth/catálogo vs launch) y una sola clave
+  // simétrica que firma las dos direcciones. `callback_url` no está acá a
+  // propósito: lo genera el botón "Activar callbacks" con el token adentro.
+  gregmorn: [
+    { key: 'game_provider.gregmorn.api_url_office', label: 'API URL — office (auth y catálogo)', kind: 'url', placeholder: 'https://office-api-dev.gregmorn.org', prefill: 'apiUrl' },
+    { key: 'game_provider.gregmorn.api_url_client', label: 'API URL — client (abrir juego)', kind: 'url', placeholder: 'https://client-api-dev.gregmorn.org' },
+    { key: 'game_provider.gregmorn.exit_url', label: 'URL de salida del juego', kind: 'url', placeholder: 'https://tucasino.com/juegos' },
+    { key: 'game_provider.gregmorn.currency', label: 'Moneda (código, ej. ARS)', kind: 'text', placeholder: 'ARS' },
+    { key: 'game_provider.gregmorn.language', label: 'Idioma del juego (ISO: es, en, pt)', kind: 'text', placeholder: 'es' },
+    { key: 'game_provider.gregmorn.login', label: 'Usuario de la API', kind: 'text', placeholder: 'MiamiHub' },
+    { key: 'game_provider.gregmorn.password', label: 'Contraseña de la API', kind: 'secret' },
+    { key: 'game_provider.gregmorn.secret_api_key', label: 'Secret API key (firma HMAC)', kind: 'secret' },
+  ],
 };
 
 function initCredValues(fields: CredField[], config: ProviderView['config']): Record<string, string> {
@@ -209,12 +222,14 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
   const test = useTestProvider();
   const diagnose = useDiagnoseProvider();
   const sync = useSyncProvider();
-  const activate = useActivateForeverCallback();
+  const activate = useActivateProviderCallback();
   const setSetting = useSetSetting();
   const qc = useQueryClient();
 
   const [diagOpen, setDiagOpen] = useState<DiagnoseCheck[] | null>(null);
   const [savingCreds, setSavingCreds] = useState(false);
+  // Gregmorn: URL de callback generada al activar (lleva el token adentro).
+  const [callbackUrl, setCallbackUrl] = useState<string | null>(null);
   const [feePct, setFeePct] = useState(provider.commissionFeePct ?? '0');
   const [savingFee, setSavingFee] = useState(false);
   // Form de credenciales (controlado — es un form de página, no un modal Radix).
@@ -294,9 +309,17 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
   const handleActivate = async () => {
     try {
       const res = await activate.mutateAsync(provider.code);
-      toast.success('Callbacks activados', {
-        description: `Agent code "${res.agentCode}" registrado en el sistema. Ya podés jugar.`,
-      });
+      if (res.callbackUrl) {
+        // Gregmorn: se generó el token y la URL que lo lleva adentro.
+        setCallbackUrl(res.callbackUrl);
+        toast.success('Callbacks activados', {
+          description: 'Se generó la URL de callback. Ya podés jugar.',
+        });
+      } else {
+        toast.success('Callbacks activados', {
+          description: `Agent code "${res.agentCode}" registrado en el sistema. Ya podés jugar.`,
+        });
+      }
     } catch (err) {
       toast.error('No se pudo activar', {
         description: isApiError(err) ? err.message : 'Error de conexión',
@@ -602,6 +625,45 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
             </div>
           </>
         )}
+        {provider.code === 'gregmorn' && (
+          <>
+            <p className="text-[11px] text-[var(--color-fg-subtle)]">
+              La firma es HMAC-SHA256 con una sola clave: la misma{' '}
+              <strong>Secret API key</strong> firma lo que le mandamos y verifica
+              los callbacks que llegan. Son dos hosts distintos: uno para
+              autenticarse y traer el catálogo, otro para abrir el juego. Nada de
+              esto se muestra una vez guardado.
+            </p>
+            <div className="flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] p-3">
+              <span className="text-[12px] font-medium">Activar callbacks (para jugar)</span>
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                Genera la URL con la que Gregmorn le avisa a tu sistema cada
+                apuesta y cada premio. Sin esto los juegos abren pero no pueden
+                tocar el saldo del jugador. Correlo una vez, después de guardar
+                las credenciales.
+              </span>
+              <button
+                onClick={() => void handleActivate()}
+                disabled={activate.isPending}
+                className="mt-1 self-start inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 min-h-11 lg:min-h-0 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
+              >
+                {activate.isPending && <Loader2 className="size-4 animate-spin" />}
+                Activar callbacks
+              </button>
+              {callbackUrl && (
+                <div className="mt-2 flex flex-col gap-1">
+                  <span className="text-[11px] text-[var(--color-fg-muted)]">
+                    URL generada (ya quedó guardada, no hace falta que hagas nada
+                    con ella):
+                  </span>
+                  <code className="overflow-x-auto rounded-[var(--radius)] bg-[var(--color-bg-subtle)] px-2 py-1.5 text-[11px] break-all">
+                    {callbackUrl}
+                  </code>
+                </div>
+              )}
+            </div>
+          </>
+        )}
         <button
           onClick={() => void handleSaveCreds()}
           disabled={savingCreds}
@@ -850,7 +912,13 @@ function syncResultText(result: unknown): string {
     const r = result as Record<string, unknown>;
     const n = (v: unknown) => (typeof v === 'number' ? v : 0);
     if (r.phase === 'syncing') {
+      // Gregmorn trae todo en una sola llamada: no hay vendors que contar.
+      if ('currency' in r) return `Sincronizando… ${n(r.fetched)} juegos`;
       return `Sincronizando… vendor ${n(r.vendorsProcessed)}/${n(r.vendors)} · ${n(r.fetched)} juegos`;
+    }
+    if ('disabledByProvider' in r) {
+      // Gregmorn: juegos · deshabilitados por ellos · dados de baja.
+      return `${n(r.upserted)} juegos · ${n(r.disabledByProvider)} deshabilitados por el proveedor · ${n(r.deactivated)} dados de baja`;
     }
     if ('vendors' in r) {
       // Forever: vendors · juegos · dados de baja.

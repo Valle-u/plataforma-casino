@@ -9,11 +9,12 @@
  *   - Fase 3 · catálogo ......... ✅ `GregmornSyncService`.
  *   - Fase 4 · launch ........... ✅ `GregmornGameProvider`, ya en `GameProviderRegistry`.
  *   - Fase 5 · callbacks ........ ✅ controller + service seamless (mueve plata).
- *   - Fase 6 · panel ............ ⬜ `GregmornProviderBackend` (IProviderBackend).
+ *   - Fase 6 · panel ............ ✅ `GregmornProviderBackend`, ya en `ProviderBackendRegistry`.
+ *   - Fase 7 · pruebas en Stage . ⬜ falta la IP en Cloudflare y las credenciales cargadas.
  *
- * Falta el alta en `ProviderBackendRegistry` (Fase 6): registrar el backend crea
- * la fila en `game_providers` (`GameProvidersService.ensureRow`) y con eso el
- * proveedor aparece en el panel con botones de sync/test que todavía no existen.
+ * El alta del backend es lo que hace aparecer a Gregmorn en el panel:
+ * `GameProvidersService.ensureRow` crea la fila de `game_providers` a partir de
+ * su `displayName`.
  */
 
 import { Module } from '@nestjs/common';
@@ -24,6 +25,7 @@ import { GameProviderLogsModule } from '../../game-provider-logs.module';
 import { GregmornClient } from './gregmorn-client';
 import { GregmornSyncService } from './gregmorn-sync.service';
 import { GregmornGameProvider } from './gregmorn-game-provider';
+import { GregmornProviderBackend } from './gregmorn-provider-backend';
 import { GregmornCallbackService } from './gregmorn-callback.service';
 import { GregmornCallbackController } from './gregmorn-callback.controller';
 
@@ -39,8 +41,14 @@ import { GregmornCallbackController } from './gregmorn-callback.controller';
     GregmornClient,
     GregmornSyncService,
     GregmornGameProvider,
+    GregmornProviderBackend,
     GregmornCallbackService,
   ],
-  exports: [GregmornClient, GregmornSyncService, GregmornGameProvider],
+  exports: [
+    GregmornClient,
+    GregmornSyncService,
+    GregmornGameProvider,
+    GregmornProviderBackend,
+  ],
 })
 export class GregmornModule {}

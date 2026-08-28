@@ -12,7 +12,7 @@ Estado y orden de trabajo. Se actualiza a medida que avanza.
 | 3 · Catálogo (sync) | ✅ hecho |
 | 4 · Launch (`openGame`) | ✅ hecho |
 | 5 · Callbacks de wallet | ✅ hecho |
-| 6 · Panel (credenciales + estado) | ⬜ |
+| 6 · Panel (credenciales + estado) | ✅ hecho |
 | 7 · Pruebas en Stage | ⬜ |
 
 ## Lo que bloquea
@@ -27,11 +27,15 @@ abiertas (ver `00-intake.md`):
    solo; no hay que cargarlo.
 3. ~~¿IP única?~~ → **sí**, y avisan antes de sumar servidores.
 
-Queda un solo pendiente, y es **nuestro**:
+Con las fases 1 a 6 cerradas, **el código está completo**. Lo único que falta
+para la Fase 7 son dos cosas nuestras, ninguna de código:
 
-- **La IP `3.78.156.229` no está en la allowlist de Cloudflare.** Sin eso los
-  callbacks de Stage pueden comerse challenges del WAF. Es exactamente donde se
-  trabó Forever. Bloquea la Fase 7 (pruebas), no escribir el código.
+1. **La IP `3.78.156.229` no está en la allowlist de Cloudflare.** Sin eso los
+   callbacks de Stage pueden comerse challenges del WAF. Es exactamente donde se
+   trabó Forever.
+2. **Las credenciales de Stage no están cargadas.** Van por el panel (Ajustes →
+   Proveedores de juego → Gregmorn Hub), y después hay que apretar una vez
+   "Activar callbacks". Nunca por chat ni por código.
 
 ## Fases
 
@@ -168,11 +172,38 @@ devolver la plata. También: firma inválida, token desconocido, monto no
 parseable, saldo insuficiente y win sobre el tope, todos verificando que **el
 saldo no se movió**.
 
-### 6 · Panel
+### 6 · Panel — ✅ hecho
 
-- Campos de credenciales en Ajustes → Proveedores de juego (`/games`), donde ya están
-  los de Palace y Forever.
-- Sección de estado del proveedor (sync, ping).
+- ✅ `gregmorn-provider-backend.ts` (`IProviderBackend`), **registrado en
+  `ProviderBackendRegistry`**. Ese alta es lo que hace aparecer a Gregmorn en el
+  panel: `GameProvidersService.ensureRow` crea la fila de `game_providers` a
+  partir de su `displayName` ("Gregmorn Hub").
+- ✅ Campos de credenciales en Ajustes → Proveedores de juego (`/games`), con el
+  mismo descriptor `CRED_SCHEMAS` que Palace y Forever: los dos hosts, exit URL,
+  moneda, idioma, usuario, contraseña y secret key. Los tres últimos son
+  `secret`: no se muestran una vez guardados.
+- ✅ Botón **"Activar callbacks"**: genera el token opaco, lo guarda en
+  `tenants.gregmorn_callback_token` y arma la `callback_url` con el token
+  adentro, dejándola guardada como setting. La URL se muestra para que el dueño
+  la vea, pero no tiene que hacer nada con ella.
+  - **El token no se rota si ya existe.** Regenerarlo dejaría ciegos a los juegos
+    abiertos en ese momento: sus callbacks apuntarían a una URL que ya no
+    resuelve ningún tenant.
+  - La base de la URL sale del propio request (`x-forwarded-proto` / `-host`,
+    con fallback a `host`), porque el panel le pega a la misma API que va a
+    recibir los callbacks. No hace falta configurar la URL pública en ningún lado.
+- ✅ `testConnection` usa `/auth/login`: Gregmorn no tiene un endpoint liviano
+  tipo `GetAgentInfo`, y si el login responde entonces el host, el usuario y la
+  contraseña están bien.
+- ✅ `diagnoseExtra` con 5 chequeos: host de launch, credenciales, secret key,
+  callback URL y exit URL.
+- ✅ El resumen del sync en el panel entiende la forma de Gregmorn (juegos,
+  deshabilitados por el proveedor, dados de baja) además de las de Palace y
+  Forever.
+
+> El hook `useActivateForeverCallback` pasó a llamarse
+> `useActivateProviderCallback`: ahora lo usan los dos proveedores y devuelve el
+> `agentCode` de Forever o la `callbackUrl` de Gregmorn según cuál se active.
 
 ### 7 · Pruebas en Stage
 
