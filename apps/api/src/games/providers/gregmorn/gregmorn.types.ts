@@ -18,6 +18,9 @@ export const GREGMORN_CODE = 'gregmorn';
 /** Moneda por default de las sesiones si el tenant no la configuró. */
 export const GREGMORN_DEFAULT_CURRENCY = 'ARS';
 
+/** Idioma por default del launch si el tenant no lo configuró (ISO corto). */
+export const GREGMORN_DEFAULT_LANGUAGE = 'es';
+
 // ──────────────────────────────────────────────────────────────────────
 // Nosotros → ellos
 // ──────────────────────────────────────────────────────────────────────

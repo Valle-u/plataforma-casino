@@ -1,15 +1,16 @@
 /**
  * Registry de game providers — DI por providerCode.
  *
- * Registrados: 'palace' (Palace Casino) y 'forever' (Forever). Para agregar un
- * proveedor: inyectarlo en el constructor y hacer `this.providers.set(x.code, x)`.
- * Throw explícito si un game referencia un providerCode no registrado (mejor
- * fallar fuerte que silenciosamente).
+ * Registrados: 'palace' (Palace Casino), 'forever' (Forever) y 'gregmorn'
+ * (Gregmorn Hub). Para agregar un proveedor: inyectarlo en el constructor y
+ * hacer `this.providers.set(x.code, x)`. Throw explícito si un game referencia
+ * un providerCode no registrado (mejor fallar fuerte que silenciosamente).
  */
 
 import { Injectable } from '@nestjs/common';
 import { PalaceGameProvider } from './palace/palace-game-provider';
 import { ForeverGameProvider } from './forever/forever-game-provider';
+import { GregmornGameProvider } from './gregmorn/gregmorn-game-provider';
 import type { IGameProvider } from './game-provider.interface';
 
 export class UnknownProviderError extends Error {
@@ -25,9 +26,14 @@ export class UnknownProviderError extends Error {
 export class GameProviderRegistry {
   private readonly providers = new Map<string, IGameProvider>();
 
-  constructor(palace: PalaceGameProvider, forever: ForeverGameProvider) {
+  constructor(
+    palace: PalaceGameProvider,
+    forever: ForeverGameProvider,
+    gregmorn: GregmornGameProvider,
+  ) {
     this.providers.set(palace.code, palace);
     this.providers.set(forever.code, forever);
+    this.providers.set(gregmorn.code, gregmorn);
   }
 
   get(providerCode: string): IGameProvider {

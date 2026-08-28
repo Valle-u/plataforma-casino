@@ -289,6 +289,33 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .number()
     .min(0, { message: 'game_provider.gregmorn.win_max_amount debe ser >= 0.' }),
 
+  // URL a la que Gregmorn manda los callbacks de wallet. Se envía EXPLÍCITA en
+  // cada `openGame` (pisa la del panel de ellos, que se configura por moneda).
+  // Es la que se les pasó en el intake:
+  //   https://api.miamihub.vip/api/v1/game-provider/gregmorn/callback
+  // Sin esto un juego real no puede leer ni mover el saldo del jugador.
+  'game_provider.gregmorn.callback_url': z
+    .string()
+    .url({ message: 'game_provider.gregmorn.callback_url debe ser una URL válida.' })
+    .startsWith('https://', {
+      message: 'game_provider.gregmorn.callback_url debe usar HTTPS.',
+    })
+    .max(500, { message: 'game_provider.gregmorn.callback_url muy larga (máx 500).' }),
+
+  // A dónde vuelve el jugador al cerrar el juego (`openGame.exitUrl`, obligatorio
+  // en su API). Normalmente el lobby del sitio del tenant.
+  'game_provider.gregmorn.exit_url': z
+    .string()
+    .url({ message: 'game_provider.gregmorn.exit_url debe ser una URL válida.' })
+    .startsWith('https://', { message: 'game_provider.gregmorn.exit_url debe usar HTTPS.' })
+    .max(500, { message: 'game_provider.gregmorn.exit_url muy larga (máx 500).' }),
+
+  // Idioma del launch en ISO corto (es, en, pt…). Si no se setea, se usa 'es'.
+  'game_provider.gregmorn.language': z
+    .string()
+    .min(2, { message: 'game_provider.gregmorn.language muy corto (ISO: es, en…).' })
+    .max(10, { message: 'game_provider.gregmorn.language muy largo (máx 10).' }),
+
   // ── site (apps/api/src/tenant-info + player web) ──────────────────────
   // Master switch de mantenimiento: si true, el player web muestra una
   // pantalla de mantenimiento y no renderiza el sitio. El panel admin

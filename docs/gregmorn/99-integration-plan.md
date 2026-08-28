@@ -10,7 +10,7 @@ Estado y orden de trabajo. Se actualiza a medida que avanza.
 | 1 · Settings y alta del proveedor | 🟡 **parcial** — claves hechas; el alta en los registries se pasó a las fases 4 y 6 (ver abajo) |
 | 2 · Cliente y firma | ✅ hecho |
 | 3 · Catálogo (sync) | ✅ hecho |
-| 4 · Launch (`openGame`) | ⬜ |
+| 4 · Launch (`openGame`) | ✅ hecho |
 | 5 · Callbacks de wallet | ⬜ **desbloqueado** — ver abajo |
 | 6 · Panel (credenciales + estado) | ⬜ |
 | 7 · Pruebas en Stage | ⬜ |
@@ -89,11 +89,40 @@ Queda un solo pendiente, y es **nuestro**:
 - ⬜ El `last_sync_*` de `game_providers` lo escribe `GameProvidersService` al
   invocar el sync desde el panel — llega con la Fase 6.
 
-### 4 · Launch
+### 4 · Launch — ✅ hecho
 
-- `gregmorn-game-provider.ts` implementando `IGameProvider`.
-- Mandar `callbackUrl` explícito en cada `openGame` en vez de depender de su panel.
-- Resolver si hace falta mandar la `ip` del jugador (depende del estudio).
+- ✅ `gregmorn-game-provider.ts` implementando `IGameProvider`, **ya registrado
+  en `GameProviderRegistry`**. El e2e de games levanta la app entera, así que el
+  DI está verificado, no solo tipado.
+- ✅ `player_login` = nuestro `users.username`. Es el mismo valor que va a llegar
+  en el campo `login` de los tres callbacks, así que es la clave con la que la
+  Fase 5 va a resolver al jugador. Mismo criterio que Forever.
+- ✅ `gameId` = el id CRUDO de `config.gregmorn.gameId`, no el `games.code`
+  sanitizado. Confundirlos da un 409 de ellos.
+- ✅ `callbackUrl` explícito en cada request.
+- ✅ Siempre `demo: false`. El modo demo no dispara callbacks y sirve solo para
+  validar auth/firma/launch aislados en Stage (Fase 7); el lifecycle de sesión de
+  la plataforma no lo expone.
+- ✅ 7 tests en `gregmorn-game-provider.spec.ts`, incluidos los dos que
+  garantizan que **no se abre el juego** si falta `callback_url` o `exit_url`.
+- ⬜ Resolver si hace falta mandar la `ip` del jugador (depende del estudio). El
+  cliente ya acepta el campo; falta preguntarles para qué estudios es
+  obligatorio.
+
+**Tres settings nuevos**, porque no existía forma de saber estos datos:
+
+| Clave | Para qué |
+|---|---|
+| `game_provider.gregmorn.callback_url` | La que se manda en cada `openGame`. Sin esto el juego real no puede leer ni mover saldo. |
+| `game_provider.gregmorn.exit_url` | A dónde vuelve el jugador al cerrar. Obligatorio en su API. |
+| `game_provider.gregmorn.language` | ISO corto del launch. Default `es`. |
+
+> ⚠️ **Pendiente de diseño para la Fase 5:** cómo resuelve el callback a QUÉ
+> tenant pertenece. Palace usa un token por tenant y Forever el `agent_code`;
+> Gregmorn no tiene equivalente. Como el `callbackUrl` se manda por request, lo
+> natural es meter un discriminador de tenant en esa URL (path o query) y que el
+> setting `callback_url` de cada tenant lo lleve. Definirlo ANTES de escribir el
+> controller.
 
 ### 5 · Callbacks
 

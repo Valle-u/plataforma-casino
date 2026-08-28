@@ -70,6 +70,9 @@ Claves previstas:
 | `game_provider.gregmorn.user_id` | **Override opcional — normalmente vacío.** Sale solo del `/auth/login`. |
 | `game_provider.gregmorn.currency` | Moneda de las sesiones. `ARS`. |
 | `game_provider.gregmorn.win_max_amount` | Techo de sanidad del `win` (E7). Espeja el de Palace y Forever. |
+| `game_provider.gregmorn.callback_url` | La que se manda en cada `openGame`. Sin esto el juego real no mueve saldo. |
+| `game_provider.gregmorn.exit_url` | A dónde vuelve el jugador al cerrar el juego. Obligatorio en su API. |
+| `game_provider.gregmorn.language` | Idioma del launch (ISO corto). Default `es`. |
 
 **Flujo correcto de carga:** el dueño las pega en Panel → Ajustes → Proveedores de
 juego, una vez que el conector exista y registre esas claves. Nunca por chat, nunca
