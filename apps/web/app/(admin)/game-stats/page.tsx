@@ -935,7 +935,7 @@ function RoundRowComp({ row }: { row: RoundRow }) {
       <TD className="text-right num font-mono">{row.winAmount}</TD>
       <TD
         className={cn(
-          'text-right num font-mono flex items-center justify-end gap-1',
+          'text-right num font-mono',
           isWin
             ? 'text-[var(--color-success)]'
             : net < 0
@@ -943,17 +943,22 @@ function RoundRowComp({ row }: { row: RoundRow }) {
               : 'text-[var(--color-fg-muted)]',
         )}
       >
-        {/* La flecha sigue el signo del número que se muestra, que es el neto
-            DEL JUGADOR. Antes iba al revés (ganancia → flecha abajo) porque
-            estaba pensada desde el lado del casino, y chocaba con el número y
-            el color de la misma celda, que sí son del lado del jugador. */}
-        {isWin ? (
-          <ArrowUp className="size-3" />
-        ) : net < 0 ? (
-          <ArrowDown className="size-3" />
-        ) : null}
-        {isWin ? '+' : ''}
-        {row.netAmount}
+        {/* El flex va en un span, NO en el TD: `display:flex` sobre una celda
+            pisa el `display:table-cell` y la saca de la alineación vertical de
+            la fila — se veía levantada respecto de las demás columnas. */}
+        <span className="inline-flex items-center justify-end gap-1">
+          {/* La flecha sigue el signo del número que se muestra, que es el neto
+              DEL JUGADOR. Antes iba al revés (ganancia → flecha abajo) porque
+              estaba pensada desde el lado del casino, y chocaba con el número y
+              el color de la misma celda, que sí son del lado del jugador. */}
+          {isWin ? (
+            <ArrowUp className="size-3" />
+          ) : net < 0 ? (
+            <ArrowDown className="size-3" />
+          ) : null}
+          {isWin ? '+' : ''}
+          {row.netAmount}
+        </span>
       </TD>
       <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
         {row.balanceAfter ?? '—'}
