@@ -14,7 +14,9 @@
  *
  * Función PRESERVADA del catálogo anterior:
  *   - Datos: useActiveGames (GET /tenant/games/active).
- *   - isPlayable (palace) → overlay "Próximamente" en no-jugables.
+ *   - isPlayable (por proveedor) → overlay "Próximamente" en no-jugables.
+ *     OJO: es una lista blanca. Un proveedor nuevo que no se agregue acá
+ *     sincroniza el catálogo bien pero sale entero como "Próximamente".
  *   - Link real al juego: /play/games/<code>/play/iframe.
  *   - Thumbnails + búsqueda client-side por nombre/código.
  *
@@ -98,6 +100,14 @@ function isPlayable(game: PlayerGame): boolean {
   }
   // Forever: el sync garantiza config.forever; el launch (GetGameUrl) lo arma.
   if (game.providerCode === 'forever') return true;
+  // Gregmorn: el launch (openGame) manda el gameId CRUDO que el sync guardó en
+  // config.gregmorn.gameId — no el games.code, que va sanitizado. Sin ese dato
+  // el juego no abre, así que se chequea en vez de asumir que está.
+  if (game.providerCode === 'gregmorn') {
+    const cfg = game.config as { gregmorn?: { gameId?: unknown } } | null;
+    const gameId = cfg?.gregmorn?.gameId;
+    return typeof gameId === 'string' && gameId.length > 0;
+  }
   return false;
 }
 

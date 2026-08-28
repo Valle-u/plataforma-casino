@@ -171,6 +171,10 @@ const SOURCE_LABELS: Record<string, string> = {
   promo_reward: 'Premio',
   game_rollback: 'Reversa de juego',
   palace_callback: 'Juego',
+  forever_callback: 'Juego',
+  forever_cancel: 'Reversa de juego',
+  gregmorn_callback: 'Juego',
+  gregmorn_rollback: 'Reversa de juego',
 };
 
 function sourceLabel(s: string | null): string {

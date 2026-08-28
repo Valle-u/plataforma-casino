@@ -112,6 +112,18 @@ para la Fase 7 son dos cosas nuestras, ninguna de código:
 - ⬜ Resolver si hace falta mandar la `ip` del jugador (depende del estudio). El
   cliente ya acepta el campo; falta preguntarles para qué estudios es
   obligatorio.
+- ✅ **`isPlayable` del lobby del jugador** (`apps/web/app/play/lobby/page.tsx`).
+  Se descubrió probando en prod: el catálogo sincronizó perfecto pero **los 2979
+  juegos salían como "Próximamente"**. Esa función es una **lista blanca por
+  `provider_code`** y todo lo que no esté enumerado devuelve `false`. Registrar
+  el proveedor en los registries del backend no alcanza. Para Gregmorn se chequea
+  que exista `config.gregmorn.gameId`, que es el dato sin el cual el launch no
+  puede armarse.
+
+> ⚠️ **Para el próximo proveedor:** acordarse de `isPlayable`. Es el único lugar
+> del frontend que decide si un juego se puede abrir, no tiene default
+> permisivo, y el síntoma (catálogo OK, todo "Próximamente") no apunta solo a
+> él.
 
 **Tres settings nuevos**, porque no existía forma de saber estos datos:
 
