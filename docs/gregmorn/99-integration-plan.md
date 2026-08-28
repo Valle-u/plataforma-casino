@@ -9,27 +9,29 @@ Estado y orden de trabajo. Se actualiza a medida que avanza.
 | 0 · Intake y documentación | ✅ hecho |
 | 1 · Settings y alta del proveedor | 🟡 **parcial** — claves hechas; el alta en los registries se pasó a las fases 4 y 6 (ver abajo) |
 | 2 · Cliente y firma | ✅ hecho |
-| 3 · Catálogo (sync) | ⬜ |
+| 3 · Catálogo (sync) | ✅ hecho |
 | 4 · Launch (`openGame`) | ⬜ |
-| 5 · Callbacks de wallet | ⬜ **bloqueado en parte** — ver abajo |
+| 5 · Callbacks de wallet | ⬜ **desbloqueado** — ver abajo |
 | 6 · Panel (credenciales + estado) | ⬜ |
 | 7 · Pruebas en Stage | ⬜ |
 
 ## Lo que bloquea
 
-1. **La idempotencia del `rollback`** (trampa #1 del README). No se puede cerrar la
-   Fase 5 sin definirlo: si se elige mal, los jugadores no recuperan la plata de
-   rondas anuladas y no se nota hasta que pasa. Mientras no respondan, la
-   implementación asume **`cmd + transactionId`**, que es correcta aunque después
-   confirmen otra cosa.
-2. **El `user_id`** falta. Sin él no se puede pedir el catálogo ni abrir un juego.
-   Las fases 3 y 4 no se pueden probar contra Stage, aunque sí escribir.
-3. **La IP `3.78.156.229` no está en la allowlist de Cloudflare.** Sin eso los
-   callbacks de Stage pueden recibir challenges del WAF. Es exactamente donde se
-   trabó Forever.
+**Nada del lado del proveedor.** El 2026-08-28 contestaron las tres preguntas
+abiertas (ver `00-intake.md`):
 
-Nada de esto bloquea escribir el código: son bloqueos de **prueba**, no de
-implementación.
+1. ~~Idempotencia del `rollback`~~ → **`cmd + transactionId` aprobado.** Era la
+   crítica: si se elegía mal, los jugadores no recuperaban la plata de rondas
+   anuladas y no se notaba hasta que pasaba. La Fase 5 queda desbloqueada.
+2. ~~El `user_id`~~ → **es el `user.id` del `/auth/login`.** El cliente lo deriva
+   solo; no hay que cargarlo.
+3. ~~¿IP única?~~ → **sí**, y avisan antes de sumar servidores.
+
+Queda un solo pendiente, y es **nuestro**:
+
+- **La IP `3.78.156.229` no está en la allowlist de Cloudflare.** Sin eso los
+  callbacks de Stage pueden comerse challenges del WAF. Es exactamente donde se
+  trabó Forever. Bloquea la Fase 7 (pruebas), no escribir el código.
 
 ## Fases
 
@@ -65,11 +67,27 @@ implementación.
   los settings: si no está cargado, `getSettings()` tira un `GregmornConfigError`
   que lo nombra. Es el bloqueo #2 de arriba, hecho visible en vez de silencioso.
 
-### 3 · Catálogo
+### 3 · Catálogo — ✅ hecho
 
-- `gregmorn-sync.service.ts`: traer `getUserGames` por moneda y volcar a `games` con
-  `provider_code = 'gregmorn'`.
-- Actualizar `last_sync_*` en `game_providers`.
+- ✅ `gregmorn-sync.service.ts`: una sola llamada a `getUserGames` por moneda (sin
+  loop de vendors, a diferencia de Forever), upsert en lotes de 500 con
+  `onConflictDoUpdate` y baja de los juegos que ya no vienen (`updated_at`
+  anterior al inicio del sync).
+- ✅ El `gameId` crudo (`integration:provider:game`) se guarda tal cual en
+  `games.config.gregmorn.gameId` — es lo que espera `openGame`. El `games.code`
+  interno se sanitiza porque los `:` rompen el ruteo del launch.
+- ✅ Un juego con `isEnabled: false` entra **inactivo**, no se saltea: así no
+  desaparece del historial.
+- ✅ Dedupe por `code` antes del upsert: sin eso, un id repetido en el catálogo
+  revienta el lote con *"ON CONFLICT cannot affect row a second time"*.
+- ⚠️ **`category` es una heurística.** Su `GameCatalogItem` NO trae tipo de juego,
+  solo el nombre del estudio (`provider`). Se matchea contra una lista de estudios
+  de casino en vivo y **todo lo demás cae en `slots`**. Vale preguntarles si
+  pueden exponer el tipo; mientras tanto, una categoría equivocada afecta el
+  filtro del lobby, no el launch ni la plata, y se corrige sumando el estudio a
+  `LIVE_CASINO_STUDIOS`.
+- ⬜ El `last_sync_*` de `game_providers` lo escribe `GameProvidersService` al
+  invocar el sync desde el panel — llega con la Fase 6.
 
 ### 4 · Launch
 

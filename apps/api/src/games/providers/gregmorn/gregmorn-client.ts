@@ -39,13 +39,21 @@ export interface GregmornSettings {
   login: string;
   password: string;
   secretApiKey: string;
-  userId: string;
+  /**
+   * Override manual del `user_id`. Normalmente NO se carga: el valor sale del
+   * `/auth/login` (confirmado por el proveedor el 2026-08-28). Existe solo por
+   * si algún día nos asignan uno distinto del `user.id`.
+   */
+  userId?: string;
   currency: string;
 }
 
-interface CachedToken {
+/** Sesión cacheada del office API: el token y el `user_id` que vino con él. */
+interface CachedSession {
   token: string;
-  /** Epoch ms a partir del cual se considera vencido. */
+  /** `user.id` del login — el `user_id` que piden openGame y getUserGames. */
+  userId: string;
+  /** Epoch ms a partir del cual se considera vencida. */
   expiresAtMs: number;
 }
 
@@ -57,8 +65,8 @@ const TOKEN_FALLBACK_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class GregmornClient {
-  /** Cache de accessToken por `${apiUrlOffice}|${login}`. */
-  private readonly tokenCache = new Map<string, CachedToken>();
+  /** Cache de sesión por `${apiUrlOffice}|${login}`. */
+  private readonly sessionCache = new Map<string, CachedSession>();
 
   constructor(private readonly settings: TenantSettingsService) {}
 
@@ -92,13 +100,7 @@ export class GregmornClient {
     if (!secretApiKey) {
       throw new GregmornConfigError('Falta game_provider.gregmorn.secret_api_key.');
     }
-    if (!userId) {
-      // Dato pendiente del proveedor al 2026-08-28 (docs/gregmorn/00-intake.md).
-      // Es obligatorio tanto en openGame como en getUserGames.
-      throw new GregmornConfigError(
-        'Falta game_provider.gregmorn.user_id (obligatorio en openGame y getUserGames).',
-      );
-    }
+    // `userId` NO se valida: sale del /auth/login. Ver resolveUserId().
 
     return {
       apiUrlOffice: stripTrailingSlash(apiUrlOffice),
@@ -106,7 +108,7 @@ export class GregmornClient {
       login,
       password,
       secretApiKey,
-      userId,
+      ...(userId?.trim() ? { userId: userId.trim() } : {}),
       currency: currency?.trim() ? currency.trim() : GREGMORN_DEFAULT_CURRENCY,
     };
   }
@@ -150,17 +152,18 @@ export class GregmornClient {
   ): Promise<GregmornGameCatalogItem[]> {
     const s = opts?.settings ?? (await this.getSettings(db));
     const currency = opts?.currency?.trim() ? opts.currency.trim() : s.currency;
-    const token = await this.getAccessToken(db, s);
+    const session = await this.getSession(db, s);
+    const userId = s.userId?.trim() ? s.userId.trim() : session.userId;
 
     const url =
-      `${s.apiUrlOffice}/users/${encodeURIComponent(s.userId)}` +
+      `${s.apiUrlOffice}/users/${encodeURIComponent(userId)}` +
       `/getUserGames/${encodeURIComponent(currency)}`;
 
     const res = await this.request<GregmornGameCatalogItem[]>(
       url,
       {
         method: 'GET',
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        headers: { Authorization: `Bearer ${session.token}`, Accept: 'application/json' },
       },
       // El catálogo completo puede ser grande: timeout más holgado que el resto.
       opts?.timeoutMs ?? 30_000,
@@ -198,6 +201,8 @@ export class GregmornClient {
   ): Promise<GregmornGameUrlResult> {
     const s = opts?.settings ?? (await this.getSettings(db));
     const demo: GregmornDemoFlag = params.demo ? '1' : '0';
+    // Sale del /auth/login. openGame no usa Bearer, pero igual necesita el id.
+    const userId = await this.resolveUserId(db, s);
 
     const payload: GregmornOpenGameRequest = {
       currency: params.currency?.trim() ? params.currency.trim() : s.currency,
@@ -206,7 +211,7 @@ export class GregmornClient {
       gameId: params.gameId,
       language: params.language,
       player_login: params.playerLogin,
-      user_id: s.userId,
+      user_id: userId,
       callbackUrl: params.callbackUrl,
       ...(params.ip ? { ip: params.ip } : {}),
       ...(params.freespinTotalBet !== undefined
@@ -245,29 +250,51 @@ export class GregmornClient {
   }
 
   /**
-   * `accessToken` vigente para el catálogo. Cacheado hasta poco antes de su
-   * `exp`; al vencer se vuelve a loguear (no hay endpoint de refresh).
+   * Sesión vigente del office API (token + `user_id`). Cacheada hasta poco
+   * antes del `exp` del token; al vencer se vuelve a loguear (no hay endpoint
+   * de refresh).
    */
-  private async getAccessToken(db: TenantDb, s: GregmornSettings): Promise<string> {
-    const key = tokenCacheKey(s);
-    const cached = this.tokenCache.get(key);
-    if (cached && cached.expiresAtMs > Date.now()) return cached.token;
+  private async getSession(db: TenantDb, s: GregmornSettings): Promise<CachedSession> {
+    const key = sessionCacheKey(s);
+    const cached = this.sessionCache.get(key);
+    if (cached && cached.expiresAtMs > Date.now()) return cached;
 
     const res = await this.login(db, { settings: s });
     if (!res.accessToken) {
       throw new GregmornApiError(200, '/auth/login no devolvió accessToken.');
     }
+    if (!res.user?.id) {
+      throw new GregmornApiError(
+        200,
+        '/auth/login no devolvió user.id — es el user_id que piden openGame y getUserGames.',
+      );
+    }
 
-    this.tokenCache.set(key, {
+    const session: CachedSession = {
       token: res.accessToken,
+      userId: res.user.id,
       expiresAtMs: tokenExpiryMs(res.accessToken),
-    });
-    return res.accessToken;
+    };
+    this.sessionCache.set(key, session);
+    return session;
   }
 
-  /** Invalida el token cacheado del tenant (tras un 401, o al rotar credenciales). */
-  invalidateToken(s: GregmornSettings): void {
-    this.tokenCache.delete(tokenCacheKey(s));
+  /**
+   * El `user_id` que exigen `openGame` y `getUserGames`.
+   *
+   * Confirmado por el proveedor el 2026-08-28: **es el que devuelve
+   * `/auth/login`** (`user.id`), no un valor que asignen aparte. Por eso no se
+   * carga a mano — el setting `game_provider.gregmorn.user_id` queda solo como
+   * override por si eso cambia.
+   */
+  private async resolveUserId(db: TenantDb, s: GregmornSettings): Promise<string> {
+    if (s.userId?.trim()) return s.userId.trim();
+    return (await this.getSession(db, s)).userId;
+  }
+
+  /** Invalida la sesión cacheada del tenant (tras un 401, o al rotar credenciales). */
+  invalidateSession(s: GregmornSettings): void {
+    this.sessionCache.delete(sessionCacheKey(s));
   }
 
   /**
@@ -313,7 +340,7 @@ export class GregmornClient {
   }
 }
 
-function tokenCacheKey(s: GregmornSettings): string {
+function sessionCacheKey(s: GregmornSettings): string {
   return `${s.apiUrlOffice}|${s.login}`;
 }
 

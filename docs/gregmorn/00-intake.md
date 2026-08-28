@@ -11,6 +11,7 @@ Qué recibimos, qué falta y dónde va cada cosa. Se actualiza a medida que resp
 | 2026-08-28 | Se les mandan 4 preguntas (ARS, credenciales, idempotencia del rollback, override del callbackUrl). |
 | 2026-08-28 | Responden: **ARS sí**, su IP es `3.78.156.229`, el `callbackUrl` se puede pasar por request. **No contestan la del rollback.** |
 | 2026-08-28 | Mandan login, password y secret key de Stage. Falta el `user_id`. |
+| 2026-08-28 | Se les re-preguntan las 3 abiertas. **Contestan las 3**: el `user_id` sale del `/auth/login`; `3.78.156.229` es su única IP y avisarán antes de sumar otras; y para el `rollback` **aprueban `cmd + transactionId`** ("Yes, you can do it this way") después de consultarlo con su equipo de desarrollo. |
 
 ## Lo que les dimos
 
@@ -32,14 +33,19 @@ Qué recibimos, qué falta y dónde va cada cosa. Se actualiza a medida que resp
 
 ## Lo que falta
 
-1. **`user_id`.** Es obligatorio en `openGame` y en
-   `GET /users/{user_id}/getUserGames/{currencyISO}`, y ellos lo usan para resolver
-   qué `secret_api_key` valida la firma. Puede que sea el `user.id` que devuelve
-   `/auth/login` — hay que confirmarlo, no asumirlo.
-2. **Cómo identificar un `rollback`** frente al bet que revierte. Ver la trampa #1
-   del README.
-3. **Si `3.78.156.229` es su única IP de salida.** Si mañana suman servidores, los
-   callbacks empiezan a fallar sin aviso.
+**Nada del lado de ellos.** Las tres preguntas abiertas se cerraron el 2026-08-28:
+
+1. **`user_id`** → es el `user.id` que devuelve `/auth/login`. **No se carga a
+   mano**: `GregmornClient.resolveUserId()` lo deriva del login y lo cachea junto
+   al `accessToken`. El setting quedó como override por si algún día cambia.
+2. **Idempotencia del `rollback`** → **`cmd + transactionId` aprobado**. Es lo que
+   ya asumía la implementación, así que no hubo que rehacer nada.
+3. **IP única** → sí, `3.78.156.229` es la única, y se comprometieron a avisar
+   antes de sumar servidores. Igual conviene tratar un callback desde otra IP como
+   incidente, no como caso normal.
+
+Lo único pendiente es **de nuestro lado**: cargar esa IP en la allowlist de
+Cloudflare y pegar las credenciales de Stage en el panel.
 
 ## Dónde van las credenciales
 
@@ -61,7 +67,7 @@ Claves previstas:
 | `game_provider.gregmorn.login` | Usuario de la API. |
 | `game_provider.gregmorn.password` | Password de la API. |
 | `game_provider.gregmorn.secret_api_key` | Clave del HMAC de `X-Signature`. |
-| `game_provider.gregmorn.user_id` | Identificador que ellos usan para resolver la secret key. |
+| `game_provider.gregmorn.user_id` | **Override opcional — normalmente vacío.** Sale solo del `/auth/login`. |
 | `game_provider.gregmorn.currency` | Moneda de las sesiones. `ARS`. |
 | `game_provider.gregmorn.win_max_amount` | Techo de sanidad del `win` (E7). Espeja el de Palace y Forever. |
 

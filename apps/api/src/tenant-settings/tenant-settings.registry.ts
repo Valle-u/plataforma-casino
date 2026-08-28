@@ -265,9 +265,11 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .string()
     .min(1, { message: 'game_provider.gregmorn.secret_api_key no puede estar vacío.' }),
 
-  // Id del usuario de API. Obligatorio en `openGame` y en `getUserGames`; ellos
-  // lo usan para resolver qué secret key valida la firma. NO es el id del
-  // jugador. Podría ser el `user.id` que devuelve `/auth/login`, sin confirmar.
+  // Id del usuario de API — OVERRIDE OPCIONAL, normalmente NO se carga.
+  // El proveedor confirmó el 2026-08-28 que el `user_id` es el `user.id` que
+  // devuelve `/auth/login`, así que el cliente lo deriva solo (ver
+  // GregmornClient.resolveUserId). Esta key existe únicamente por si algún día
+  // nos asignan uno distinto. NO es el id del jugador.
   'game_provider.gregmorn.user_id': z
     .string()
     .min(1, { message: 'game_provider.gregmorn.user_id no puede estar vacío.' })

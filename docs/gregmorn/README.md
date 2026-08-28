@@ -50,9 +50,9 @@
 | IP de ellos (para nuestra allowlist) | ✅ `3.78.156.229` — ⬜ **falta cargarla en Cloudflare** |
 | `callbackUrl` por request en `openGame` | ✅ confirmado que se puede |
 | login / password / secret key (Stage) | ✅ recibidas — ⬜ pendientes de cargar en `tenant_settings` |
-| **`user_id`** | ⬜ **FALTA** — obligatorio en `openGame` y `getUserGames` |
-| **Idempotencia del `rollback`** | ⬜ **SIN RESPUESTA** — ver §Trampas |
-| ¿`3.78.156.229` es su única IP? | ⬜ preguntado, sin respuesta |
+| **`user_id`** | ✅ **es el `user.id` del `/auth/login`** — no se carga a mano |
+| **Idempotencia del `rollback`** | ✅ **`cmd + transactionId` aprobado por ellos** |
+| ¿`3.78.156.229` es su única IP? | ✅ sí, y avisan antes de sumar otras |
 
 ## Trampas (leer antes de codear la wallet)
 
@@ -61,7 +61,9 @@
    transaction ID)"*. Si se usa crudo como `idempotency_key`, el rollback se ve como
    duplicado del bet y **se ignora en silencio**: el jugador nunca recupera la
    apuesta de una ronda anulada. Hay que namespacear con `cmd + transactionId`.
-   **Se les preguntó y todavía no contestaron.**
+   **✅ Confirmado por ellos el 2026-08-28** ("Yes, you can do it this way"), tras
+   consultarlo con su equipo de desarrollo. Sigue siendo la trampa #1 de este
+   proveedor: quien toque la wallet tiene que saber por qué la clave lleva el `cmd`.
 2. **`bet` y `win` pueden venir número O string.** Ellos avisan: *"SL-Games and
    X-Games vendors are using STRING value type"*. Asumir número es un bug de plata
    silencioso.

@@ -6,7 +6,7 @@
  * Estado (docs/gregmorn/99-integration-plan.md):
  *   - Fase 1 · settings ......... ✅ claves `game_provider.gregmorn.*` en el registry.
  *   - Fase 2 · cliente y firma .. ✅ `GregmornClient` + `gregmorn-signer` (con tests).
- *   - Fase 3 · catálogo ......... ⬜ `GregmornSyncService`.
+ *   - Fase 3 · catálogo ......... ✅ `GregmornSyncService`.
  *   - Fase 4 · launch ........... ⬜ `GregmornGameProvider` (IGameProvider).
  *   - Fase 5 · callbacks ........ ⬜ controller + service seamless.
  *   - Fase 6 · panel ............ ⬜ `GregmornProviderBackend` (IProviderBackend).
@@ -20,10 +20,11 @@
 import { Module } from '@nestjs/common';
 import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.module';
 import { GregmornClient } from './gregmorn-client';
+import { GregmornSyncService } from './gregmorn-sync.service';
 
 @Module({
   imports: [TenantSettingsModule],
-  providers: [GregmornClient],
-  exports: [GregmornClient],
+  providers: [GregmornClient, GregmornSyncService],
+  exports: [GregmornClient, GregmornSyncService],
 })
 export class GregmornModule {}
