@@ -14,6 +14,11 @@ import type { DesignEditorApi } from './use-design-editor';
 export function DesignPreview({ editor }: { editor: DesignEditorApi }) {
   const { form, slides, previewVars } = editor;
   const colors = form.watch();
+  // El primer slide manda en el banner: su foto y su lado del texto. Antes la
+  // preview pintaba solo un gradiente con el color de acento, así que
+  // configurabas banners sin ver la imagen que elegías.
+  const heroImg = slides[0]?.imageDesktop || slides[0]?.imageMobile || '';
+  const heroRight = slides[0]?.align === 'right';
   return (
     <div
       className="mb-8 overflow-hidden rounded-[var(--radius-xl)] border"
@@ -73,50 +78,104 @@ export function DesignPreview({ editor }: { editor: DesignEditorApi }) {
         </div>
 
         {/* Main content */}
-        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
-          {/* Header bar */}
-          <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--p-border)' }}>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ backgroundColor: 'var(--p-bg-subtle)', border: '1px solid var(--p-border)' }}>
-              <span className="size-1.5 rounded-full" style={{ backgroundColor: 'var(--p-success)' }} />
-              <span className="text-[10px]" style={{ color: 'var(--p-fg-muted)' }}>$ 12,500 fichas</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="px-2 py-1 rounded text-[9px] font-semibold" style={{ backgroundColor: 'var(--p-accent)', color: 'var(--p-accent-fg)' }}>Depositar</div>
-              <div className="size-6 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--p-bg-subtle)', border: '1px solid var(--p-border)' }}>
-                <span className="text-[9px]" style={{ color: 'var(--p-fg-muted)' }}>3</span>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Banner A SANGRE — espeja LobbyBanner: la foto del slide ocupa
+              todo, el copy va encima con viñeta lateral, y el header del
+              jugador flota arriba (en el sitio real el contenido arranca con
+              `-mt-14`, detrás del header translúcido). */}
+          <div className="relative h-32 shrink-0 overflow-hidden" style={{ backgroundColor: '#150518' }}>
+            {heroImg && (
+              <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${heroImg})` }} />
+            )}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `linear-gradient(${heroRight ? 270 : 90}deg, rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%)`,
+              }}
+            />
+
+            {/* Header flotante del jugador */}
+            <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <span className="size-3.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,.15)' }} />
+                <span className="text-[9px] font-bold" style={{ color: 'var(--p-accent-text)' }}>{colors.platformName || 'CASINO'}</span>
               </div>
-              <div className="size-6 rounded-full" style={{ backgroundColor: 'var(--p-accent-subtle)', border: '1px solid var(--p-accent-border)' }} />
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 rounded-[7px] px-1.5 py-0.5" style={{ backgroundColor: 'rgba(10,0,8,.55)', border: '1px solid rgba(255,255,255,.18)' }}>
+                  <span className="size-1 rounded-full" style={{ backgroundColor: 'var(--p-accent)' }} />
+                  <span className="text-[8px] font-semibold" style={{ color: 'var(--p-fg)' }}>$ 12.500</span>
+                </div>
+                <span className="size-4 rounded-full" style={{ backgroundColor: 'rgba(10,0,8,.4)', border: '1px solid rgba(255,255,255,.15)' }} />
+              </div>
+            </div>
+
+            {/* Copy sobre la foto — sigue el lado del primer slide */}
+            <div className={`relative z-[5] flex h-full max-w-[62%] flex-col justify-center gap-1 px-3 ${heroRight ? 'ml-auto items-end text-right' : ''}`}>
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em]" style={{
+                backgroundColor: 'color-mix(in srgb, var(--p-accent) 14%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--p-accent) 45%, transparent)',
+                color: 'var(--p-accent-text)',
+              }}>
+                {slides[0]?.kicker || 'Bienvenido'}
+              </span>
+              <span className="text-[15px] font-bold leading-[0.95] tracking-tight" style={{ color: 'var(--p-fg)', textShadow: '0 2px 14px rgba(10,0,8,.9)' }}>
+                {slides[0]?.title || colors.heroTitle || 'El Casino del Pueblo'}
+              </span>
+              <span className="text-[8px] leading-snug" style={{ color: '#e6d2ee', textShadow: '0 1px 8px rgba(10,0,8,.9)' }}>
+                {slides[0]?.body || colors.heroSubtitle || 'Viví la mejor experiencia.'}
+              </span>
+            </div>
+
+            {/* Indicadores de slide */}
+            <div className={`absolute bottom-2 z-[5] flex gap-1 ${heroRight ? 'right-3' : 'left-3'}`}>
+              {(slides.length ? slides : [0, 0, 0, 0]).slice(0, 4).map((_, i) => (
+                <span key={i} className="h-[2px] w-4 rounded-full" style={{ backgroundColor: i === 0 ? 'var(--p-accent)' : 'rgba(255,255,255,.22)' }} />
+              ))}
             </div>
           </div>
 
-          {/* Hero banner */}
-          <div className="h-24 rounded-[var(--radius)] flex items-end p-3 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${colors.accentColor || '#ff2ea0'}33, ${colors.accentColor || '#ff2ea0'}08)` }}>
-            <div className="absolute top-2 right-3">
-              <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: 'var(--p-accent)', color: 'var(--p-accent-fg)' }}>NEW</span>
+          {/* Franja "Ganando ahora" — existe en la home real y faltaba acá. */}
+          <div className="flex h-6 shrink-0 items-center overflow-hidden border-y" style={{
+            borderColor: 'color-mix(in srgb, var(--p-accent) 18%, transparent)',
+            backgroundColor: 'color-mix(in srgb, var(--p-bg) 86%, #000)',
+          }}>
+            <div className="flex shrink-0 items-center gap-1 border-r px-2" style={{ borderColor: 'var(--p-border)' }}>
+              <span className="size-1 rounded-full" style={{ backgroundColor: 'var(--p-success)' }} />
+              <span className="text-[7px] font-medium uppercase tracking-[.14em]" style={{ color: 'var(--p-fg-muted)' }}>Ganando ahora</span>
             </div>
-            {/* Sigue el lado del primer slide, para que la preview no
-                contradiga el selector "Lado del texto". */}
-            <div className={slides[0]?.align === 'right' ? 'ml-auto text-right' : ''}>
-              <span className="text-[9px] font-medium block" style={{ color: 'var(--p-accent-text)' }}>{slides[0]?.kicker || 'Bienvenido'}</span>
-              <span className="text-sm font-bold block" style={{ color: 'var(--p-fg)' }}>{colors.heroTitle || 'El Casino del Pueblo'}</span>
-              <span className="text-[10px] block mt-0.5" style={{ color: 'var(--p-fg-muted)' }}>{colors.heroSubtitle || 'Viví la experiencia'}</span>
+            <div className="flex min-w-0 items-center gap-3 px-2">
+              {[
+                { u: 'rochi.ok', g: 'Neón Royale', m: '$29.807' },
+                { u: 'sabri_uy', g: 'Buffalo King', m: '$18.522' },
+              ].map((w) => (
+                <span key={w.u} className="whitespace-nowrap text-[7px]" style={{ color: 'var(--p-fg-subtle)' }}>
+                  {w.u} · {w.g} · <span style={{ color: 'var(--p-success)' }}>{w.m}</span>
+                </span>
+              ))}
             </div>
           </div>
 
-          {/* Category tiles */}
-          <div className="flex gap-2">
-            {[
-              { label: 'Slots', color: colors.accentColor || '#ff2ea0', count: 1200 },
-              { label: 'En vivo', color: colors.purple || '#9b4dff', count: 48 },
-              { label: 'Crash', color: colors.cyan || '#00e5ff', count: 12 },
-              { label: 'Ruleta', color: colors.gold || '#f0c46a', count: 24 },
-            ].map((cat) => (
-              <div key={cat.label} className="flex-1 rounded-[var(--radius)] px-2 py-2 text-center" style={{ backgroundColor: `${cat.color}12`, border: `1px solid ${cat.color}30` }}>
-                <span className="text-[9px] font-semibold block" style={{ color: cat.color }}>{cat.label}</span>
-                <span className="text-[8px]" style={{ color: 'var(--p-fg-subtle)' }}>{cat.count}</span>
-              </div>
-            ))}
-          </div>
+          {/* Contenido del lobby */}
+          <div className="flex flex-1 flex-col gap-3 overflow-hidden p-4">
+            {/* Chips de categoría — mismas que el lobby real. */}
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: 'Todos', color: colors.accentColor || '#ff2ea0', active: true },
+                { label: 'Slots', color: colors.accentColor || '#ff2ea0' },
+                { label: 'En vivo', color: colors.purple || '#9b4dff' },
+                { label: 'Crash', color: colors.cyan || '#00e5ff' },
+                { label: 'Mesa', color: colors.gold || '#f0c46a' },
+                { label: 'Mini', color: 'var(--p-fg-muted)' },
+              ].map((cat) => (
+                <span key={cat.label} className="rounded-full px-2 py-0.5 text-[8px] font-medium" style={{
+                  backgroundColor: cat.active ? 'var(--p-accent)' : `${cat.color}14`,
+                  border: `1px solid ${cat.active ? 'var(--p-accent)' : `${cat.color}30`}`,
+                  color: cat.active ? 'var(--p-accent-fg)' : cat.color,
+                }}>
+                  {cat.label}
+                </span>
+              ))}
+            </div>
 
           {/* Section title */}
           <div className="flex items-center justify-between">
@@ -149,28 +208,17 @@ export function DesignPreview({ editor }: { editor: DesignEditorApi }) {
             ))}
           </div>
 
-          {/* Stats row */}
-          <div className="flex gap-2 mt-auto">
-            {[
-              { label: 'Total ganado', value: '$ 3,200', color: 'var(--p-success)' },
-              { label: 'En juego', value: '$ 500', color: 'var(--p-warning)' },
-              { label: 'Disponible', value: '$ 12,500', color: 'var(--p-fg)' },
-            ].map((stat) => (
-              <div key={stat.label} className="flex-1 rounded-[var(--radius)] px-2.5 py-2" style={{ backgroundColor: 'var(--p-bg-subtle)', border: '1px solid var(--p-border)' }}>
-                <div className="text-[8px]" style={{ color: 'var(--p-fg-subtle)' }}>{stat.label}</div>
-                <div className="text-[11px] font-semibold mt-0.5" style={{ color: stat.color }}>{stat.value}</div>
-              </div>
-            ))}
           </div>
 
-          {/* Bottom nav (mobile mock) */}
-          <div className="flex items-center justify-around py-2 -mx-4 -mb-4 mt-1 border-t" style={{ borderColor: 'var(--p-border)', backgroundColor: 'var(--p-bg-elevated)' }}>
+          {/* Bottom nav — labels reales de PlayerBottomNav. Antes decía
+              "Inicio / Juegos / Depositar / Bonos / Perfil", que no existe. */}
+          <div className="flex shrink-0 items-center justify-around border-t py-2" style={{ borderColor: 'var(--p-border)', backgroundColor: 'var(--p-bg-elevated)' }}>
             {[
-              { label: 'Inicio', active: true },
               { label: 'Juegos', active: false },
+              { label: 'Mi cuenta', active: false },
+              { label: 'Casino', active: true },
               { label: 'Depositar', active: false, accent: true },
-              { label: 'Bonos', active: false },
-              { label: 'Perfil', active: false },
+              { label: 'Retirar', active: false },
             ].map((tab) => (
               <div key={tab.label} className="flex flex-col items-center gap-0.5">
                 <span className="size-3 rounded-full" style={{
