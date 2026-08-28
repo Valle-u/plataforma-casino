@@ -13171,3 +13171,103 @@ El `openapi.json` está en `~/Downloads`. El PDF que circuló está **truncado**
 **`rawBody: true` ya está activo globalmente** en `main.ts` y el controller de Forever ya verifica firmas sobre el body crudo, así que el HMAC-SHA256 de Gregmorn tiene poca fricción. El conector va en `apps/api/src/games/providers/gregmorn/` siguiendo el patrón de Forever.
 
 - **Forever**: sin cambios, sigue bloqueado del lado de ellos.
+
+---
+
+## 2026-08-28 13:10 AR — Claude (Opus 5)
+
+**Duración**: ~40 min
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sesión corta de recuperación + arranque del conector de Gregmorn. El usuario
+perdió la sesión anterior (reinstaló Claude Code tras una corrupción) y pidió
+reconstruir el contexto y dejar el trabajo visible desde otros dispositivos.
+
+**1. Trabajo local que nunca llegó a GitHub.** Era la causa real de que "no se
+viera" el avance desde otra máquina, y no la sesión perdida:
+
+- `main` estaba 1 commit adelante — `e0750a0`, justo el de los docs de Gregmorn.
+- `chore/vps-prep` y `claude/repository-read-only-9jrbj2`, 1 commit adelante cada una.
+- **`feat/partner-design` y `feat/upload-superfilter` no tenían remoto**: vivían
+  solo en el disco de esta máquina desde el 20 y 21 de agosto.
+
+Todo pusheado. Las seis ramas locales quedan sincronizadas con `origin`. Sin
+stashes pendientes y el working tree estaba limpio, así que no se perdió nada.
+
+**2. Gregmorn Hub — fases 1 y 2 (`dbc9e5c`).** Antes de esto no había una sola
+línea de código del proveedor: la sesión anterior cerró con la Fase 0 (docs).
+
+- **Settings**: las 8 claves `game_provider.gregmorn.*` en
+  `tenant-settings.registry.ts` — los dos hosts (office y client), `login`,
+  `password`, `secret_api_key`, `user_id`, `currency` y `win_max_amount`.
+- **Firma** (`gregmorn-signer.ts`): HMAC-SHA256 hex sobre los bytes crudos del
+  body, comparación en tiempo constante, header case-insensitive. **19 tests**,
+  entre ellos el que prueba que re-serializar el JSON rompe la firma.
+- **Cliente** (`gregmorn-client.ts`): `login()` form-urlencoded, `getUserGames()`
+  con Bearer y `openGame()` firmado con `callbackUrl` explícito. Cacheo del
+  `accessToken` por `host|login` hasta 30s antes de su `exp`.
+- `gregmorn.types.ts`, `gregmorn.errors.ts`, `gregmorn.module.ts` (ya importado
+  en `GamesModule`).
+
+`pnpm type-check` 5/5, los 19 tests del signer en verde, `eslint` limpio sobre
+los archivos tocados.
+
+### Decisiones tomadas
+
+- **El alta en `GameProviderRegistry` / `ProviderBackendRegistry` se movió de la
+  Fase 1 a las fases 4 y 6.** Los registries reciben instancias de
+  `IGameProvider` / `IProviderBackend`; registrar antes de que existan esas
+  clases obliga a stubbear `syncGames`/`testConnection`. Y como el alta del
+  backend dispara `GameProvidersService.ensureRow`, el proveedor aparecería en el
+  panel con botones de sync y test que todavía no hacen nada. Anotado en
+  `docs/gregmorn/99-integration-plan.md`.
+- **La fila en `game_providers` no se crea a mano ni por migración**: `ensureRow`
+  la inserta con `onConflictDoNothing` a partir del `displayName` del backend.
+- **El `user_id` faltante se hace visible, no silencioso**: `getSettings()` tira
+  un `GregmornConfigError` que lo nombra explícitamente.
+
+### Commits creados
+
+- `dbc9e5c` — `feat(gregmorn): settings, firma HMAC y cliente del 3er proveedor`
+
+Más el push de 3 commits que estaban sin subir y 2 ramas nuevas en `origin`.
+
+### Estado al cerrar
+
+- **Fase actual**: MVP en prod. Gregmorn en fase 2 de 7.
+- **Próximo paso lógico**: **DEPLOY** (sigue pendiente), y la Fase 3 de Gregmorn
+  (`gregmorn-sync.service.ts`, catálogo → tabla `games`).
+- **Bloqueos**: el token de Dokploy sigue muerto (401). Los tres bloqueos de
+  Gregmorn siguen abiertos y son de PRUEBA, no de implementación.
+
+### Notas para próximo agente
+
+- **⚠️ Ahora son 30 COMMITS SIN DEPLOYAR.** Sigue bloqueando a `usertest_1`, que
+  no puede entrar hasta que se deploye el apagado del 2FA. Ninguno trae
+  migración. `CASINO_DOKPLOY_TOKEN` da 401; el endpoint correcto es
+  `https://dokploy.miamihub.vip/api`.
+- **⚠️ SEGURIDAD, sin resolver desde el 28/8**: rotar la API key personal de
+  Bitwarden que quedó expuesta en el chat, el token de Dokploy que quedó en el
+  historial de PowerShell, y los secretos de prod (JWT, DB, R2) que vienen del 26/8.
+- **Gregmorn, lo que sigue faltando del proveedor** (nada de esto bloquea
+  escribir código, solo probarlo contra Stage):
+  1. El **`user_id`** — sin él no se puede pedir catálogo ni abrir juego.
+  2. La **idempotencia del `rollback`** — la pregunta técnicamente crítica, sin
+     respuesta desde el 28/8. **Re-preguntar antes de codear la Fase 5.** El
+     rollback llega con el mismo `transactionId` que el bet; mientras tanto la
+     implementación asume `cmd + transactionId`.
+  3. La IP **`3.78.156.229` sigue sin cargarse en la allowlist de Cloudflare**.
+     Es exactamente donde se trabó Forever.
+- **Para la Fase 5, dos trampas del spec ya documentadas**: `bet` y `win` pueden
+  venir número **o string** (el tipo `GregmornAmount` ya lo refleja), y un
+  `getBalance` con HTTP 400 **no** es saldo 0 — está prohibido usar cacheado o
+  default.
+- **Costumbre a mantener**: pushear al terminar. Dos ramas de agosto vivieron
+  una semana sin remoto y el commit de los docs de Gregmorn casi se pierde con la
+  reinstalación.
+- Sigue en pie lo de la DB local con drift de esquema, la auditoría del modelo
+  INDEPENDIENTE sin hacer, las 2 fallas preexistentes de `two-fa-policy.e2e` y el
+  lint del API que ya fallaba (achievements, chat, palace). Correr los tests del
+  API con `RATE_LIMIT_ENABLED=false`.
