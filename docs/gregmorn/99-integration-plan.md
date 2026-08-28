@@ -227,7 +227,22 @@ saldo no se movió**.
 ## Decisiones tomadas
 
 - **Seamless, no transfer.** Ver README y `01-api-spec.md §3`.
-- **`callbackUrl` explícito por request**, en vez de la config por moneda de su
-  panel: menos estado del lado de ellos, y una cosa menos que se puede desincronizar.
+- ~~**`callbackUrl` explícito por request**, en vez de la config por moneda de su
+  panel.~~ **REVERTIDO el 2026-08-28 a pedido del proveedor.**
+
+  Su sistema **ignora** el campo `callbackUrl` del `openGame` y usa únicamente la
+  URL configurada en el panel de ellos, pese a que el 2026-08-28 habían
+  confirmado por escrito que el override por request funcionaba. Se comprobó
+  capturando el request literal: el campo salía correcto en cada llamada, ellos
+  respondían `HTTP 200 success`, y no llegaba ni un callback en ~15 sesiones.
+
+  Nos pidieron explícitamente dejar de mandarlo. El envío quedó detrás del
+  setting `game_provider.gregmorn.send_callback_url`, **default `false`**, para
+  poder volver a probarlo sin tocar código cuando su equipo lo arregle.
+
+  **Consecuencia:** dependemos de la configuración por moneda de su panel, que es
+  exactamente lo que esta decisión buscaba evitar. La URL con token hay que
+  dársela a ellos para que la carguen; si la cargan mal o la pierden, los
+  callbacks se caen sin aviso. Por eso también existe el fallback sin token.
 - **La firma es el control principal; la IP es defensa en profundidad**, no
   reemplazo.

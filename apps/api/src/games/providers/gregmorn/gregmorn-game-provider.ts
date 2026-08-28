@@ -67,14 +67,32 @@ export class GregmornGameProvider implements IGameProvider {
     const get = (key: string) =>
       this.settings.get<string>(tenantDb, `game_provider.gregmorn.${key}`);
 
-    // URL a la que Gregmorn manda los callbacks de wallet de ESTA sesión. Se
-    // manda explícita para no depender de su panel (que se configura por
-    // moneda). Sin esto, un juego real no puede leer ni mover el saldo.
-    const callbackUrl = (await get('callback_url'))?.trim();
-    if (!callbackUrl) {
-      throw new GregmornConfigError(
-        'Falta game_provider.gregmorn.callback_url — sin eso los callbacks de wallet no llegan.',
-      );
+    // URL de callbacks de wallet.
+    //
+    // ⚠️ **Por default NO se manda en el openGame.** El proveedor nos pidió
+    // explícitamente dejar de mandarla el 2026-08-28: su sistema ignora el
+    // campo y usa únicamente la configurada en el panel de ellos. Antes de eso
+    // habían confirmado por escrito que el override por request funcionaba —
+    // no funciona. Ver docs/gregmorn/99-integration-plan.md.
+    //
+    // El setting `send_callback_url` deja volver a mandarla sin tocar código,
+    // para cuando su equipo lo arregle. La `callback_url` se sigue guardando
+    // igual porque es la que hay que darles para cargar en su panel, y la que
+    // muestra el diagnóstico.
+    const sendCallbackUrl =
+      (await this.settings.get<boolean>(
+        tenantDb,
+        'game_provider.gregmorn.send_callback_url',
+      )) === true;
+
+    let callbackUrl: string | undefined;
+    if (sendCallbackUrl) {
+      callbackUrl = (await get('callback_url'))?.trim();
+      if (!callbackUrl) {
+        throw new GregmornConfigError(
+          'send_callback_url está activo pero falta game_provider.gregmorn.callback_url.',
+        );
+      }
     }
 
     // A dónde vuelve el jugador al cerrar el juego. Obligatorio en su API.
@@ -90,7 +108,7 @@ export class GregmornGameProvider implements IGameProvider {
       // El `login` con el que van a llegar los callbacks.
       playerLogin: user.username,
       exitUrl,
-      callbackUrl,
+      ...(callbackUrl ? { callbackUrl } : {}),
       language,
       // Juego real. El modo demo (`demo: '1'`) no dispara callbacks y se usa
       // solo para validar auth/firma/launch en Stage (Fase 7); el lifecycle de

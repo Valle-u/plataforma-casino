@@ -190,7 +190,12 @@ export class GregmornClient {
       gameId: string;
       playerLogin: string;
       exitUrl: string;
-      callbackUrl: string;
+      /**
+       * Override de la callback URL. **Opcional a pedido del proveedor**
+       * (2026-08-28): su sistema ignora el campo y usa el del panel, y nos
+       * pidieron dejar de mandarlo. Ver `send_callback_url` en el settings.
+       */
+      callbackUrl?: string;
       language: string;
       demo?: boolean;
       currency?: string;
@@ -214,7 +219,7 @@ export class GregmornClient {
       language: params.language,
       player_login: params.playerLogin,
       user_id: userId,
-      callbackUrl: params.callbackUrl,
+      ...(params.callbackUrl ? { callbackUrl: params.callbackUrl } : {}),
       ...(params.ip ? { ip: params.ip } : {}),
       ...(params.freespinTotalBet !== undefined
         ? { freespinTotalBet: params.freespinTotalBet }

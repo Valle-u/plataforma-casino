@@ -302,6 +302,15 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     })
     .max(500, { message: 'game_provider.gregmorn.callback_url muy larga (máx 500).' }),
 
+  // ¿Se manda `callbackUrl` en cada `openGame`?
+  //
+  // Default FALSE. El proveedor pidió el 2026-08-28 que dejáramos de mandarlo:
+  // su sistema ignora el campo y usa solo la URL configurada en su panel, pese
+  // a que antes habían confirmado por escrito que el override por request
+  // funcionaba. Este interruptor deja volver a probarlo sin tocar código
+  // cuando su equipo lo arregle.
+  'game_provider.gregmorn.send_callback_url': z.boolean(),
+
   // A dónde vuelve el jugador al cerrar el juego (`openGame.exitUrl`, obligatorio
   // en su API). Normalmente el lobby del sitio del tenant.
   'game_provider.gregmorn.exit_url': z
