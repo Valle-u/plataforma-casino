@@ -88,9 +88,27 @@ export const tenants = pgTable('tenants', {
    * (game_provider.forever.callback_verify_public_key en tenant_settings).
    */
   foreverAgentCode: text('forever_agent_code'),
+
+  /**
+   * Callback token del proveedor Gregmorn Hub (3er proveedor seamless).
+   *
+   * A diferencia de Palace y Forever, el callback de Gregmorn **no trae ningún
+   * dato del que se pueda deducir el tenant**: ni token en el body, ni agent
+   * code en un header. Lo que sí tiene es que la `callbackUrl` se manda por
+   * request en cada `openGame`, así que el discriminador viaja en la URL:
+   *   POST /api/v1/game-provider/gregmorn/callback/:token
+   *
+   * Resolvemos con WHERE gregmorn_callback_token = $1 y recién entonces
+   * verificamos la firma HMAC con la `secret_api_key` de ESE tenant
+   * (game_provider.gregmorn.secret_api_key en tenant_settings). El token no
+   * autentica — solo elige de quién es la clave. NULL si el tenant no usa
+   * Gregmorn.
+   */
+  gregmornCallbackToken: text('gregmorn_callback_token'),
 }, (table) => [
   uniqueIndex('tenants_palace_callback_token_unique').on(table.palaceCallbackToken),
   uniqueIndex('tenants_forever_agent_code_unique').on(table.foreverAgentCode),
+  uniqueIndex('tenants_gregmorn_callback_token_unique').on(table.gregmornCallbackToken),
 ]);
 
 export type Tenant = typeof tenants.$inferSelect;

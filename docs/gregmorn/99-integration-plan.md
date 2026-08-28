@@ -11,7 +11,7 @@ Estado y orden de trabajo. Se actualiza a medida que avanza.
 | 2 · Cliente y firma | ✅ hecho |
 | 3 · Catálogo (sync) | ✅ hecho |
 | 4 · Launch (`openGame`) | ✅ hecho |
-| 5 · Callbacks de wallet | ⬜ **desbloqueado** — ver abajo |
+| 5 · Callbacks de wallet | ✅ hecho |
 | 6 · Panel (credenciales + estado) | ⬜ |
 | 7 · Pruebas en Stage | ⬜ |
 
@@ -124,17 +124,49 @@ Queda un solo pendiente, y es **nuestro**:
 > setting `callback_url` de cada tenant lo lleve. Definirlo ANTES de escribir el
 > controller.
 
-### 5 · Callbacks
+### 5 · Callbacks — ✅ hecho
 
-- `gregmorn-callback.controller.ts`: un solo `POST /callback` que rutea por `cmd`.
-  Leer `req.rawBody`, verificar firma **antes** de tocar la wallet.
-- `gregmorn-callback.service.ts`:
-  - `getBalance` → saldo confirmado. Ante duda, fallar; nunca inventar saldo.
-  - `writeBet` → aplicar bet/win. Idempotente. Rechazar si no alcanza. Devolver el
-    saldo **después** de aplicar.
-  - `rollback` → devolver la apuesta una sola vez.
-- **Parsear `bet` y `win` aceptando número y string.**
-- Techo de sanidad del `win` con `win_max_amount` (E7).
+**Ruta:** `POST /api/v1/game-provider/gregmorn/callback/:token`
+
+**Resolución de tenant.** Gregmorn no manda nada de lo que se pueda deducir el
+tenant: ni token en el body (Palace) ni agent code en un header (Forever). Como
+la `callbackUrl` va por request, el discriminador viaja en la URL. Columna nueva
+`tenants.gregmorn_callback_token` (migración de control `0005`). **El token no
+autentica** — solo elige de quién es la `secret_api_key`; lo que autentica es la
+firma.
+
+Orden del controller, y no se puede alterar: resolver tenant → verificar HMAC
+sobre `req.rawBody` → recién ahí tocar la wallet.
+
+**Idempotencia.** Tabla `gregmorn_transactions` (migración de tenant `0104`), con
+`idempotency_key = '<cmd>:<transactionId>'` UNIQUE. **No** el `transaction_id`
+crudo: es la trampa #1. Las claves del wallet van namespaceadas aparte
+(`gregmorn:writeBet:bet:…`, `:win:…`, `gregmorn:rollback:…`) porque un writeBet
+puede traer bet y win a la vez y cada pata necesita su propia idempotencia.
+
+**Los tres comandos:**
+- `getBalance` → saldo jugable = (balance − locked) + bonus. Sin jugador se
+  responde **fail**, nunca 0: inventar saldo está prohibido por su doc.
+- `writeBet` → bet a burn (bonus-first) y/o win a mint con techo E7. Devuelve el
+  saldo **después** de aplicar. Fondos insuficientes → fail.
+- `rollback` → devuelve la apuesta una sola vez, y **por el monto que realmente
+  cobramos** (el de `gregmorn_transactions`), no por el que dice el callback. Si
+  no existe el bet original responde fail para que reintenten: acreditar sería
+  mintear de la nada.
+
+**Montos** parseados aceptando número y string; **no parseable = rechazo**, nunca
+0 implícito. Un 0 silencioso es plata perdida o regalada.
+
+**Reporting:** cada `writeBet` sincroniza `game_rounds` (best-effort) para que
+netwin, GGR, RTP y comisiones cuenten las jugadas de Gregmorn. Más simple que el
+de Forever: bet y win vienen juntos, así que el round se resuelve en una sola
+escritura en vez de ligar dos patas por `wagerId`.
+
+**Tests:** 17 e2e contra DB real (`gregmorn-callback.e2e.ts`), incluido el de la
+trampa #1 — un rollback con el mismo `transactionId` que el bet tiene que
+devolver la plata. También: firma inválida, token desconocido, monto no
+parseable, saldo insuficiente y win sobre el tope, todos verificando que **el
+saldo no se movió**.
 
 ### 6 · Panel
 
