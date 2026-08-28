@@ -17,7 +17,7 @@
  * suyas en `tenant_settings` y no se pisan entre sí.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 import { signGregmornRequest } from './gregmorn-signer';
@@ -65,6 +65,8 @@ const TOKEN_FALLBACK_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class GregmornClient {
+  private readonly logger = new Logger(GregmornClient.name);
+
   /** Cache de sesión por `${apiUrlOffice}|${login}`. */
   private readonly sessionCache = new Map<string, CachedSession>();
 
@@ -226,6 +228,15 @@ export class GregmornClient {
     const bodyJson = JSON.stringify(payload);
     const sig = signGregmornRequest({ body: bodyJson, secretApiKey: s.secretApiKey });
 
+    // Se loguea el body EXACTO que se firma y se envía, más la firma y la
+    // respuesta cruda. Es la evidencia que pide el proveedor cuando algo no
+    // les coincide, y evita tener que reconstruir el request de memoria — que
+    // es justo lo que taparía una discrepancia. No expone secretos: el body no
+    // lleva la clave, y la firma es un digest.
+    this.logger.log(
+      `Gregmorn openGame → ${s.apiUrlClient}/games/openGame  X-Signature=${sig.signature}  body=${bodyJson}`,
+    );
+
     const res = await this.request<GregmornOpenGameResponse>(
       `${s.apiUrlClient}/games/openGame`,
       {
@@ -238,6 +249,7 @@ export class GregmornClient {
         body: bodyJson,
       },
       opts?.timeoutMs ?? 15_000,
+      'Gregmorn openGame',
     );
 
     const launchUrl = res.content?.game?.url;
@@ -301,12 +313,24 @@ export class GregmornClient {
    * `fetch` con timeout + traducción del contrato de error de ellos
    * (`{ status: 'fail', error, code, message }`) a `GregmornApiError`.
    */
-  private async request<T>(url: string, init: RequestInit, timeoutMs: number): Promise<T> {
+  private async request<T>(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number,
+    /** Si viene, se loguea la respuesta CRUDA con esta etiqueta (diagnóstico). */
+    debugLabel?: string,
+  ): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, { ...init, signal: controller.signal });
       const text = await response.text();
+
+      if (debugLabel) {
+        this.logger.log(
+          `${debugLabel} ← HTTP ${response.status}: ${truncate(text, 2000)}`,
+        );
+      }
 
       if (!response.ok) {
         throw toApiError(response.status, text);
