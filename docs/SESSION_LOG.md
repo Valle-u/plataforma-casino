@@ -13407,3 +13407,55 @@ Todos con `pnpm type-check` 5/5 y lint limpio en lo tocado.
 - **El deploy NO está trabado.** Los pushes a `main` disparan el autoDeploy de
   Dokploy y funciona. Lo que está muerto es el *token de la API* de Dokploy, que
   es otra cosa. El log de sesión anterior daba a entender lo contrario.
+
+---
+
+## 2026-08-28 19:00 AR — Claude (Opus 5) · addendum
+
+Continuación de la sesión de arriba. Dos temas.
+
+### 1. El token de Dokploy NO estaba muerto
+
+Venía arrastrándose desde el 26/8 como "el token da 401". Eran **dos problemas
+apilados**, y por eso ninguno se resolvía solo:
+
+1. **Header equivocado.** La API pide `x-api-key`. La regla que había en
+   `.claude/settings.local.json` usaba `Authorization: Bearer`, que devuelve 401
+   aunque el token sea válido.
+2. **El token estaba vencido.** Con uno nuevo del panel, funciona.
+
+Diagnosticarlo costó más de lo que debería por un detalle que vale recordar:
+**el muro de auth está sobre el prefijo `/api`, así que cualquier ruta ahí abajo
+devuelve 401 exista o no.** No se puede distinguir "token inválido" de "ruta
+inexistente" mirando el status.
+
+Y hubo una trampa adicional: `CASINO_DOKPLOY_TOKEN` estaba definida **como
+variable de entorno de usuario de Windows**, con el token viejo, y **le gana al
+bloque `env` de `settings.local.json`**. Se probó el token nuevo tres veces
+creyendo que fallaba, cuando en realidad seguía cargándose el viejo. Se detectó
+comparando el sufijo del token cargado contra el del archivo. La variable de
+Windows se borró; ahora el token vive en un solo lugar.
+
+Todo documentado en `docs/24-entornos-deploy.md`, con los endpoints útiles y los
+IDs de los cuatro servicios.
+
+### 2. Los logs no salen por la API
+
+`/docker-container-logs` por HTTP da 404; por WebSocket acepta el upgrade pero
+cierra sin datos. Cinco combinaciones de parámetros probadas, ninguna anduvo. No
+se determinó si es autenticación o parámetros. Retomarlo requiere un cliente WS
+que mande headers en el handshake — el nativo de Node no puede y `ws` no está
+instalado. **Los logs se siguen bajando desde el panel.**
+
+### Notas para próximo agente
+
+- **La API de Dokploy anda.** Para saber si un commit deployó:
+  `deployment.all?applicationId=vuHpnpqQpHNWtn3hx2OiL`. Devuelve estado, título
+  del commit y fecha. Se acabó el "esperá y probá".
+- **Contenedor de Postgres: `casino-postgres-ribula`** (id
+  `9x70ajiK4nG_IiJIznaLd`). Es el dato que faltaba para armar acceso de lectura a
+  la base por SSH, que quedó planteado y sin hacer.
+- **Pendiente del dueño**: borrar las ~344 filas viejas de `game_rounds` de
+  Gregmorn (SQL de una transacción con BEGIN/COMMIT, ya redactado en la
+  conversación). Son datos de prueba con `settled_at` en NULL, invisibles para
+  comisiones; el borrado es cosmético y no toca el ledger.
