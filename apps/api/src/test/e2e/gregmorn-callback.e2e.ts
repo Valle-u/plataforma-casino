@@ -114,6 +114,32 @@ async function readRounds(
   }
 }
 
+/** Trazabilidad de una ronda: estado y los tres wallet tx que debe enlazar. */
+async function readRoundTrace(roundExternalId: string): Promise<{
+  status: string;
+  bet_wallet_tx_id: string | null;
+  win_wallet_tx_id: string | null;
+  rollback_wallet_tx_id: string | null;
+} | null> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<
+      {
+        status: string;
+        bet_wallet_tx_id: string | null;
+        win_wallet_tx_id: string | null;
+        rollback_wallet_tx_id: string | null;
+      }[]
+    >`
+      SELECT status, bet_wallet_tx_id, win_wallet_tx_id, rollback_wallet_tx_id
+      FROM game_rounds WHERE round_external_id = ${roundExternalId}
+    `;
+    return rows[0] ?? null;
+  } finally {
+    await sql.end();
+  }
+}
+
 /** POST firmado al callback. `opts.tamper` rompe la firma; `opts.route` la pisa. */
 function callback(
   request: TestApp['request'],
@@ -337,6 +363,61 @@ describe('Gregmorn callback (E2E)', () => {
     expect(res.status).toBe(200);
     expect((res.body as CallbackBody).status).toBe('success');
     expect(await readBalance(userId)).toBeCloseTo(before, 2);
+  });
+
+  it('la ronda enlaza el wallet tx del bet Y el del win (trazabilidad)', async () => {
+    const round = '1349500001';
+    await callback(
+      ctx.request,
+      writeBet({ transactionId: 'tx-trace-bet', bet: 60, roundId: `${round}_0` }),
+    );
+    await callback(
+      ctx.request,
+      writeBet({
+        transactionId: 'tx-trace-win',
+        bet: 0,
+        win: 90,
+        roundId: `${round}_1`,
+        round_finished: true,
+      }),
+    );
+
+    const t = await readRoundTrace(round);
+    expect(t).not.toBeNull();
+    expect(t!.status).toBe('settled');
+    // Sin estos dos, no se puede auditar una jugada contra el ledger.
+    expect(t!.bet_wallet_tx_id).not.toBeNull();
+    expect(t!.win_wallet_tx_id).not.toBeNull();
+  });
+
+  it('el rollback marca la ronda como anulada — si no, se cobra comisión sobre ella', async () => {
+    const round = '1349500002';
+    const txId = 'tx-trace-rollback';
+
+    await callback(
+      ctx.request,
+      writeBet({ transactionId: txId, bet: 70, roundId: `${round}_0`, round_finished: true }),
+    );
+    expect((await readRoundTrace(round))!.status).toBe('settled');
+
+    await callback(ctx.request, {
+      cmd: 'rollback',
+      login: LOGIN,
+      sessionid: 'sess-e2e-1',
+      bet: 70,
+      win: 0,
+      transactionId: txId,
+      roundId: `${round}_0`,
+      gameId: GAME_ID,
+      round_finished: true,
+      info: '{}',
+    });
+
+    const t = await readRoundTrace(round);
+    // El motor de comisiones y las estadísticas excluyen 'rolled_back'. Si la
+    // ronda quedara 'settled', el operador cobraría por una jugada anulada.
+    expect(t!.status).toBe('rolled_back');
+    expect(t!.rollback_wallet_tx_id).not.toBeNull();
   });
 
   it('rollback repetido → no acredita dos veces', async () => {

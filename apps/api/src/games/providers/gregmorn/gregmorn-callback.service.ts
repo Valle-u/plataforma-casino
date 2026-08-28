@@ -189,6 +189,7 @@ export class GregmornCallbackService {
     }
 
     let betWalletTxId: string | null = null;
+    let winWalletTxId: string | null = null;
 
     // 1. Apuesta → burn (bonus-first). Si no alcanza, InsufficientBalanceError
     //    sube a handle() y se responde fail: ellos no reservan fondos.
@@ -206,13 +207,14 @@ export class GregmornCallbackService {
     // 2. Premio → mint. Clave DISTINTA de la del bet: un mismo callback puede
     //    traer las dos patas y cada una necesita su propia idempotencia.
     if (win > 0) {
-      await this.walletService.mintExternal(db, {
+      const tx = await this.walletService.mintExternal(db, {
         walletId: ctx.wallet.id,
         amount: win.toFixed(2),
         idempotencyKey: `gregmorn:writeBet:win:${transactionId}`,
         source: 'gregmorn_callback',
         reason: `Gregmorn win ${login} ${transactionId}`,
       });
+      winWalletTxId = tx.id;
     }
 
     await this.recordTransaction(db, {
@@ -229,7 +231,12 @@ export class GregmornCallbackService {
     // Reporting (netwin / GGR / RTP / comisiones). No crítico: si falla, la
     // plata ya se movió y quedó registrada en gregmorn_transactions.
     try {
-      await this.syncGameRound(db, body, ctx, { bet, win, betWalletTxId });
+      await this.syncGameRound(db, body, ctx, {
+        bet,
+        win,
+        betWalletTxId,
+        winWalletTxId,
+      });
     } catch (err) {
       this.logger.warn(
         `No se pudo sincronizar game_round de Gregmorn (${transactionId}): ${(err as Error).message}`,
@@ -289,14 +296,16 @@ export class GregmornCallbackService {
     // Se devuelve lo que REALMENTE se cobró, no lo que dice el rollback: si los
     // montos difieren, el nuestro es el que movió el ledger.
     const refund = Number(original.bet);
+    let rollbackWalletTxId: string | null = null;
     if (refund > 0) {
-      await this.walletService.mintExternal(db, {
+      const tx = await this.walletService.mintExternal(db, {
         walletId: ctx.wallet.id,
         amount: refund.toFixed(2),
         idempotencyKey: `gregmorn:rollback:${transactionId}`,
         source: 'gregmorn_rollback',
         reason: `Gregmorn rollback ${login} ${transactionId}`,
       });
+      rollbackWalletTxId = tx.id;
       if (Math.abs(refund - amount) > 0.001) {
         this.logger.warn(
           `Gregmorn rollback con monto distinto al cobrado: ellos=${amount} nosotros=${refund} txn=${transactionId}. Se devolvió el nuestro.`,
@@ -315,8 +324,55 @@ export class GregmornCallbackService {
       win: 0,
     });
 
+    // Marcar la ronda como anulada. **Crítico para el negocio**, no cosmético:
+    // el motor de comisiones y las estadísticas excluyen las `rolled_back`. Si
+    // la ronda quedara en `settled`, el operador cobraría comisión sobre una
+    // jugada que se anuló y el GGR contaría una apuesta que se devolvió — con
+    // el ledger correcto, así que nadie lo notaría. No crítico para la plata:
+    // si falla, el reembolso ya se aplicó.
+    try {
+      await this.markRoundRolledBack(db, body, ctx, rollbackWalletTxId);
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo marcar el game_round como anulado (${transactionId}): ${(err as Error).message}`,
+      );
+    }
+
     const updated = await this.walletService.getOrCreateWalletForUser(db, ctx.userId);
     return ok(login, currency, Number(this.jugable(updated)));
+  }
+
+  /**
+   * Pasa la ronda a `rolled_back` y le cuelga el wallet tx de la reversa.
+   *
+   * Se busca por `(userId, roundExternalId)` en vez de reconstruir la sesión:
+   * el id de ronda normalizado ya es único dentro de un jugador, y el rollback
+   * puede llegar mucho después de que la sesión original se cerró.
+   */
+  private async markRoundRolledBack(
+    db: TenantDb,
+    body: GregmornCallbackBody,
+    ctx: ResolvedContext,
+    rollbackWalletTxId: string | null,
+  ): Promise<void> {
+    const roundExternalId = normalizeRoundId(
+      (body.roundId ?? body.transactionId ?? '').trim(),
+    );
+    if (!roundExternalId) return;
+
+    await db
+      .update(gameRounds)
+      .set({
+        status: 'rolled_back',
+        rolledBackAt: new Date(),
+        ...(rollbackWalletTxId ? { rollbackWalletTxId } : {}),
+      })
+      .where(
+        and(
+          eq(gameRounds.userId, ctx.userId),
+          eq(gameRounds.roundExternalId, roundExternalId),
+        ),
+      );
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -392,7 +448,12 @@ export class GregmornCallbackService {
     db: TenantDb,
     body: GregmornCallbackBody,
     ctx: ResolvedContext,
-    p: { bet: number; win: number; betWalletTxId: string | null },
+    p: {
+      bet: number;
+      win: number;
+      betWalletTxId: string | null;
+      winWalletTxId: string | null;
+    },
   ): Promise<void> {
     const providerGameId = body.gameId;
     if (!providerGameId) return; // sin gameId no se puede mapear el juego
@@ -463,9 +524,10 @@ export class GregmornCallbackService {
           winAmount: win.toFixed(2),
           netAmount: (win - bet).toFixed(2),
           status: finished ? 'settled' : 'placed',
-          // El wallet tx del bet suele venir en el primer callback; no pisarlo
-          // con null si el segundo no trae ninguno.
+          // Los wallet tx llegan en callbacks distintos (el bet en el primero,
+          // el win en el segundo). No pisar con null el que ya está guardado.
           ...(p.betWalletTxId ? { betWalletTxId: p.betWalletTxId } : {}),
+          ...(p.winWalletTxId ? { winWalletTxId: p.winWalletTxId } : {}),
           ...(finished ? { settledAt: new Date() } : {}),
         })
         .where(eq(gameRounds.id, existing.id));
@@ -482,6 +544,7 @@ export class GregmornCallbackService {
       netAmount: (p.win - p.bet).toFixed(2),
       status: finished ? 'settled' : 'placed',
       betWalletTxId: p.betWalletTxId,
+      winWalletTxId: p.winWalletTxId,
       payload: body,
       placedAt: new Date(),
       ...(finished ? { settledAt: new Date() } : {}),
