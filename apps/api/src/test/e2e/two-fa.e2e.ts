@@ -163,7 +163,11 @@ describe('2FA TOTP (E2E)', () => {
   let ctx: TestApp;
 
   beforeAll(async () => {
-    ctx = await bootstrapTestApp();
+    // `enableTwoFaPolicy: true` desde 2026-08-27: la policy pasó a ser el
+    // interruptor maestro del 2FA (gobierna el requisito en login y en
+    // operaciones sensibles, no solo el setup obligatorio de operadores).
+    // Con ella apagada —el default ahora— no hay nada que testear acá.
+    ctx = await bootstrapTestApp({ enableTwoFaPolicy: true });
   });
 
   afterAll(async () => {

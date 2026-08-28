@@ -36,6 +36,7 @@ import { UserExcludedError } from '../responsible-gaming/responsible-gaming.erro
 import { TenantUsersService } from '../tenant-users/tenant-users.service';
 import { TwoFaCodeInvalidError } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
+import { TwoFaPolicyService } from './two-fa-policy.service';
 import type { TenantLoginAudience } from './dto/tenant-login.dto';
 import { userHasPanelAccess } from './panel-access';
 
@@ -128,6 +129,7 @@ export class TenantAuthService {
     private readonly jwtService: JwtService,
     private readonly twoFa: TwoFaService,
     private readonly responsibleGaming: ResponsibleGamingService,
+    private readonly twoFaPolicy: TwoFaPolicyService,
   ) {}
 
   /**
@@ -276,7 +278,13 @@ export class TenantAuthService {
 
     // 2FA: si el user tiene 2FA enabled, exigir código válido (TOTP o
     // recovery code one-time). Si no tiene 2FA, los campos se ignoran.
-    if (user.twoFaEnabled) {
+    //
+    // Con la policy DESACTIVADA (default desde 2026-08-27) esto se saltea por
+    // completo, incluso para users que ya lo tenían activado. Es deliberado:
+    // el login nunca tuvo campo para el código, así que quien lo activó quedó
+    // encerrado afuera sin forma de recuperar la cuenta — no hay endpoint para
+    // que un admin lo resetee. Saltear es lo que los desbloquea sin tocar la DB.
+    if (user.twoFaEnabled && this.twoFaPolicy.isEnabled()) {
       if (!twoFaCode && !recoveryCode) {
         // Status 400 (no 401) para distinguir "credenciales mal" de
         // "credenciales OK pero falta segundo factor". El frontend

@@ -152,7 +152,10 @@ describe('2FA Recovery Codes (E2E)', () => {
   let ctx: TestApp;
 
   beforeAll(async () => {
-    ctx = await bootstrapTestApp();
+    // Ver nota en two-fa.e2e.ts: la policy es el interruptor maestro del 2FA
+    // desde 2026-08-27, y con ella apagada el login no exige codigo ni
+    // recovery code.
+    ctx = await bootstrapTestApp({ enableTwoFaPolicy: true });
   });
 
   afterAll(async () => {

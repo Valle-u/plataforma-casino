@@ -11,7 +11,6 @@ import { KeyRound, Lock, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ChangeMyPasswordModal } from '@/components/admin/change-my-password-modal';
-import { TwoFaFlow } from '@/components/player/settings/two-fa-flow';
 import { SessionsSection } from '@/components/player/settings/sessions-section';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -35,17 +34,22 @@ export function SeguridadTab() {
 }
 
 function SeguridadSection() {
-  const { user, logout } = useAuth();
-  const twoFa = !!user?.twoFaEnabled;
+  const { logout } = useAuth();
   const [changePwdOpen, setChangePwdOpen] = useState(false);
   return (
     <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
       <h3 className="mb-4 font-display text-[18px]">Seguridad</h3>
       <div className="flex flex-col gap-4">
-        {/* 2FA (setup/disable/regenerar códigos) */}
-        <TwoFaFlow enabled={twoFa} />
+        {/* El bloque de 2FA (<TwoFaFlow />) se quitó de acá el 2026-08-27 por
+            decisión del dueño: por ahora el 2FA no se usa en la plataforma.
+            Era el único lugar donde un usuario podía activarlo.
 
-        <div className="h-px bg-[var(--color-border)]" />
+            El componente `player/settings/two-fa-flow.tsx` y todo el backend
+            siguen en su lugar, sin borrar: para reactivar hay que volver a
+            montarlo acá Y poner `TWO_FA_POLICY_ENABLED=true`. Antes de eso hay
+            que construir el paso del código en los formularios de login, que
+            nunca existió — es lo que dejaba encerrada afuera a la gente que lo
+            activaba. */}
 
         {/* Cambiar contraseña (self-service) */}
         <div className="flex items-center justify-between gap-3">

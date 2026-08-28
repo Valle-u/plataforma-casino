@@ -4,18 +4,25 @@
  * Responsabilidades:
  *   - Mantener el token JWT en memoria + localStorage.
  *   - Exponer `user` (perfil del logueado) o null si no.
- *   - Métodos: login(username, password, twoFaCode?) / logout / reauth.
+ *   - Métodos: login(username, password, audience?, turnstileToken?) / logout
+ *     / reauth.
  *   - Sprint 37: `impersonate(targetUserId)` swappa al admin a otro user
  *     guardando el token original en sessionStorage. `stopImpersonating()`
  *     restaura. `user.impersonatedBy` permite a la UI mostrar banner.
  *   - Bootstrapeo: al cargar la app, si hay token persistido, llama
  *     `GET /tenant/auth/me` para validar y poblar `user`.
  *
- * Flujo 2FA:
- *   - Si el login devuelve 200 con `accessToken`: éxito directo.
- *   - Si devuelve 401/403 con `error: 'TWO_FA_REQUIRED'`: el form
- *     muestra el campo `code` y se reintenta con `twoFaCode`.
- *   - Hoy MVP: login simple username/password.
+ * Flujo 2FA: NO EXISTE. Este bloque describía un paso de código que el form
+ * mostraría ante `TWO_FA_REQUIRED` — nunca se construyó, y `login()` jamás
+ * aceptó un `twoFaCode`. La descripción quedó acá años como si funcionara, y
+ * por eso nadie noto que quien activaba 2FA quedaba encerrado afuera: el
+ * backend le pedía un código que ningún formulario sabía pedir.
+ *
+ * Desde 2026-08-27 el 2FA está apagado en toda la plataforma
+ * (`TWO_FA_POLICY_ENABLED`, ver `two-fa-policy.service.ts`). Para reactivarlo
+ * hay que construir ese paso primero: agregar `twoFaCode`/`recoveryCode` a
+ * `login()` (el BFF ya reenvía el body tal cual y el backend ya los acepta) y
+ * el campo en los dos formularios, panel y jugador.
  */
 
 'use client';

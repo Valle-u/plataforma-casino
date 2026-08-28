@@ -8,9 +8,14 @@
  *     marcados `@AllowWithoutTwoFa()` (típicamente: GET /me, 2fa/init,
  *     2fa/confirm, logout, recovery-codes/count).
  *
+ * ESTADO (2026-08-27): el 2FA está APAGADO en toda la plataforma por decisión
+ * del dueño. Este service es el interruptor maestro — gobierna esta policy, el
+ * requisito de código en el login y el de las operaciones sensibles (vía
+ * `TwoFaService.isEnabled`). Ver la nota del constructor.
+ *
  * Diseño:
- *   - El service es mutable (`enable()` / `disable()`). Default ENABLED
- *     en producción (`TWO_FA_POLICY_ENABLED=true` o ausente).
+ *   - El service es mutable (`enable()` / `disable()`). Default DESACTIVADO;
+ *     solo se enciende con `TWO_FA_POLICY_ENABLED=true`.
  *   - `bootstrapTestApp` deshabilita por default para no romper los 199
  *     tests existentes (que asumen admin/cajeros sin 2FA). El suite
  *     dedicado del policy lo re-habilita.
@@ -40,12 +45,22 @@ export class TwoFaPolicyService {
 
   constructor(config: ConfigService) {
     const raw = config.get<string>('TWO_FA_POLICY_ENABLED');
-    // Default: enabled. Sólo se desactiva si explícitamente
-    // `TWO_FA_POLICY_ENABLED=false`.
-    this.enabled = raw !== 'false';
+    // Default: DESACTIVADO (2026-08-27, decisión del dueño: por ahora el 2FA
+    // no se usa en la plataforma).
+    //
+    // Antes el default era ACTIVADO (`raw !== 'false'`), lo que significaba
+    // que si la variable faltaba en un entorno, el 2FA se exigía en silencio.
+    // Combinado con que el login nunca tuvo campo para el código, eso dejaba
+    // a la gente encerrada afuera sin vía de recuperación.
+    //
+    // Este flag es el ÚNICO interruptor del 2FA: gobierna la policy de roles
+    // operativos, el requisito en el login y el de las operaciones sensibles.
+    // Para reactivarlo: `TWO_FA_POLICY_ENABLED=true` — pero ANTES hay que
+    // construir el paso del código en los formularios de login, que no existe.
+    this.enabled = raw === 'true';
     if (!this.enabled) {
       this.logger.warn(
-        'TwoFaPolicy DISABLED via TWO_FA_POLICY_ENABLED=false.',
+        'TwoFaPolicy DESACTIVADA. El 2FA no se exige en login ni en operaciones sensibles.',
       );
     }
   }

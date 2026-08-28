@@ -24,6 +24,7 @@ import { generateSecret, generateURI, verifySync } from 'otplib';
 import { users, type User } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { RecoveryCodesService } from './recovery-codes.service';
+import { TwoFaPolicyService } from './two-fa-policy.service';
 import {
   TwoFaAlreadyEnabledError,
   TwoFaCodeInvalidError,
@@ -43,7 +44,10 @@ export interface SetupInitResult {
 
 @Injectable()
 export class TwoFaService {
-  constructor(private readonly recoveryCodes: RecoveryCodesService) {}
+  constructor(
+    private readonly recoveryCodes: RecoveryCodesService,
+    private readonly twoFaPolicy: TwoFaPolicyService,
+  ) {}
 
   /**
    * Inicia el setup: genera un secret nuevo, lo persiste con
@@ -204,8 +208,20 @@ export class TwoFaService {
     return this.recoveryCodes.countActive(db, userId);
   }
 
-  /** True si el user tiene 2FA activo. */
+  /**
+   * True si al user hay que EXIGIRLE 2FA.
+   *
+   * Con la policy desactivada (default desde 2026-08-27) devuelve siempre
+   * false, aunque el user tenga `two_fa_enabled` en la DB. Los tres llamadores
+   * son puntos de enforcement —cambio de password, operaciones sensibles de
+   * usuarios y operaciones de wallet—, así que apagarlo acá cubre a los tres
+   * sin repetir el chequeo en cada uno.
+   *
+   * No se toca el dato en la DB: al reactivar la policy, quien tenía 2FA lo
+   * vuelve a tener.
+   */
   async isEnabled(db: TenantDb, userId: string): Promise<boolean> {
+    if (!this.twoFaPolicy.isEnabled()) return false;
     const rows = await db
       .select({ enabled: users.twoFaEnabled })
       .from(users)
