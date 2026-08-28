@@ -29,13 +29,16 @@ const STOPS_DESKTOP =
 /**
  * Viñeta lateral de mobile — deliberadamente MÁS SUAVE y MÁS CORTA que la de
  * desktop: en una pantalla chica la foto es casi todo el banner, y una sombra
- * larga se la tapaba. Arranca en .72 (no .9) y se apaga en el 70% del ancho.
+ * larga se la tapaba. Arranca en .5 (contra .94 de desktop) y se apaga en el
+ * 70% del ancho.
  *
  * Lo que sostiene la legibilidad del texto no es solo esta capa: también el
- * `textShadow` del título y la bajada, y el degradé vertical de mobile.
+ * `textShadow` del título y la bajada, y el degradé vertical de mobile. Si
+ * sobre alguna foto muy clara el texto costara leerse, el margen para subir
+ * está acá.
  */
 const STOPS_MOBILE =
-  'rgba(10,0,8,.72) 0%, rgba(10,0,8,.42) 34%, rgba(10,0,8,.08) 58%, rgba(10,0,8,0) 70%';
+  'rgba(10,0,8,.5) 0%, rgba(10,0,8,.28) 34%, rgba(10,0,8,.05) 58%, rgba(10,0,8,0) 70%';
 
 export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
   const [index, setIndex] = useState(0);
