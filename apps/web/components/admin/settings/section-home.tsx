@@ -55,10 +55,18 @@ export function SectionHome({ editor }: { editor: DesignEditorApi }) {
 
       {/* Slides */}
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold text-[var(--color-fg)] uppercase tracking-wide">
-            Slides del carrusel
-          </h3>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold text-[var(--color-fg)] uppercase tracking-wide">
+              Slides del carrusel
+            </h3>
+            <p className="mt-0.5 text-[11px] leading-snug text-[var(--color-fg-muted)]">
+              Subí una imagen por dispositivo: en el celular el banner es casi
+              cuadrado y en la computadora bien apaisado, así que la misma foto
+              no sirve para los dos. Usá <strong>WebP</strong> — pesa mucho
+              menos que JPG o PNG y carga más rápido.
+            </p>
+          </div>
           <button
             type="button"
             onClick={addSlide}
@@ -135,6 +143,16 @@ function SlideEditor({
                 <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
                   {type === 'imageDesktop' ? 'Desktop' : 'Mobile'}
                 </label>
+                {/* Medidas derivadas de la caja real del banner: 552px de
+                    alto a lo ancho del viewport en desktop, 372px en mobile
+                    (LobbyBanner). Como recorta con `object-cover`, lo que
+                    importa es la PROPORCIÓN — si no coincide, se come los
+                    costados o el alto. */}
+                <p className="mt-0.5 text-[10px] leading-snug text-[var(--color-fg-subtle)]">
+                  {type === 'imageDesktop'
+                    ? 'WebP · 1920×552 px (apaisada, 3.5:1)'
+                    : 'WebP · 1080×1080 px (cuadrada, 1:1)'}
+                </p>
                 <div className="mt-1 flex gap-2">
                   <input
                     value={slide[type] || ''}

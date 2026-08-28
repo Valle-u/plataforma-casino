@@ -58,25 +58,47 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
           redimensionado al viewport + WebP/AVIF (los banners de tenant venían
           a tamaño completo, varios MB). `priority` en el primero mejora el LCP;
           el resto quedan lazy. La opacity del wrapper hace el crossfade. */}
-      {slides.map((s, i) => (
-        <div
-          key={s.id}
-          aria-hidden
-          className={cn(
-            'absolute inset-0 transition-opacity duration-700 ease-out',
-            i === index ? 'opacity-100' : 'opacity-0',
-          )}
-        >
-          <Image
-            src={s.image}
-            alt=""
-            fill
-            priority={i === 0}
-            sizes="100vw"
-            className="object-cover"
-          />
-        </div>
-      ))}
+      {slides.map((s, i) => {
+        // Art direction: la caja del banner es casi cuadrada en mobile
+        // (~375x372) y muy apaisada en desktop (~1920x552). Con una sola
+        // foto, `object-cover` recortaba la version ancha y en el telefono
+        // se veia un pedazo del medio. El editor ya permitia subir una
+        // imagen mobile aparte — pero este componente nunca la usaba.
+        //
+        // Solo se renderiza la segunda <Image> si la mobile es DISTINTA de
+        // la de desktop: cuando el tenant deja la misma (el caso por
+        // defecto) se sigue bajando una sola.
+        const mobile = s.imageMobile && s.imageMobile !== s.image ? s.imageMobile : null;
+        return (
+          <div
+            key={s.id}
+            aria-hidden
+            className={cn(
+              'absolute inset-0 transition-opacity duration-700 ease-out',
+              i === index ? 'opacity-100' : 'opacity-0',
+            )}
+          >
+            <Image
+              src={s.image}
+              alt=""
+              fill
+              priority={i === 0}
+              sizes="100vw"
+              className={cn('object-cover', mobile && 'hidden lg:block')}
+            />
+            {mobile && (
+              <Image
+                src={mobile}
+                alt=""
+                fill
+                priority={i === 0}
+                sizes="100vw"
+                className="object-cover lg:hidden"
+              />
+            )}
+          </div>
+        );
+      })}
 
       {/* Capa 2 — viñeta lateral (desktop) / vertical (mobile). Las dos
           direcciones se renderizan siempre y se crossfadean por opacity: si
@@ -131,12 +153,13 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
           pase al Link; los indicadores reactivan pointer-events. */}
       <div
         className={cn(
-          'pointer-events-none relative z-20 flex h-full max-w-[88%] flex-col gap-3 px-[18px] pt-[104px] lg:max-w-[50%] lg:gap-[22px] lg:px-11 lg:pt-[126px]',
-          // Solo desde `lg`: en mobile el copy ocupa el 88% del ancho, así que
-          // moverlo de lado no cambia nada visible y encima empeora la lectura.
-          // Ahí se queda como estaba, y la viñeta mobile es vertical (no tiene
-          // lado). El selector es, en los hechos, una decisión de desktop.
-          alignRight && 'lg:ml-auto lg:items-end lg:text-right',
+          'pointer-events-none relative z-20 flex h-full max-w-[78%] flex-col gap-3 px-[18px] pt-[104px] lg:max-w-[50%] lg:gap-[22px] lg:px-11 lg:pt-[126px]',
+          // Aplica en TODOS los breakpoints (antes iba solo desde `lg`). Con
+          // el copy al 88% del ancho el lado casi no se notaba, así que en
+          // mobile se acota a 78%: ahí el izquierda/derecha se lee de verdad.
+          // La viñeta mobile es vertical, no tiene lado, así que sirve para
+          // los dos.
+          alignRight && 'ml-auto items-end text-right',
         )}
       >
         <div className="flex items-center gap-3">
