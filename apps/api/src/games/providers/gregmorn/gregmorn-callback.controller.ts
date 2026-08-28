@@ -127,6 +127,55 @@ export class GregmornCallbackController implements OnModuleInit {
       return this.reject(res, login, 'INVALID_CALLBACK_TOKEN');
     }
 
+    return this.process(tenant, headers, body, req, res);
+  }
+
+  /**
+   * Callback SIN token en la URL — ruta de compatibilidad.
+   *
+   * Es la URL que se le pasó al proveedor en el intake, antes de que existiera
+   * el token. Si ellos ignoran el `callbackUrl` que mandamos en cada `openGame`
+   * y usan la configurada en su panel, los callbacks caen acá. Sin esta ruta
+   * daban **404 sin dejar rastro**, porque Nest responde antes de llegar al
+   * controller: por eso el problema fue invisible en los logs.
+   *
+   * **Por qué es seguro:** solo resuelve si hay EXACTAMENTE UN tenant con
+   * Gregmorn configurado, y aun así **verifica la firma HMAC** contra la clave
+   * de ese tenant. El token nunca fue lo que autenticaba — solo elegía de quién
+   * era la clave, y con un único candidato esa elección es unívoca. Con dos o
+   * más tenants se rechaza por ambiguo y hay que usar la URL con token.
+   */
+  @Post('callback')
+  async handleCallbackWithoutToken(
+    @Headers() headers: Record<string, string | string[] | undefined>,
+    @Body() body: GregmornCallbackBody,
+    @Req() req: RawBodyRequest<{ rawBody?: Buffer }>,
+    @Res({ passthrough: true }) res: ResponseLike,
+  ): Promise<GregmornCallbackResponse> {
+    const login = body?.login ?? '';
+    this.logger.warn(
+      `Gregmorn callback SIN TOKEN en la URL: cmd=${body?.cmd} login=${login}. ` +
+        'Están usando la URL vieja del intake. Se resuelve por fallback de tenant único.',
+    );
+
+    const tenant = await this.resolveSoleTenant();
+    if (!tenant) return this.reject(res, login, 'INVALID_CALLBACK_TOKEN');
+
+    return this.process(tenant, headers, body, req, res);
+  }
+
+  /**
+   * Tramo común: verificar la firma contra la clave del tenant y procesar.
+   * Se llega acá con el tenant YA resuelto, por token o por fallback.
+   */
+  private async process(
+    tenant: Tenant,
+    headers: Record<string, string | string[] | undefined>,
+    body: GregmornCallbackBody,
+    req: RawBodyRequest<{ rawBody?: Buffer }>,
+    res: ResponseLike,
+  ): Promise<GregmornCallbackResponse> {
+    const login = body?.login ?? '';
     const tenantDb = this.tenantCache.get(tenant);
 
     // 2. Verificar la firma HMAC con la secret key de ESE tenant, sobre el body
@@ -173,6 +222,31 @@ export class GregmornCallbackController implements OnModuleInit {
 
     tokenCache.set(clean, tenant);
     return tenant;
+  }
+
+  /**
+   * Único tenant activo con Gregmorn configurado, o null si hay 0 o más de 1.
+   *
+   * Solo lo usa el fallback sin token. Se piden 2 filas a propósito: alcanza
+   * para saber si hay ambigüedad sin traer la tabla entera.
+   */
+  private async resolveSoleTenant(): Promise<Tenant | null> {
+    const rows = await this.controlDb
+      .select()
+      .from(tenants)
+      .where(
+        and(eq(tenants.status, 'active'), isNotNull(tenants.gregmornCallbackToken)),
+      )
+      .limit(2);
+
+    if (rows.length !== 1) {
+      this.logger.error(
+        `Callback sin token y ${rows.length} tenants con Gregmorn configurado. ` +
+          'El fallback solo resuelve con exactamente uno — el proveedor tiene que usar la URL con token.',
+      );
+      return null;
+    }
+    return rows[0]!;
   }
 
   /**

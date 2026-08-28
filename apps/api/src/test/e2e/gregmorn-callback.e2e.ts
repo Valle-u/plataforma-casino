@@ -347,6 +347,34 @@ describe('Gregmorn callback (E2E)', () => {
     expect(await readBalance(userId)).toBeCloseTo(before, 2);
   });
 
+  // ── Fallback sin token (URL vieja del intake) ─────────────────────
+
+  it('URL SIN token con firma válida → funciona por el fallback de tenant único', async () => {
+    const res = await callback(
+      ctx.request,
+      { cmd: 'getBalance', login: LOGIN, sessionid: 'sess-e2e-1' },
+      { route: '/api/v1/game-provider/gregmorn/callback' },
+    );
+    expect(res.status).toBe(200);
+    const body = res.body as CallbackBody;
+    expect(body.status).toBe('success');
+    expect(body.balance).toBe(await readBalance(userId));
+  });
+
+  it('URL SIN token con firma INVÁLIDA → 400 y NO mueve plata', async () => {
+    // Lo que autentica sigue siendo la firma, no el token: sin token el
+    // fallback resuelve el tenant, pero un tercero igual no puede firmar.
+    const before = await readBalance(userId);
+    const res = await callback(
+      ctx.request,
+      writeBet({ transactionId: 'tx-notoken-badsig-1', bet: 700 }),
+      { route: '/api/v1/game-provider/gregmorn/callback', tamper: true },
+    );
+    expect(res.status).toBe(400);
+    expect((res.body as CallbackBody).error).toMatch(/INVALID_SIGNATURE/);
+    expect(await readBalance(userId)).toBeCloseTo(before, 2);
+  });
+
   it('cmd desconocido → 400', async () => {
     const res = await callback(ctx.request, {
       cmd: 'transferirTodo',
