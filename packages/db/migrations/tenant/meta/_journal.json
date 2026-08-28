@@ -743,6 +743,13 @@
       "when": 1789300500000,
       "tag": "0104_gregmorn_transactions",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1789300600000,
+      "tag": "0105_commission_clawback",
+      "breakpoints": true
     }
   ]
 }

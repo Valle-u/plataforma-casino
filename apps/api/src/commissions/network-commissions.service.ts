@@ -632,6 +632,76 @@ export class NetworkCommissionsService {
         ownNet.set(r.userId, toCents(r.bet) - toCents(r.win));
       }
 
+      // ── Clawback: rondas anuladas DESPUÉS de liquidar su período ─────────
+      //
+      // Si el proveedor anula una ronda de un mes ya pagado, esa comisión ya
+      // salió de la tesorería y no se puede deshacer. Se descuenta acá, en el
+      // período **donde cae su `rolled_back_at`**, como si la ronda no hubiera
+      // existido.
+      //
+      // Por qué ese período y no otro: `rolled_back_at` es un timestamp fijo,
+      // así que la asignación es determinística. Recomputar mil veces da lo
+      // mismo — la idempotencia sale de la construcción, sin necesidad de
+      // llevar registro de "qué ya descontamos".
+      //
+      // **Solo si el período original está COMPLETAMENTE liquidado.** Si le
+      // queda alguna fila en `accrued`, recomputar ese período ya excluye la
+      // ronda (ahora es `rolled_back`) y descontarla acá sería hacerlo dos
+      // veces. Ante la duda no se descuenta: sub-corregir es recuperable,
+      // sobre-corregir le saca plata a un operador que no la debe.
+      const clawbackOwn = new Map<string, bigint>();
+      {
+        const byPeriod = await tx
+          .select({
+            periodStart: commissionNetworkPeriods.periodStart,
+            accrued: sql<number>`COUNT(*) FILTER (WHERE ${commissionNetworkPeriods.status} = 'accrued')::int`,
+          })
+          .from(commissionNetworkPeriods)
+          .groupBy(commissionNetworkPeriods.periodStart);
+
+        const liquidados = new Set(
+          byPeriod
+            .filter((p) => Number(p.accrued) === 0)
+            .map((p) => p.periodStart.toISOString().slice(0, 7)),
+        );
+
+        if (liquidados.size > 0) {
+          const anuladas = await tx
+            .select({
+              userId: gameRounds.userId,
+              origPeriod: sql<string>`to_char(date_trunc('month', ${gameRounds.settledAt} AT TIME ZONE 'UTC'), 'YYYY-MM')`,
+              net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
+            })
+            .from(gameRounds)
+            .where(
+              and(
+                eq(gameRounds.status, 'rolled_back'),
+                gte(gameRounds.rolledBackAt, periodStart),
+                lt(gameRounds.rolledBackAt, periodEnd),
+                lt(gameRounds.settledAt, periodStart),
+              ),
+            )
+            .groupBy(
+              gameRounds.userId,
+              sql`date_trunc('month', ${gameRounds.settledAt} AT TIME ZONE 'UTC')`,
+            );
+
+          for (const r of anuladas) {
+            if (!liquidados.has(r.origPeriod)) continue;
+            const cents = toCents(r.net);
+            if (cents === 0n) continue;
+            clawbackOwn.set(
+              r.userId,
+              (clawbackOwn.get(r.userId) ?? 0n) + cents,
+            );
+            // Se resta de la NetWin del jugador: el subtree lo propaga solo a
+            // toda la cadena de ancestros, y el diferencial reparte la
+            // reducción en la proporción que le toca a cada nivel.
+            ownNet.set(r.userId, (ownNet.get(r.userId) ?? 0n) - cents);
+          }
+        }
+      }
+
       // ── Excluir ramas independientes: poda el subtree de TODO usuario con
       //    is_independent_branch (sin importar el rol — más seguro que filtrar
       //    solo socios; un flag mal puesto en otro nivel igual poda). ─────────
@@ -877,6 +947,20 @@ export class NetworkCommissionsService {
         let total = isOperator(u) ? 0n : (ownNet.get(u) ?? 0n);
         for (const c of childrenMap.get(u) ?? []) total += subNetWin(c);
         subMemo.set(u, total);
+        return total;
+      };
+
+      // Espejo de subNetWin, solo para PODER AUDITARLO: `sub_net_win` ya viene
+      // neto del clawback, así que sin esta columna aparte un mes con
+      // anulaciones muestra una base más chica y no hay forma de saber por qué.
+      const clawMemo = new Map<string, bigint>();
+      const subClawback = (u: string): bigint => {
+        if (excluded.has(u)) return 0n;
+        const cached = clawMemo.get(u);
+        if (cached !== undefined) return cached;
+        let total = isOperator(u) ? 0n : (clawbackOwn.get(u) ?? 0n);
+        for (const c of childrenMap.get(u) ?? []) total += subClawback(c);
+        clawMemo.set(u, total);
         return total;
       };
 
@@ -1293,6 +1377,7 @@ export class NetworkCommissionsService {
             deductionsBankCost: fromCents(dedBank),
             deductionsPlatformCost: fromCents(dedPlatform),
             finalCommission: fromCents(finalCommission),
+            clawback: fromCents(subClawback(c.op)),
             rateSnapshot: c.rate,
             status: 'accrued',
           });

@@ -7931,3 +7931,64 @@ C3 de forma más fiel, no menos.
 que recomputar septiembre recalcula octubre con el arrastre nuevo; el de la tasa
 verifica que bajar el % hoy no cambia lo devengado en noviembre. Los 5 suites del
 motor (25 tests previos) siguen en verde.
+
+---
+
+## 2026-08-28 — Comisiones: clawback de rondas anuladas después de liquidar
+
+**Contexto**: tercer y último límite del motor de comisiones (los otros dos se
+cerraron en la entrada anterior). Si el proveedor anula una ronda de un período
+**ya pagado**, la comisión de esa jugada ya salió de la tesorería y no había
+forma de recuperarla: el operador cobró por una jugada que no existió y nada lo
+registraba.
+
+**Opciones consideradas**:
+- **A.** Revertir la liquidación del período viejo. Descartado: la plata ya salió
+  en efectivo por fuera del sistema (C4), no se puede "des-pagar".
+- **B.** Descontarlo del período abierto, como un ajuste negativo.
+- **C.** Guardar a qué tasa se pagó cada ronda para cancelar exacto. Descartado
+  por volumen de datos — es otro orden de magnitud.
+
+**Decisión**: **B**.
+
+**Cómo funciona**: la ronda se descuenta del período **donde cae su
+`rolled_back_at`**, como si nunca hubiera existido. Se resta de la NetWin del
+jugador, así el subtree lo propaga solo a toda la cadena de ancestros y el
+diferencial reparte la reducción en la proporción que le toca a cada nivel.
+
+**Por qué ese período y no otro**: `rolled_back_at` es un timestamp fijo, así que
+la asignación es **determinística**. Recomputar mil veces da lo mismo — la
+idempotencia sale de la construcción, sin llevar registro de "qué ya
+descontamos", que es justo el tipo de estado que se corrompe.
+
+**Guarda importante**: solo se descuenta si el período original está
+**completamente liquidado** (ninguna fila en `accrued`). Si le queda alguna,
+recomputar ese período ya excluye la ronda (ahora es `rolled_back`) y descontarla
+también acá sería corregir dos veces. **Ante la duda no se descuenta**:
+sub-corregir es recuperable, sobre-corregir le saca plata a un operador que no la
+debe.
+
+**Implicaciones**: columna nueva `clawback` en `commission_network_periods`
+(migración tenant `0105`, aditiva). El `sub_net_win` ya viene neto del descuento;
+la columna existe para poder auditarlo — mismo criterio que `provider_fee` (C4b):
+sin ella, un mes con anulaciones muestra una base más chica y no hay manera de
+saber por qué.
+
+**Aproximación conocida y aceptada**: el operador cobró esa ronda a la tasa de
+ENTONCES y el descuento se aplica a la tasa del período donde cae. Si la tasa
+cambió en el medio, no se cancela exacto. Con el snapshot de tasas (entrada
+anterior) las tasas son estables dentro de cada período, así que el desvío solo
+aparece si se cambia la tasa de un operador entre un mes y otro. Corregirlo del
+todo era la opción C.
+
+**Leyes**: C1, C3, C4. Ninguna se rompe — el clawback hace que la base refleje
+mejor el juego real, que es lo que C1 define como base.
+
+**Tests**: 2 nuevos en `commissions-network-engine.e2e.ts` — uno verifica el
+descuento completo (clawback visible, base neta, arrastre) y el otro que **NO** se
+descuente cuando el período original sigue en `accrued`. Los 5 suites del motor
+(29 tests) en verde.
+
+**Lo que sigue pendiente del motor**: la **estructura** de la red no tiene
+snapshot histórico — un recompute usa la jerarquía actual. Es el único de los
+límites originales que queda abierto, y el más caro (tabla de vigencias).

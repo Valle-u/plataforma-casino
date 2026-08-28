@@ -145,10 +145,11 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     carryover_in: string;
     carryover_out: string;
     payable: string;
+    clawback: string;
     status: string;
   } | null> {
     const r = await ctx.tenantDb.execute(
-      sql`SELECT sub_net_win, gross_commission, carryover_in, carryover_out, payable, status
+      sql`SELECT sub_net_win, gross_commission, carryover_in, carryover_out, payable, clawback, status
           FROM commission_network_periods
           WHERE operator_user_id = ${operatorId} AND period_start = ${periodStart.toISOString()}
           LIMIT 1`,
@@ -160,6 +161,7 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
         carryover_in: string;
         carryover_out: string;
         payable: string;
+        clawback: string;
         status: string;
       }>)[0] ?? null
     );
@@ -303,6 +305,85 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     expect(Number(rn.gross_commission)).toBeCloseTo(30, 2); // 10%·300
     expect(Number(res.totalNetWin)).toBeCloseTo(300, 2);
     expect(res.baseConsistency.ok).toBe(true);
+  });
+
+  it('clawback: una ronda anulada tras liquidar se descuenta del período abierto', async () => {
+    const prev = '2026-01';
+    const next = '2026-02';
+    const socio = await mkUser('claw_socio', 'socio');
+    const player = await mkUser('claw_player', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await setRate(socio.id, 10);
+
+    // Enero: dos jugadas ganadas por la casa. NetWin +2000 → comisión 200.
+    await insertRound(player.id, 1000, 0, 'settled', P(prev));
+    await insertRound(player.id, 1000, 0, 'settled', P(prev));
+    await compute(prev);
+    expect(Number((await getRow(socio.id, P(prev)))!.gross_commission)).toBeCloseTo(
+      200,
+      2,
+    );
+
+    // Se liquida enero: la plata ya salió, no hay vuelta atrás.
+    await ctx.tenantDb.execute(
+      sql`UPDATE commission_network_periods SET status = 'paid', paid_at = now()
+          WHERE period_start = ${P(prev).toISOString()}`,
+    );
+
+    // En febrero el proveedor anula UNA de las jugadas de enero.
+    await ctx.tenantDb.execute(
+      sql`UPDATE game_rounds
+            SET status = 'rolled_back', rolled_back_at = ${P(next).toISOString()}
+          WHERE user_id = ${player.id} AND status = 'settled'
+                AND settled_at >= ${P(prev).toISOString()}
+                AND settled_at < ${P(next).toISOString()}
+          AND id = (SELECT id FROM game_rounds
+                    WHERE user_id = ${player.id} AND status = 'settled' LIMIT 1)`,
+    );
+
+    // Febrero: NetWin propio +500, menos los 1000 anulados de enero → −500.
+    await insertRound(player.id, 500, 0, 'settled', P(next));
+    await compute(next);
+
+    const feb = (await getRow(socio.id, P(next)))!;
+    // El clawback queda a la vista, separado de la base.
+    expect(Number(feb.clawback)).toBeCloseTo(1000, 2);
+    expect(Number(feb.sub_net_win)).toBeCloseTo(-500, 2); // 500 − 1000
+    expect(Number(feb.gross_commission)).toBeCloseTo(-50, 2); // 10% de −500
+    expect(Number(feb.payable)).toBeCloseTo(0, 2); // negativo → arrastra
+    expect(Number(feb.carryover_out)).toBeCloseTo(-50, 2);
+
+    // Enero NO se tocó: ya estaba pagado.
+    const ene = (await getRow(socio.id, P(prev)))!;
+    expect(ene.status).toBe('paid');
+    expect(Number(ene.gross_commission)).toBeCloseTo(200, 2);
+  });
+
+  it('clawback: NO se descuenta si el período original sigue sin liquidar', async () => {
+    // Si queda alguna fila en `accrued`, recomputar ese período ya excluye la
+    // ronda anulada. Descontarla acá también sería corregir dos veces.
+    const prev = '2026-03';
+    const next = '2026-04';
+    const socio = await mkUser('claw2_socio', 'socio');
+    const player = await mkUser('claw2_player', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await setRate(socio.id, 10);
+
+    await insertRound(player.id, 1000, 0, 'settled', P(prev));
+    await compute(prev); // queda 'accrued', NO se liquida
+
+    await ctx.tenantDb.execute(
+      sql`UPDATE game_rounds
+            SET status = 'rolled_back', rolled_back_at = ${P(next).toISOString()}
+          WHERE user_id = ${player.id} AND status = 'settled'`,
+    );
+
+    await insertRound(player.id, 300, 0, 'settled', P(next));
+    await compute(next);
+
+    const abr = (await getRow(socio.id, P(next)))!;
+    expect(Number(abr.clawback)).toBeCloseTo(0, 2);
+    expect(Number(abr.sub_net_win)).toBeCloseTo(300, 2); // sin descuento
   });
 
   it('recomputar un período viejo recomputa EN CASCADA los posteriores', async () => {

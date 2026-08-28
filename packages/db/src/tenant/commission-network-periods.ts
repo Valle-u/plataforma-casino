@@ -88,6 +88,30 @@ export const commissionNetworkPeriods = pgTable(
       .notNull()
       .default('0'),
 
+    /**
+     * Clawback: NetWin de rondas que se ANULARON después de que su período
+     * original ya se había liquidado.
+     *
+     * Cuando el proveedor anula una ronda de un mes ya pagado, la comisión de
+     * esa jugada ya salió y no hay forma de deshacerla. En vez de eso, la ronda
+     * se descuenta del período **donde cae su `rolled_back_at`**, como si nunca
+     * hubiera existido: `sub_net_win` de este período ya viene neto de este
+     * monto.
+     *
+     * Se guarda aparte para poder auditarlo — mismo criterio que
+     * `provider_fee`: sin esta columna, un mes con clawback muestra una base más
+     * chica y no hay manera de saber por qué.
+     *
+     * Positivo = se descontó ese NetWin. 0 = no hubo anulaciones tardías.
+     *
+     * ⚠️ Aproximación conocida: el operador cobró esa ronda a la tasa de
+     * ENTONCES y el descuento se aplica a la tasa del período donde cae. Si la
+     * tasa cambió en el medio, no se cancela exacto. Ver DEVLOG 2026-08-28.
+     */
+    clawback: numeric('clawback', { precision: 20, scale: 2 })
+      .notNull()
+      .default('0'),
+
     /** Comisión bruta del período (puede ser negativa). */
     grossCommission: numeric('gross_commission', { precision: 20, scale: 2 })
       .notNull()
