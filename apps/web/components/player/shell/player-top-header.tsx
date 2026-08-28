@@ -6,13 +6,17 @@
  * En el HOME (/play) es translúcido y flota SOBRE el banner a sangre (sin fondo
  * ni borde, con un scrim sutil para legibilidad). En el resto de las páginas es
  * sólido, como antes. El saldo/depósito se mudaron al bloque de billetera del
- * sidebar; acá solo queda: buscador + campana + avatar (auth) o botones de
- * login/registro (guest). Sin chip de nivel VIP.
+ * sidebar; acá solo queda: campana + avatar (auth) o botones de login/registro
+ * (guest). Sin chip de nivel VIP.
+ *
+ * El buscador global vivía acá y se quitó por decisión del dueño (2026-08-27):
+ * no lo quiere en el header, aunque estuviera funcionando. Buscar juegos sigue
+ * disponible desde el buscador propio del lobby (`/play/lobby`), que además es
+ * el que recibía el término por `?q=`.
  */
 
-import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { LogIn, UserPlus, Search } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { UserMenu } from './user-menu';
@@ -21,18 +25,7 @@ import { NotificationsDropdown } from '@/components/player/notifications-dropdow
 export function PlayerTopHeader() {
   const { user, openLoginModal, openRegisterModal } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
   const isHome = pathname === '/play';
-
-  // Buscador global: al enviar (Enter) lleva al lobby con el término en la URL
-  // (?q=). El lobby lo lee y lo aplica (juegos + proveedores). Estado local; no
-  // usa useSearchParams para no forzar un Suspense boundary en el layout.
-  const [q, setQ] = useState('');
-  const submitSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const term = q.trim();
-    router.push(term ? `/play/lobby?q=${encodeURIComponent(term)}` : '/play/lobby');
-  };
 
   return (
     <header
@@ -55,24 +48,8 @@ export function PlayerTopHeader() {
         />
       )}
 
-      {/* Buscador global (Enter → /play/lobby?q=…). */}
-      <form
-        onSubmit={submitSearch}
-        role="search"
-        className="flex h-[38px] min-w-0 max-w-[480px] flex-1 basis-[340px] items-center gap-2 rounded-[11px] border border-white/15 bg-[rgba(10,0,8,.45)] px-3 backdrop-blur-sm transition-colors duration-200 focus-within:border-[var(--color-accent-border)]"
-      >
-        <Search size={16} className="shrink-0 text-[var(--color-fg-subtle)]" aria-hidden="true" />
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Buscar juegos, proveedores…"
-          aria-label="Buscar juegos, proveedores"
-          className="min-w-0 flex-1 whitespace-nowrap bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none"
-        />
-      </form>
-
-      {/* Cluster derecho. */}
+      {/* Cluster derecho — único contenido del header desde que se quitó el
+          buscador. El `ml-auto` lo mantiene alineado a la derecha. */}
       {user ? (
         <div className="ml-auto flex items-center gap-2">
           <NotificationsDropdown active={pathname === '/play/notifications'} pathname={pathname} />
