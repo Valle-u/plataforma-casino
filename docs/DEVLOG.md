@@ -7810,3 +7810,56 @@ frágil (React puede revertir atributos en re-commit).
 **Alternativa abierta**: si algún tenant quedara sin favicon y molestara el default
 del browser, inyectar el favicon de plataforma client-side (como hace
 `applyPanelFavicon` para el admin) en vez de re-declararlo en metadata.
+
+---
+
+## 2026-08-28 — Rollback de Gregmorn: devuelve plata REAL aunque la apuesta se haya pagado con bono
+
+**Contexto**: al integrar el 3er proveedor (Gregmorn Hub, seamless) surgió la
+pregunta de cómo convive con la wallet de bonos. El comportamiento actual es:
+
+- El proveedor ve **un solo número**: `(balance − locked) + bonus`. No sabe qué
+  parte es bono, y no tiene por qué saberlo.
+- La apuesta va por `placeBetWithBonusExternal` → **bonus-first**: consume bono
+  primero y después balance real, partiendo la operación en dos filas
+  (`bonus_debit` + `bet`) cuando hace falta.
+- El premio se acredita **siempre al balance real** (`mintExternal`, type `win`),
+  nunca al bono. Es como el bono se convierte en dinero jugando.
+
+**El problema**: el `rollback` también acredita al **balance real**. Si una
+apuesta se pagó con bono y el estudio anula la ronda, el jugador recibe **plata
+real donde antes tenía bono**, sin haber jugado. Es una conversión gratis de
+bono a dinero.
+
+Aplica igual a Forever, que tiene la misma mecánica con su `txnType=2` (cancel).
+No es específico de Gregmorn.
+
+**Opciones consideradas**:
+- **A.** Dejarlo. Consistente con Palace y Forever; los rollbacks son raros.
+- **B.** Devolver al bono lo que salió del bono. Contablemente correcto, pero
+  `gregmorn_transactions` hoy guarda **solo el monto total** de la apuesta, no
+  cómo se partió. Habría que persistir el split (o leerlo de
+  `wallet_transactions` por la idempotency key, con la complicación de que
+  cuando la apuesta se parte **solo la fila `bonus_debit` lleva la key**; la de
+  `bet` va con `idempotency_key = null`).
+- **C.** Anotarlo y decidir cuando aparezca el primer caso real.
+
+**Decisión**: **C**, por ahora.
+
+**Razón**: es un caso de borde (requiere que un estudio anule una ronda pagada
+con bono), la plataforma todavía no tiene jugadores reales, y tocar el reparto
+bono/real de la wallet es de las cosas más delicadas del sistema. El riesgo de
+romper algo al apurar el fix supera hoy al de la fuga.
+
+**Implicaciones**: ninguna en el código. `gregmorn-callback.service.ts`
+(`handleRollback`) devuelve el monto que figura en `gregmorn_transactions.bet`
+vía `mintExternal`, es decir siempre como balance real.
+
+**Alternativa abierta**: sí, totalmente reversible. Si se elige la opción B, el
+cambio es: agregar columnas `bet_from_bonus` / `bet_from_balance` a
+`gregmorn_transactions`, poblarlas desde el resultado de
+`placeBetWithBonusExternal`, y que el rollback acredite cada parte a su columna.
+Conviene hacerlo para Forever y Gregmorn a la vez, porque comparten la mecánica.
+
+**Disparador para revisarlo**: el primer rollback real en producción, o el
+primer jugador con bono activo jugando a un proveedor seamless.
