@@ -91,6 +91,29 @@ async function seedGame(): Promise<void> {
   }
 }
 
+/** Rondas registradas para un `round_external_id` (ya normalizado, sin `_N`). */
+async function readRounds(
+  roundExternalId: string,
+): Promise<{ bet: number; win: number; net: number; status: string }[]> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<
+      { bet_amount: string; win_amount: string; net_amount: string; status: string }[]
+    >`
+      SELECT bet_amount, win_amount, net_amount, status
+      FROM game_rounds WHERE round_external_id = ${roundExternalId}
+    `;
+    return rows.map((r) => ({
+      bet: Number(r.bet_amount),
+      win: Number(r.win_amount),
+      net: Number(r.net_amount),
+      status: r.status,
+    }));
+  } finally {
+    await sql.end();
+  }
+}
+
 /** POST firmado al callback. `opts.tamper` rompe la firma; `opts.route` la pisa. */
 function callback(
   request: TestApp['request'],
@@ -226,6 +249,43 @@ describe('Gregmorn callback (E2E)', () => {
     expect(res.status).toBe(200);
     expect((res.body as CallbackBody).status).toBe('success');
     expect(await readBalance(userId)).toBeCloseTo(after, 2);
+  });
+
+  // ── Un spin en DOS callbacks (roundId sufijado _0 / _1) ───────────
+
+  it('dos callbacks del mismo spin → UNA sola ronda, con los montos sumados', async () => {
+    // Es como llega de verdad: el proveedor parte el spin en dos, con el
+    // roundId sufijado. Antes esto creaba dos rondas y el conteo salía doble.
+    const roundBase = '1349484390';
+
+    await callback(
+      ctx.request,
+      writeBet({
+        transactionId: 'tx-round-split-bet',
+        bet: 200,
+        roundId: `${roundBase}_0`,
+        round_finished: false,
+      }),
+    );
+    await callback(
+      ctx.request,
+      writeBet({
+        transactionId: 'tx-round-split-win',
+        bet: 0,
+        win: 100,
+        roundId: `${roundBase}_1`,
+        round_finished: true,
+      }),
+    );
+
+    const rounds = await readRounds(roundBase);
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({
+      bet: 200,
+      win: 100,
+      net: -100,
+      status: 'settled',
+    });
   });
 
   // ── Trampa #2: montos en string ───────────────────────────────────

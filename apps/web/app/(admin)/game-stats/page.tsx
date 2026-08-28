@@ -943,10 +943,14 @@ function RoundRowComp({ row }: { row: RoundRow }) {
               : 'text-[var(--color-fg-muted)]',
         )}
       >
+        {/* La flecha sigue el signo del número que se muestra, que es el neto
+            DEL JUGADOR. Antes iba al revés (ganancia → flecha abajo) porque
+            estaba pensada desde el lado del casino, y chocaba con el número y
+            el color de la misma celda, que sí son del lado del jugador. */}
         {isWin ? (
-          <ArrowDown className="size-3" />
-        ) : net < 0 ? (
           <ArrowUp className="size-3" />
+        ) : net < 0 ? (
+          <ArrowDown className="size-3" />
         ) : null}
         {isWin ? '+' : ''}
         {row.netAmount}

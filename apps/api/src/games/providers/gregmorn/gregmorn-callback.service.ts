@@ -372,9 +372,21 @@ export class GregmornCallbackService {
    * y comisiones) cuente las jugadas de Gregmorn igual que las de Palace y
    * Forever.
    *
-   * Más simple que el de Forever: Gregmorn manda bet y win en el MISMO callback,
-   * así que el round se resuelve en una sola escritura en vez de ligar dos
-   * patas por `wagerId`.
+   * ⚠️ **Un spin puede llegar en DOS callbacks.** Se descubrió probando en
+   * producción (2026-08-28): el proveedor manda `roundId` sufijado —
+   * `1349484390_0` para la apuesta y `1349484390_1` para el cierre— y la
+   * versión original los trataba como rondas distintas. Resultado: el conteo de
+   * rondas salía al doble, las filas `_0` quedaban en `placed` para siempre, y
+   * aparecían rondas absurdas con apuesta 0 y premio 100.
+   *
+   * Los TOTALES de plata daban bien igual (la apuesta en una fila, el premio en
+   * la otra), así que NGR y comisiones nunca estuvieron mal — lo que no servía
+   * era la granularidad por ronda ni el RTP.
+   *
+   * Por eso el id se normaliza y el segundo callback **actualiza** la ronda en
+   * vez de crear otra, acumulando montos. Es seguro acumular: el caller ya
+   * descartó los duplicados por `idempotency_key` antes de llegar acá, así que
+   * cada callback pasa por esta función a lo sumo una vez.
    */
   private async syncGameRound(
     db: TenantDb,
@@ -385,7 +397,9 @@ export class GregmornCallbackService {
     const providerGameId = body.gameId;
     if (!providerGameId) return; // sin gameId no se puede mapear el juego
 
-    const roundExternalId = (body.roundId ?? body.transactionId ?? '').trim();
+    const roundExternalId = normalizeRoundId(
+      (body.roundId ?? body.transactionId ?? '').trim(),
+    );
     if (!roundExternalId) return;
 
     // El sync guarda el gameId crudo en games.config.gregmorn.gameId.
@@ -422,7 +436,11 @@ export class GregmornCallbackService {
     }
 
     const [existing] = await db
-      .select({ id: gameRounds.id })
+      .select({
+        id: gameRounds.id,
+        betAmount: gameRounds.betAmount,
+        winAmount: gameRounds.winAmount,
+      })
       .from(gameRounds)
       .where(
         and(
@@ -431,7 +449,28 @@ export class GregmornCallbackService {
         ),
       )
       .limit(1);
-    if (existing) return; // ya registrado — append-only, no se muta
+
+    const finished = body.round_finished === true;
+
+    // Segundo callback del mismo spin: se acumula sobre la ronda que ya existe.
+    if (existing) {
+      const bet = Number(existing.betAmount) + p.bet;
+      const win = Number(existing.winAmount) + p.win;
+      await db
+        .update(gameRounds)
+        .set({
+          betAmount: bet.toFixed(2),
+          winAmount: win.toFixed(2),
+          netAmount: (win - bet).toFixed(2),
+          status: finished ? 'settled' : 'placed',
+          // El wallet tx del bet suele venir en el primer callback; no pisarlo
+          // con null si el segundo no trae ninguno.
+          ...(p.betWalletTxId ? { betWalletTxId: p.betWalletTxId } : {}),
+          ...(finished ? { settledAt: new Date() } : {}),
+        })
+        .where(eq(gameRounds.id, existing.id));
+      return;
+    }
 
     await db.insert(gameRounds).values({
       sessionId: session.id,
@@ -441,10 +480,11 @@ export class GregmornCallbackService {
       betAmount: p.bet.toFixed(2),
       winAmount: p.win.toFixed(2),
       netAmount: (p.win - p.bet).toFixed(2),
-      status: body.round_finished === true ? 'settled' : 'placed',
+      status: finished ? 'settled' : 'placed',
       betWalletTxId: p.betWalletTxId,
       payload: body,
       placedAt: new Date(),
+      ...(finished ? { settledAt: new Date() } : {}),
     });
   }
 
@@ -543,6 +583,20 @@ export class GregmornCallbackService {
  * obligatorios en su spec, así que su ausencia es una violación del protocolo,
  * no un cero implícito.
  */
+/**
+ * Saca el sufijo `_N` del `roundId` del proveedor.
+ *
+ * Ellos parten un spin en dos callbacks: `1349484390_0` (apuesta) y
+ * `1349484390_1` (cierre). El id real de la ronda es la parte de la izquierda.
+ *
+ * ⚠️ Si algún estudio usara un `roundId` que legítimamente termina en `_<n>`,
+ * esto colapsaría rondas distintas en una. No se vio en ningún estudio de los
+ * probados (EGT, ELK, Pragmatic), pero es el supuesto sobre el que se apoya.
+ */
+export function normalizeRoundId(raw: string): string {
+  return raw.replace(/_\d+$/, '');
+}
+
 export function parseAmount(value: unknown): number | null {
   if (value === undefined || value === null) return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
