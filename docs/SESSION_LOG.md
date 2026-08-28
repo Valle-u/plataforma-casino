@@ -13069,3 +13069,105 @@ Todos verificados con `pnpm type-check` (5/5) y lint (0 errores, las 318 warning
   1. `CLAUDE.md:49` pide mensajes de commit **en inglés**, pero toda la historia reciente está en español. Se siguió la historia. Hay que alinear una de las dos.
   2. `docs/24-entornos-deploy.md` describe el flujo `staging` → `main`, pero `staging` no tiene remoto y hace sesiones que se commitea directo a `main`. El doc no refleja la práctica.
 - **Gotcha del entorno de agente**: con el panel del navegador oculto, Chrome **no despacha eventos `scroll` ni avanza transiciones CSS** (el compositor no produce frames). Dos veces pareció un bug del código y no lo era. Si algo "no reacciona", verificalo despachando el evento a mano o con `transition: none` antes de diagnosticar.
+
+---
+
+## [2026-08-28 15:20 AR] — Claude Code (Opus 5)
+
+**Duración**: ~larga, continuación directa de la sesión del 2026-08-27.
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**1. Auditor de UI mobile — herramienta nueva, es lo más importante de la sesión.**
+Las mediciones a mano subestimaban y no había forma de saberlo: una página solo renderiza la pestaña/sección abierta, así que auditar la vista inicial deja el resto afuera. En `/settings` eso daba **19 targets cuando en realidad hay ~130** repartidos en 10 secciones. Todas las páginas con tabs estaban mal medidas por lo mismo.
+
+`pnpm --filter @casino/e2e audit:mobile` (`8d5d681`) recorre 23 rutas del panel y 10 del jugador a 375×812. Tres cosas que la medición ingenua hacía mal:
+- **Recorre estados**: descubre conmutadores (tabs, rails, filtros) y los clickea midiendo en cada uno.
+- **No clickea lo que no debe**: exige visibilidad real, excluye submits y verbos de acción, descarta clicks que naveguen, y cierra overlays entre clicks.
+- **Mide el área efectiva**, no la caja: suma pseudo-elementos absolutos con insets negativos y el `<label>` envolvente que delega el foco.
+
+Y sobre todo **reporta lo que no pudo alcanzar** (`estados visitados / total` + lista de pendientes). Un "0 targets" con conmutadores sin visitar ya no se muestra como ruta limpia.
+
+El auditor se arregló a sí mismo dos veces, y las dos las delató su propio reporte de cobertura:
+- `b30d4f2`: el matcher de conmutadores perdía ~24 estados. Tercera versión: `hasText` era substring ("Apariencia" agarraba "Apariencia del panel"), `getByRole(name, exact)` usa el nombre accesible que no siempre es el textContent. Quedó regex anclado sobre textContent. **Jugador pasó de 104 targets a 132 con cobertura completa.**
+- `6ccfa28`: **el auditor estaba intentando apretar "Cargar" y "Retirar" en /users** — operaciones de wallet. No movió plata, pero se cerró: lista de verbos ampliada + filtro por forma (se descartan botones con `aria-label` distinto del texto visible, que delata una acción). Consecuencia aceptada: los estados que solo se alcanzan por un botón de acción no se auditan.
+
+**2. Barrido de tap targets y overflows.**
+Números reales con el auditor arreglado: **panel 98 targets en 23 rutas** (el matcher roto decía 37), **jugador 132 en 10 rutas**.
+
+Arreglado en esta tanda: appbar del jugador (`dd1e5d6`, 3 controles × 11 rutas), indicadores del banner de 34×3 con `::after` a 44×44 sin ocupar layout (`e6e34a2`), `/wallet-stats` de 20 a 1 (`7cf3fa0`), inputs y selects de los primitivos + 6 copias que no heredaban (`c8d9088`), botones de Ajustes (`d6e44bd`), y los huecos que dejó el barrido anterior (`4126faf`).
+
+**Cuatro overflows horizontales reales**, tres de ellos encontrados por la herramienta y no a ojo:
+- `7e12ea9` — footer sticky de Ajustes: `-mx-5 -mb-4` cancelando un padding que a su nivel no existe. Único desborde de la vista inicial del panel.
+- `c01b34d` — "Home del jugador" desbordaba **154px**: `input flex-1` sin `min-w-0`, que no baja de su ancho intrínseco.
+- `d8ce414` — `/integrity` "Cuentas duplicadas": tira de filtros sin migrar que ni envuelve ni scrollea.
+- `ef1eaf7` — acciones de la tarjeta de transferencia: "Borrar" quedaba entero fuera de la tarjeta.
+
+**Con esto no queda ninguna ruta con overflow horizontal, ni en panel ni en jugador.**
+
+**3. Banners del jugador.**
+- `ffbb4b4` — **la imagen mobile por fin se usa.** El editor la dejaba subir desde hace tiempo pero `LobbyBanner` siempre pintaba `s.image` (la de desktop): el dato viajaba y se ignoraba. Ese era el motivo de fondo de que "los banners no se vean bien" en el teléfono. Además el lado del texto pasa a aplicar en mobile (revierte `fc1bd4b`) e indicaciones de formato/medida en cada campo de subida.
+- `57b6871`, `f847149`, `569b765` — la viñeta lateral ahora acompaña al texto también en mobile, con stops propios (el copy ocupa 78% del ancho contra 50% en desktop), y después se aflojó dos veces a pedido hasta `.5`.
+
+**4. Preview de diseño.**
+`ca8b773` — se cortaba al medio en mobile: sidebar decorativo fijo en 180px que se comía el 60% del contenedor. `d3335cd` — ahora refleja la home real: banner a sangre con la foto del slide, franja "Ganando ahora", categorías y bottom nav con los nombres reales. Antes configurabas banners **sin ver la imagen que elegías**.
+
+**5. 2FA apagado en toda la plataforma (`2051e6c`).** Ver "Decisiones tomadas".
+
+**6. `cb1de2c`** — el panel de avisos se cortaba 60px: `absolute right-0` lo alineaba al borde de la campana, no del viewport.
+
+**7. `fff5640`** — se quitó el buscador del header del jugador por decisión del dueño (funcionaba; ver "Decisiones").
+
+**8. Gregmorn Hub — proveedor nuevo.** Se revisó el OpenAPI completo, se definió el modelo de integración y se mandaron las preguntas. **Respondieron y desbloquearon el arranque** — ver "Notas para próximo agente".
+
+### Decisiones tomadas
+
+- **2FA APAGADO en toda la plataforma** (decisión del dueño). Es reversible: se apaga y se oculta, no se borra. `TWO_FA_POLICY_ENABLED` pasa a ser el interruptor maestro con default **desactivado** — antes el default era ACTIVADO cuando la variable faltaba, así que un entorno sin setearla encerraba a todos los operadores. Revierte una decisión de seguridad documentada en `docs/12-seguridad-compliance.md` (2FA obligatorio de cajero para arriba); NO está en `LEYES.md`, así que no requirió excepción formal.
+- **`Button` compartido**: `md`/`lg`/`icon` a 44px en mobile, `sm` a 36px. El `sm` vive en filas de tabla y acciones de card, donde 44 rompe el layout. Alcanza también a los 17 usos en `/play`.
+- **`docs/10-panel-control.md` §2.2 corregido** (`< md` → `< lg`): se corrigió el DOC, no el código. A 800px la data del panel es demasiado densa para convivir con un sidebar fijo.
+- **El lado del texto del banner ahora aplica en mobile**, revirtiendo la decisión del 2026-08-27. El copy se acota a 78% del ancho para que el lado se note.
+- **Gregmorn: modelo seamless, no transfer.** El transfer implicaría empujarles fichas con `userCash`, y la plata viviría en la wallet de ellos — rompe **E1 y E2**.
+
+### Commits creados
+
+23, de `7e12ea9` a `2051e6c`. Los estructurales: `8d5d681` (auditor), `2051e6c` (2FA off), `ffbb4b4` (banner mobile), `d3335cd` (preview), `c8d9088` (inputs/selects), y los cuatro fixes de overflow.
+
+Todos con `pnpm type-check` 5/5 y lint sin errores nuevos.
+
+### Estado al cerrar
+
+- **Fase actual**: MVP en prod. Cerrados los ítems soft de Fase 6 sobre mobile del panel y buena parte de a11y.
+- **Próximo paso lógico**: **DEPLOY**, y arrancar el conector de Gregmorn (ya está desbloqueado).
+- **Bloqueos**: el token de Dokploy sigue muerto (401).
+
+### Notas para próximo agente
+
+- **⚠️ 29 COMMITS SIN DEPLOYAR, y ahora bloquea a un usuario real.** `usertest_1` no puede entrar hasta que se deploye el apagado del 2FA. Ninguno de los 29 trae migración. Se intentó por API varias veces: el `CASINO_DOKPLOY_TOKEN` da 401. El endpoint correcto es `https://dokploy.miamihub.vip/api` (el `:3000` del doc está muerto).
+- **⚠️ SEGURIDAD: hay una API key personal de Bitwarden expuesta.** Se pegó en el chat por error al intentar pasar el token de Dokploy. **Rotarla** (Configuración de la cuenta → Seguridad → Claves → Rotar). También quedó un token de Dokploy expuesto en el historial de PowerShell. Sigue pendiente lo de rotar los secretos de prod (JWT, DB, R2) que viene del 26/8.
+- **El bug del 2FA era un callejón sin salida, no un error puntual.** Backend y BFF lo soportan; `auth-context.login()` nunca aceptó un código y ningún formulario lo muestra. No se podía entrar, ni desactivarlo (exige sesión + código), ni pedirle a un admin que lo resetee — **ese endpoint no existe**. Y el docblock de `auth-context.tsx` describía el flujo como si funcionara: esa mentira es la razón de que nadie lo notara. **Para reactivar el 2FA hay que construir el paso del código en los formularios PRIMERO.**
+- **DB local con drift de esquema**: `referral_codes` existe pero no está en el journal (83 registradas de 104 archivos), así que `db:migrate:tenants` aborta. Se aplicó a mano la columna `matched_manual_tx_id` (migración 0093) para desbloquear `/bank-transactions`. Arreglarlo de fondo requiere resetear el tenant demo — destructivo, pendiente de decisión.
+- **La auditoría del modelo INDEPENDIENTE sigue sin hacerse**, por lo anterior: activar `is_independent_branch` falla.
+- **Límites conocidos del auditor**: no detecta **contenido clipeado** dentro de un contenedor recortado (así se escaparon la tarjeta de transferencia y el panel de avisos), ni mide overlays/desplegables. Sería un buen tercer criterio junto al overflow y los tap targets.
+- **Tests**: `two-fa-policy.e2e` tiene **2 fallas preexistentes** (burn devuelve 409 y `GET /tenant/users` 200, en vez de 403). Verificado con baseline en stash: ya fallaban antes de tocar nada. Hay un bug latente en el guard de policy. `pnpm --filter @casino/api lint` **también falla de antes** (achievements, chat, palace).
+- **Gotcha de tests**: correr el suite del API repetidas veces dispara un **rate limiter con backoff progresivo** (llegó a 13 min de espera) y todo falla con 429 disfrazado de error de lógica. Correr con `RATE_LIMIT_ENABLED=false`.
+
+#### GREGMORN HUB — desbloqueado, listo para codear
+
+Ya respondieron. Lo confirmado:
+- **Soportan ARS.** Era el bloqueante; queda descartado.
+- **Su IP de callbacks: `3.78.156.229`.** Hay que **agregarla a la allow-list de Cloudflare** — sin eso el WAF puede tirarles challenges. Es una sola IP: si mañana suman servidores, los callbacks se caen sin aviso. Vale confirmarles si habrá más.
+- **Se puede pasar `callbackUrl` en cada `openGame`**, así que no dependemos de su config por moneda del panel.
+- Van a mandar login, password y secret key. **Esas credenciales NO deben pasar por el chat**: van directo al env de la app en Dokploy.
+
+**NO respondieron la pregunta del `rollback`, que es la técnicamente crítica.** Su doc dice que el rollback llega con el **MISMO `transactionId`** que el bet. Si se usa crudo como `idempotency_key`, el rollback se ve como duplicado y se ignora en silencio — los jugadores no recuperarían la plata de rondas anuladas. **Re-preguntar antes de codear la wallet**, y mientras tanto namespacear con `cmd + transactionId`.
+
+Otras dos del spec para no comerse:
+- `bet` y `win` pueden venir **número o string** (ellos avisan que algunos vendors usan string). Asumir número es un bug de plata silencioso.
+- `getBalance` con HTTP 400 **no es saldo 0**: prohíben usar cacheado o default.
+
+El `openapi.json` está en `~/Downloads`. El PDF que circuló está **truncado** y le falta justo el `rollback` — usar el JSON o el HTML, no el PDF.
+
+**`rawBody: true` ya está activo globalmente** en `main.ts` y el controller de Forever ya verifica firmas sobre el body crudo, así que el HMAC-SHA256 de Gregmorn tiene poca fricción. El conector va en `apps/api/src/games/providers/gregmorn/` siguiendo el patrón de Forever.
+
+- **Forever**: sin cambios, sigue bloqueado del lado de ellos.
