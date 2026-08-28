@@ -302,13 +302,12 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     })
     .max(500, { message: 'game_provider.gregmorn.callback_url muy larga (máx 500).' }),
 
-  // ¿Se manda `callbackUrl` en cada `openGame`?
+  // ¿Se manda `callbackUrl` en cada `openGame`? **Default TRUE** (ausente = sí).
   //
-  // Default FALSE. El proveedor pidió el 2026-08-28 que dejáramos de mandarlo:
-  // su sistema ignora el campo y usa solo la URL configurada en su panel, pese
-  // a que antes habían confirmado por escrito que el override por request
-  // funcionaba. Este interruptor deja volver a probarlo sin tocar código
-  // cuando su equipo lo arregle.
+  // Se probó lo contrario el 2026-08-28 a pedido del proveedor y su `openGame`
+  // pasó a fallar con `HTTP 500 "invalid callback url from API"`: su sistema SÍ
+  // lee el campo, y sin nuestra URL no tiene ninguna válida. Existe solo como
+  // escotilla de escape para volver a apagarlo sin deploy.
   'game_provider.gregmorn.send_callback_url': z.boolean(),
 
   // A dónde vuelve el jugador al cerrar el juego (`openGame.exitUrl`, obligatorio

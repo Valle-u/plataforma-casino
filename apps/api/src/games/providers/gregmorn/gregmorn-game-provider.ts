@@ -67,23 +67,26 @@ export class GregmornGameProvider implements IGameProvider {
     const get = (key: string) =>
       this.settings.get<string>(tenantDb, `game_provider.gregmorn.${key}`);
 
-    // URL de callbacks de wallet.
+    // URL de callbacks de wallet. **Se manda siempre, salvo que se apague.**
     //
-    // ⚠️ **Por default NO se manda en el openGame.** El proveedor nos pidió
-    // explícitamente dejar de mandarla el 2026-08-28: su sistema ignora el
-    // campo y usa únicamente la configurada en el panel de ellos. Antes de eso
-    // habían confirmado por escrito que el override por request funcionaba —
-    // no funciona. Ver docs/gregmorn/99-integration-plan.md.
+    // Historia, porque el ida y vuelta fue confuso (2026-08-28):
+    //   1. La mandábamos y el juego abría, pero no llegaba ningún callback.
+    //   2. El proveedor dijo que su sistema ignoraba el campo y pidió que
+    //      dejáramos de mandarla. Se apagó.
+    //   3. Sin ella, el `openGame` pasó a fallar con
+    //      `HTTP 500 "invalid callback url from API"` — o sea que su sistema SÍ
+    //      la lee, y sin nuestra URL no tiene ninguna válida.
+    //   4. La causa real de (1) era otra: **Bot Fight Mode de Cloudflare**
+    //      estaba desafiando los callbacks entrantes en el borde. Los dos
+    //      problemas eran independientes y se enmascaraban entre sí.
     //
-    // El setting `send_callback_url` deja volver a mandarla sin tocar código,
-    // para cuando su equipo lo arregle. La `callback_url` se sigue guardando
-    // igual porque es la que hay que darles para cargar en su panel, y la que
-    // muestra el diagnóstico.
+    // El setting `send_callback_url` queda para poder apagarla sin deploy si
+    // ellos alguna vez piden lo contrario. Default: mandarla.
     const sendCallbackUrl =
       (await this.settings.get<boolean>(
         tenantDb,
         'game_provider.gregmorn.send_callback_url',
-      )) === true;
+      )) !== false;
 
     let callbackUrl: string | undefined;
     if (sendCallbackUrl) {

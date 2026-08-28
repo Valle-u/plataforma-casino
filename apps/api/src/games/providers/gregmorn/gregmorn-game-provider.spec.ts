@@ -79,14 +79,14 @@ describe('GregmornGameProvider.launchGame', () => {
       // El id CRUDO con los `:`, no el games.code sanitizado.
       gameId: RAW_GAME_ID,
       exitUrl: EXIT_URL,
+      // Se manda por default: sin ella su openGame falla con
+      // "invalid callback url from API".
+      callbackUrl: CALLBACK_URL,
       // Sin setting de idioma → default 'es'.
       language: 'es',
       // Nunca demo: el demo no dispara callbacks de wallet.
       demo: false,
     });
-    // Por default NO se manda callbackUrl: el proveedor lo ignora y pidió que
-    // dejáramos de enviarlo (2026-08-28).
-    expect(arg).not.toHaveProperty('callbackUrl');
     expect(res).toEqual({
       providerSessionId: 'sess-1',
       launchUrl: 'https://client-api-dev.gregmorn.org/game/x?session=sess-1',
@@ -113,37 +113,21 @@ describe('GregmornGameProvider.launchGame', () => {
     );
   });
 
-  it('con send_callback_url activo SÍ manda la callbackUrl', async () => {
+  it('con send_callback_url en false NO la manda', async () => {
+    // Escotilla de escape por si el proveedor vuelve a pedir que no la mandemos.
     const openGame = okOpenGame();
     const provider = make(
       openGame,
-      settingsWith({ 'game_provider.gregmorn.send_callback_url': true }),
+      settingsWith({ 'game_provider.gregmorn.send_callback_url': false }),
     );
 
     await provider.launchGame(paramsWith(okConfig), mockDb(user));
 
     const [, arg] = openGame.mock.calls[0];
-    expect(arg).toMatchObject({ callbackUrl: CALLBACK_URL });
+    expect(arg).not.toHaveProperty('callbackUrl');
   });
 
-  it('send_callback_url activo pero sin callback_url cargada → lanza', async () => {
-    const openGame = okOpenGame();
-    const provider = make(
-      openGame,
-      settingsWith({
-        'game_provider.gregmorn.send_callback_url': true,
-        'game_provider.gregmorn.callback_url': undefined,
-      }),
-    );
-    await expect(
-      provider.launchGame(paramsWith(okConfig), mockDb(user)),
-    ).rejects.toThrow(/callback_url/);
-    expect(openGame).not.toHaveBeenCalled();
-  });
-
-  it('sin callback_url cargada y con el envío apagado → abre igual', async () => {
-    // La wallet no queda muda: los callbacks llegan por la URL del panel de
-    // ellos, no por la que mandamos nosotros.
+  it('lanza si falta la callback_url — sin ella su openGame responde 500', async () => {
     const openGame = okOpenGame();
     const provider = make(
       openGame,
@@ -151,7 +135,8 @@ describe('GregmornGameProvider.launchGame', () => {
     );
     await expect(
       provider.launchGame(paramsWith(okConfig), mockDb(user)),
-    ).resolves.toMatchObject({ providerSessionId: 'sess-1' });
+    ).rejects.toThrow(/callback_url/);
+    expect(openGame).not.toHaveBeenCalled();
   });
 
   it('lanza si falta el exit_url (obligatorio en su API)', async () => {

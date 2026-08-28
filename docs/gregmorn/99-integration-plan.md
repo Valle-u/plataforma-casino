@@ -27,15 +27,43 @@ abiertas (ver `00-intake.md`):
    solo; no hay que cargarlo.
 3. ~~¿IP única?~~ → **sí**, y avisan antes de sumar servidores.
 
-Con las fases 1 a 6 cerradas, **el código está completo**. Lo único que falta
-para la Fase 7 son dos cosas nuestras, ninguna de código:
+Con las fases 1 a 6 cerradas, **el código está completo**.
 
-1. **La IP `3.78.156.229` no está en la allowlist de Cloudflare.** Sin eso los
-   callbacks de Stage pueden comerse challenges del WAF. Es exactamente donde se
-   trabó Forever.
-2. **Las credenciales de Stage no están cargadas.** Van por el panel (Ajustes →
-   Proveedores de juego → Gregmorn Hub), y después hay que apretar una vez
-   "Activar callbacks". Nunca por chat ni por código.
+## ⚠️ Cloudflare: Bot Fight Mode se comía los callbacks
+
+**El bug más caro del 2026-08-28.** Los callbacks de wallet no llegaban nunca —
+ni uno en ~15 sesiones— y el juego mostraba `SALDO 0.00`. Se descartó, en orden:
+la URL, el token, la firma, el modelo de wallet, y hasta se llegó a acusar al
+proveedor de no emitirlos.
+
+**Era Cloudflare.** En el plan Free, **Bot Fight Mode desafía el tráfico
+servidor-a-servidor** y —esto es lo importante— **no se puede exceptuar**: ni con
+allowlist de IP, ni con una regla WAF de tipo *Skip*. La interfaz de Cloudflare
+lo delata: entre los componentes omitibles aparece "Super Bot Fight Mode" (plan
+Pro) pero **no** el Bot Fight Mode común.
+
+Cómo se encontró: **Seguridad → Análisis → Eventos** mostraba, por cada launch,
+un `Desafío administrado` desde `18.184.217.6` (AWS Frankfurt) entre 3 y 10
+segundos después. Nueve launches, nueve desafíos. Correlación exacta.
+
+Dos aprendizajes para el próximo proveedor seamless:
+
+1. **Si los callbacks "no llegan", mirar los eventos de seguridad del CDN antes
+   que el código.** Un challenge en el borde es indistinguible de "el proveedor
+   no los manda": los logs de la app no ven nada en ninguno de los dos casos.
+2. **La IP que declaró el proveedor era otra** (`3.78.156.229`). Los callbacks
+   salían de `18.184.217.6`. Una regla anclada a una IP declarada por un tercero
+   es frágil; conviene anclarla a **nuestra propia ruta**, que sí controlamos.
+
+Reglas que quedaron en Cloudflare:
+
+| Regla | Expresión | Para qué |
+|---|---|---|
+| `Gregmorn callbacks` | host + ruta del callback | Permanente. Exceptúa WAF y rate limiting en esa ruta, desde cualquier IP, y la registra. |
+| `Gregmorn diagnostico (temporal)` | `ip.src eq 3.78.156.229` | Temporal. Borrar cuando la integración esté estable. |
+
+Bot Fight Mode quedó **apagado**. Si alguna vez se vuelve a prender, esto se
+rompe igual y de la misma forma silenciosa.
 
 ## Fases
 
@@ -227,22 +255,26 @@ saldo no se movió**.
 ## Decisiones tomadas
 
 - **Seamless, no transfer.** Ver README y `01-api-spec.md §3`.
-- ~~**`callbackUrl` explícito por request**, en vez de la config por moneda de su
-  panel.~~ **REVERTIDO el 2026-08-28 a pedido del proveedor.**
+- **`callbackUrl` explícito por request**, en vez de la config por moneda de su
+  panel. **Confirmado a la fuerza el 2026-08-28** — es obligatorio, no opcional.
 
-  Su sistema **ignora** el campo `callbackUrl` del `openGame` y usa únicamente la
-  URL configurada en el panel de ellos, pese a que el 2026-08-28 habían
-  confirmado por escrito que el override por request funcionaba. Se comprobó
-  capturando el request literal: el campo salía correcto en cada llamada, ellos
-  respondían `HTTP 200 success`, y no llegaba ni un callback en ~15 sesiones.
+  La historia, porque el ida y vuelta confundió a las dos partes:
 
-  Nos pidieron explícitamente dejar de mandarlo. El envío quedó detrás del
-  setting `game_provider.gregmorn.send_callback_url`, **default `false`**, para
-  poder volver a probarlo sin tocar código cuando su equipo lo arregle.
+  1. La mandábamos y el juego abría, pero **no llegaba ni un callback** en ~15
+     sesiones.
+  2. El proveedor dedujo que su sistema ignoraba el campo y pidió que dejáramos
+     de mandarlo. Se apagó.
+  3. Sin ella, el `openGame` empezó a fallar con
+     `HTTP 500 "invalid callback url from API"`. O sea que **su sistema sí la
+     lee**, y sin la nuestra no tiene ninguna válida configurada.
+  4. La causa real de (1) era otra: **Bot Fight Mode de Cloudflare** desafiaba
+     los callbacks entrantes en el borde. Ver la sección de Cloudflare abajo.
 
-  **Consecuencia:** dependemos de la configuración por moneda de su panel, que es
-  exactamente lo que esta decisión buscaba evitar. La URL con token hay que
-  dársela a ellos para que la carguen; si la cargan mal o la pierden, los
-  callbacks se caen sin aviso. Por eso también existe el fallback sin token.
+  Los dos problemas eran independientes y se enmascaraban entre sí: el campo
+  llegaba bien, pero la respuesta moría en el WAF.
+
+  El setting `game_provider.gregmorn.send_callback_url` (**default `true`**)
+  queda como escotilla de escape para apagarlo sin deploy si alguna vez vuelven
+  a pedirlo.
 - **La firma es el control principal; la IP es defensa en profundidad**, no
   reemplazo.
