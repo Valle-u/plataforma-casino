@@ -27,12 +27,15 @@ const STOPS_DESKTOP =
   'rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%';
 
 /**
- * Viñeta lateral de mobile. El copy llega al 78% del ancho, así que la parte
- * oscura se estira: con los stops de desktop (claro ya en 62%) el final del
- * texto quedaba sobre la foto sin proteger.
+ * Viñeta lateral de mobile — deliberadamente MÁS SUAVE y MÁS CORTA que la de
+ * desktop: en una pantalla chica la foto es casi todo el banner, y una sombra
+ * larga se la tapaba. Arranca en .72 (no .9) y se apaga en el 70% del ancho.
+ *
+ * Lo que sostiene la legibilidad del texto no es solo esta capa: también el
+ * `textShadow` del título y la bajada, y el degradé vertical de mobile.
  */
 const STOPS_MOBILE =
-  'rgba(10,0,8,.9) 0%, rgba(10,0,8,.72) 45%, rgba(10,0,8,.28) 78%, rgba(10,0,8,0) 100%';
+  'rgba(10,0,8,.72) 0%, rgba(10,0,8,.42) 34%, rgba(10,0,8,.08) 58%, rgba(10,0,8,0) 70%';
 
 export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
   const [index, setIndex] = useState(0);
