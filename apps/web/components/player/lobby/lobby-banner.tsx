@@ -22,6 +22,18 @@ import { cn } from '@/lib/cn';
 
 const INTERVAL_MS = 6000;
 
+/** Viñeta lateral de desktop: el copy ocupa la mitad del ancho. */
+const STOPS_DESKTOP =
+  'rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%';
+
+/**
+ * Viñeta lateral de mobile. El copy llega al 78% del ancho, así que la parte
+ * oscura se estira: con los stops de desktop (claro ya en 62%) el final del
+ * texto quedaba sobre la foto sin proteger.
+ */
+const STOPS_MOBILE =
+  'rgba(10,0,8,.9) 0%, rgba(10,0,8,.72) 45%, rgba(10,0,8,.28) 78%, rgba(10,0,8,0) 100%';
+
 export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
   const [index, setIndex] = useState(0);
   const total = slides.length;
@@ -100,28 +112,38 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
         );
       })}
 
-      {/* Capa 2 — viñeta lateral (desktop) / vertical (mobile). Las dos
-          direcciones se renderizan siempre y se crossfadean por opacity: si
-          alternáramos el `background` de un solo div, el cambio de lado entre
-          slides sería un corte seco (los gradients no transicionan). */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 hidden transition-opacity duration-700 ease-out lg:block"
-        style={{
-          opacity: alignRight ? 0 : 1,
-          background:
-            'linear-gradient(90deg, rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%)',
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 hidden transition-opacity duration-700 ease-out lg:block"
-        style={{
-          opacity: alignRight ? 1 : 0,
-          background:
-            'linear-gradient(270deg, rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%)',
-        }}
-      />
+      {/* Capa 2 — viñeta LATERAL, ahora en mobile también: antes el teléfono
+          solo tenía el degradé vertical y el texto quedaba sobre la parte
+          clara de la foto cuando se corría de lado.
+          Los stops difieren por breakpoint porque el copy ocupa 50% del ancho
+          en desktop y 78% en mobile: con los stops de desktop, en el teléfono
+          el final del texto caía sobre la zona ya aclarada.
+          Las dos direcciones se renderizan siempre y se crossfadean por
+          opacity — alternar el `background` de un solo div daría un corte
+          seco, porque los gradients no transicionan. */}
+      {(
+        [
+          { deg: 90, derecha: false, bp: 'hidden lg:block', stops: STOPS_DESKTOP },
+          { deg: 270, derecha: true, bp: 'hidden lg:block', stops: STOPS_DESKTOP },
+          { deg: 90, derecha: false, bp: 'lg:hidden', stops: STOPS_MOBILE },
+          { deg: 270, derecha: true, bp: 'lg:hidden', stops: STOPS_MOBILE },
+        ] as const
+      ).map((v) => (
+        <div
+          key={`${v.deg}-${v.bp}`}
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute inset-0 transition-opacity duration-700 ease-out',
+            v.bp,
+          )}
+          style={{
+            opacity: v.derecha === alignRight ? 1 : 0,
+            background: `linear-gradient(${v.deg}deg, ${v.stops})`,
+          }}
+        />
+      ))}
+      {/* Vertical de mobile — scrim bajo el header + empalme con el fondo.
+          No tiene lado, así que convive con el lateral de arriba. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 lg:hidden"
