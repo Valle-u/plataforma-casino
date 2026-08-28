@@ -13,7 +13,7 @@ Estado y orden de trabajo. Se actualiza a medida que avanza.
 | 4 · Launch (`openGame`) | ✅ hecho |
 | 5 · Callbacks de wallet | ✅ hecho |
 | 6 · Panel (credenciales + estado) | ✅ hecho |
-| 7 · Pruebas en Stage | ⬜ |
+| 7 · Pruebas en Stage | 🟢 **slots OK en producción** — falta rollback y casino en vivo |
 
 ## Lo que bloquea
 
@@ -245,12 +245,41 @@ saldo no se movió**.
 > `useActivateProviderCallback`: ahora lo usan los dos proveedores y devuelve el
 > `agentCode` de Forever o la `callbackUrl` de Gregmorn según cuál se active.
 
-### 7 · Pruebas en Stage
+### 7 · Pruebas — 🟢 slots verificadas EN PRODUCCIÓN (2026-08-28)
 
-- `openGame` en demo (`demo: "1"`) — no dispara callbacks, sirve para validar auth,
-  firma y launch aislados.
-- Después juego real, verificando el ciclo bet → win → rollback contra el ledger.
-- Confirmar que `balance == Σ(wallet_transactions)` se mantiene (E2).
+Se probó directo contra prod (plataforma en producción → entorno **Stage** de
+Gregmorn), por decisión del dueño: todavía no hay jugadores reales.
+
+**Verificado de punta a punta con `usertest_1`:**
+
+| Paso | Resultado |
+|---|---|
+| `/auth/login` | ✅ OK, 1780 ms |
+| Catálogo (`getUserGames` ARS) | ✅ 2979 juegos |
+| `openGame` + firma HMAC | ✅ abre, en 3 estudios distintos |
+| `getBalance` | ✅ devuelve el saldo real del ledger |
+| `writeBet` (apuesta) | ✅ **débito exacto: 5180,50 → 4680,50 con apuesta de 500** |
+
+El modo demo (`demo: "1"`) **no se probó**: el `GregmornGameProvider` manda
+`demo: false` fijo y el ciclo de sesión de la plataforma no lo expone. Se fue
+directo a juego real, que además ejercita los callbacks — el demo no los dispara.
+
+**Pendiente, y ninguno depende de nosotros:**
+
+1. **`rollback`.** Es la única pieza del camino de plata que llega a producción
+   sin haberse ejercido contra su sistema real. Está cubierta por 19 tests e2e
+   contra DB, incluido el de la trampa #1. **Hay que pedirle al proveedor que
+   fuerce un rollback en Stage.**
+2. **Casino en vivo: 40 juegos que no abren.** Todos los `greece:40020:*`
+   probados devuelven `HTTP 200 {"status":"success", ..., "game":{"url":""}}` —
+   éxito con URL vacía. En el JWT de esas sesiones el `StateId` es `"0"`, contra
+   un valor real en los launches que sí funcionan: no se crea sesión. Reportado
+   el 2026-08-28. Si no los habilitan, hay que pedirles que **dejen de
+   devolverlos en `getUserGames`**, o filtrarlos nosotros: hoy son 40 juegos
+   visibles en el lobby que le dan error a cualquiera que los toque.
+3. **`bet`/`win` como string** (vendors SL-Games / X-Games). El parser lo soporta
+   y está testeado, pero no se ejerció contra un vendor real — no se encontraron
+   esos estudios en el catálogo de ARS.
 
 ## Decisiones tomadas
 

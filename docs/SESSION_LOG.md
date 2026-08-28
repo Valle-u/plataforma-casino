@@ -13271,3 +13271,139 @@ Más el push de 3 commits que estaban sin subir y 2 ramas nuevas en `origin`.
   INDEPENDIENTE sin hacer, las 2 fallas preexistentes de `two-fa-policy.e2e` y el
   lint del API que ya fallaba (achievements, chat, palace). Correr los tests del
   API con `RATE_LIMIT_ENABLED=false`.
+
+---
+
+## 2026-08-28 17:30 AR — Claude (Opus 5)
+
+**Duración**: ~5h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Gregmorn Hub integrado de punta a punta y verificado en producción.** Se
+arrancó con la Fase 0 (docs) hecha y cero código; se cierra con las fases 1 a 6
+completas y las slots probadas moviendo plata real.
+
+**1. Trabajo local que nunca había llegado a GitHub.** Era el motivo real de que
+"se perdiera" el avance al reinstalar Claude Code, y no la sesión perdida:
+`main` estaba 1 commit adelante (los docs de Gregmorn) y **`feat/partner-design`
+y `feat/upload-superfilter` no tenían remoto** desde el 20 y 21 de agosto. Todo
+pusheado.
+
+**2. Fases 1 a 6 del conector** (`dbc9e5c`, `4492290`, `6752de8`, `dab53d6`,
+`c3df71d`): settings, firma HMAC-SHA256 con tests, cliente, sync de catálogo
+(2979 juegos), launch, callbacks seamless de wallet y panel. Dos migraciones
+aditivas: `control/0005` (columna del callback token) y `tenant/0104`
+(`gregmorn_transactions`).
+
+**3. Verificación en producción.** Por decisión del dueño se probó directo en
+prod contra el entorno Stage de ellos: no hay jugadores todavía. Resultado:
+login OK, catálogo OK, launch OK en 3 estudios, `getBalance` OK, y **`writeBet`
+con débito exacto — 5180,50 → 4680,50 con apuesta de 500**.
+
+**4. Tres bugs encontrados probando, dos míos y uno de infraestructura:**
+
+- **`566d959` — los 2979 juegos salían como "Próximamente".** `isPlayable()` del
+  lobby del jugador es una **lista blanca por `provider_code`** y todo lo que no
+  esté enumerado devuelve `false`. Registrar el proveedor en los registries del
+  backend no alcanza; esta compuerta vive en el frontend y no tiene default
+  permisivo. Hueco mío en la Fase 4.
+- **Bot Fight Mode de Cloudflare se comía los callbacks.** El bug más caro del
+  día — ver abajo.
+- **`6dc4224` — dejamos de mandar `callbackUrl` y se rompió el launch entero.**
+  Ver abajo.
+
+**5. El episodio del `callbackUrl`.** Vale entero porque es una lección de cómo
+dos hipótesis razonables se refuerzan mutuamente y llevan a romper algo que
+andaba:
+
+1. Mandábamos `callbackUrl` y el juego abría, pero **no llegaba ni un callback**
+   en ~15 sesiones.
+2. El proveedor dedujo que su sistema ignoraba el campo y pidió que dejáramos de
+   mandarlo. Se apagó (`81d7221`).
+3. Sin él, el `openGame` empezó a fallar con
+   `HTTP 500 "invalid callback url from API"` — o sea que **sí lo lee**, y sin el
+   nuestro no tiene ninguno válido configurado.
+4. La causa real de (1) era Cloudflare, no ellos.
+
+Se revirtió a mandarlo siempre (`send_callback_url`, default `true`, queda como
+escotilla). **El interruptor se pagó solo**: revertir fue cambiar un default en
+vez de reescribir el flujo.
+
+**6. Casino en vivo: 40 juegos que no abren.** Todos los `greece:40020:*`
+devuelven `HTTP 200 success` con `game.url` **vacío** y `StateId: "0"` en el JWT.
+Reportado al proveedor, sin respuesta todavía.
+
+### Decisiones tomadas
+
+- **Token opaco en la URL para resolver el tenant del callback.** Gregmorn no
+  manda nada de lo que se pueda deducir el tenant (Palace usa token en el body,
+  Forever el agent code en un header). Como la `callbackUrl` va por request, el
+  discriminador viaja en la URL: columna `tenants.gregmorn_callback_token`. **El
+  token no autentica** — solo elige de quién es la clave; lo que autentica es la
+  firma HMAC.
+- **Fallback sin token**, para cuando usan la URL vieja del intake. Solo resuelve
+  si hay **exactamente un** tenant con Gregmorn configurado, y aun así verifica
+  la firma. Con dos o más, rechaza por ambiguo.
+- **Idempotencia por `cmd + transactionId`**, nunca por el id crudo (trampa #1
+  del proveedor, confirmada por ellos).
+- **El alta en los registries se movió de la Fase 1 a las fases 4 y 6**: los
+  registries reciben instancias, y registrar antes obliga a stubbear.
+- **El rollback devuelve plata real aunque la apuesta se haya pagado con bono.**
+  Se decidió posponer el fix — ver DEVLOG 2026-08-28.
+
+### Commits creados
+
+10, de `dbc9e5c` a `7d950c2`. Los estructurales: `dab53d6` (callbacks de wallet,
+con las 2 migraciones), `c3df71d` (panel), `566d959` (fix del lobby),
+`6dc4224` (restaurar `callbackUrl`).
+
+Todos con `pnpm type-check` 5/5 y lint limpio en lo tocado.
+
+### Estado al cerrar
+
+- **Fase actual**: Gregmorn en fase 7 de 7. Slots verificadas en producción.
+- **Próximo paso lógico**: pedirle al proveedor que fuerce un **rollback** en
+  Stage, y esperar su respuesta sobre el casino en vivo.
+- **Bloqueos**: ninguno del lado nuestro.
+
+### Notas para próximo agente
+
+- **⚠️ CLOUDFLARE, BOT FIGHT MODE. Leer esto antes de debuggear cualquier
+  callback.** Los callbacks de Gregmorn no llegaban **nunca**. Se descartó, en
+  orden: la URL, el token, la firma, el modelo de wallet, y se llegó a acusar al
+  proveedor de no emitirlos. **Era Bot Fight Mode**, que en el plan Free desafía
+  el tráfico servidor-a-servidor y **no se puede exceptuar**: ni con allowlist de
+  IP ni con una regla WAF de tipo *Skip*. La propia interfaz lo delata — entre
+  los componentes omitibles aparece "Super Bot Fight Mode" (Pro) pero **no** el
+  común. Se encontró en **Seguridad → Análisis → Eventos**: por cada launch, un
+  `Desafío administrado` desde `18.184.217.6` entre 3 y 10 segundos después.
+  Nueve launches, nueve desafíos. **Quedó apagado. Si se vuelve a prender, esto
+  se rompe igual y de la misma forma silenciosa.**
+- **La IP que declaró el proveedor era otra.** Nos dieron `3.78.156.229`; los
+  callbacks salen de `18.184.217.6`. Cero requests de la declarada en 24h. Se les
+  pidió el rango real. **Moraleja: anclar las reglas de WAF a nuestra propia ruta,
+  no a una IP que declara un tercero.**
+- **Reglas de Cloudflare que quedaron**: `Gregmorn callbacks` (host + ruta,
+  permanente) y `Gregmorn diagnostico (temporal)` (solo IP, **borrar** cuando
+  esto esté estable).
+- **`isPlayable()` del lobby es una lista blanca.** Para el próximo proveedor:
+  el síntoma es engañoso —catálogo perfecto, todo "Próximamente"— y nada apunta a
+  esa función.
+- **La categoría del catálogo de Gregmorn es una heurística.** Su
+  `GameCatalogItem` no trae tipo de juego, solo el nombre del estudio. Se matchea
+  contra `LIVE_CASINO_STUDIOS` y todo lo demás cae en `slots`. Dio 2939/40, que
+  parece razonable, pero conviene pedirles el tipo de juego.
+- **El `rollback` nunca se ejerció contra su sistema.** Es la trampa #1 y la
+  única pieza del camino de plata sin prueba real. Pedirles que lo fuercen.
+- Sigue pendiente de antes: rotar los secretos expuestos (Bitwarden, Dokploy,
+  prod), el drift de esquema de la DB local, y la auditoría del modelo
+  INDEPENDIENTE.
+- **Los e2e no están aislados entre sí**: correr `forever-callback.e2e` y
+  `games.e2e` juntos tira 23 fallas; cada uno solo pasa perfecto. Es
+  **preexistente**, verificado. Significa que `pnpm test` completo del API da un
+  resultado engañoso.
+- **El deploy NO está trabado.** Los pushes a `main` disparan el autoDeploy de
+  Dokploy y funciona. Lo que está muerto es el *token de la API* de Dokploy, que
+  es otra cosa. El log de sesión anterior daba a entender lo contrario.
