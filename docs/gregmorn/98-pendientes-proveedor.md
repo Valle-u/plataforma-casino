@@ -94,33 +94,43 @@ Cloudflare. Hoy sólo está la de Stage.
 
 ---
 
-## Borrador del mensaje
+## Borrador del mensaje (enviado 2026-08-29)
 
-> Three things on the Stage integration.
+> Thanks — 18.184.217.6 is whitelisted, and we will add 3.78.156.229 when we
+> move to production. The live games are out of our catalog after a re-sync.
 >
-> **1. Rounds that never close.** We have 3 logical rounds still open ~12h after
-> the last callback. Player `MiamiHub` / `maggie`, 2026-08-29 00:18–00:23 UTC.
-> The largest one is a bonus buy, `roundId=1787962756`: a `spin` with bet 5000 /
-> win 250, then a `pick`, then 28 `freeSpin`/`freeReSpin` actions with bet 0.
-> Every callback carries `round_finished: false`, including the last one. We
-> never received `round_finished: true`.
+> Three things from our side, all on Stage.
 >
-> Is that round still open on your side? If a player leaves while free spins are
-> pending, how does it get closed — is there a timeout, and do you still send the
-> closing callback afterwards? Is there an endpoint we can poll to reconcile
-> round state?
+> **1. Rounds that never close.** Three rounds are still open more than 12
+> hours after their last callback. Player `maggie`, 2026-08-29 00:18–00:23
+> UTC. The largest is a bonus buy, internal `roundId=1787962756`:
+>
+> - `spin` — bet 5000, win 250
+> - `pick` — bet 0
+> - 28 × `freeSpin` / `freeReSpin` — bet 0
+>
+> Every one of them carries `round_finished: false`, including the last one.
+> We never received `round_finished: true`.
+>
+> Is that round still open on your side? If a player leaves while free spins
+> are pending, how does it get closed — is there a timeout, and do you still
+> send the closing callback afterwards? Is there an endpoint we can query to
+> reconcile round state?
 >
 > This matters because our commission base only counts closed rounds, so an
-> open round is revenue we cannot attribute.
+> open round is revenue we cannot attribute to the operator.
 >
-> **2. `roundId` semantics.** You send two different identifiers: the top-level
+> **2. `roundId` semantics.** You send two identifiers. The top-level
 > `roundId` is a different UUID on every callback, while `info` carries
-> `roundId=<number>` which stays stable across the whole round. We are now
-> grouping by the one inside `info`. Can you confirm that is the intended
-> contract, and that the `info` format is stable? Also, can you share the full
-> list of `action` values? So far we have seen `spin`, `reSpin`, `pick`,
-> `freeSpin`, `freeReSpin`.
+> `roundId=<number>` that stays stable across the whole round. We now group
+> rounds by the one inside `info`.
 >
-> **3. Rollback.** Still never exercised on Stage. Could you force one so we can
-> verify our handler against your real payload?
-
+> Can you confirm that is the intended contract, and that the `info` format is
+> stable? Your spec documents the top-level field but not this one, so we would
+> rather not depend on it silently. Could you also share the full list of
+> `action` values? So far we have seen `spin`, `reSpin`, `pick`, `freeSpin`,
+> `freeReSpin`.
+>
+> **3. Rollback.** Still never exercised on Stage — it is the only part of the
+> money path we have never seen from your system. Could you force one so we can
+> verify our handler against a real payload?
