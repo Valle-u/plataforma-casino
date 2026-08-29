@@ -68,12 +68,26 @@ function codeFor(secret: string): string {
   return (code % 1_000_000).toString().padStart(6, '0');
 }
 
-async function resetAdminTwoFa(): Promise<void> {
+/**
+ * Deja al admin en estado de auth limpio.
+ *
+ * Ademas del 2FA limpia el LOCKOUT de cuenta (`locked_until` /
+ * `failed_login_attempts`), que es un mecanismo distinto del rate limiter:
+ * este suite dispara 10+ logins fallidos a proposito para probar el guard, y
+ * eso bloquea la cuenta. Sin este reset los tests que vienen despues fallan
+ * con 401 ACCOUNT_LOCKED antes de poder probar nada.
+ */
+async function resetAdminAuthState(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     await sql.unsafe(`DELETE FROM user_recovery_codes`);
     await sql.unsafe(
-      `UPDATE users SET two_fa_secret = NULL, two_fa_enabled = false WHERE username = $1`,
+      `UPDATE users
+          SET two_fa_secret = NULL,
+              two_fa_enabled = false,
+              locked_until = NULL,
+              failed_login_attempts = 0
+        WHERE username = $1`,
       [TEST_TENANT.admin.username],
     );
   } finally {
@@ -91,14 +105,14 @@ describe('RateLimitGuard (E2E)', () => {
   });
 
   afterAll(async () => {
-    await resetAdminTwoFa();
+    await resetAdminAuthState();
     await limiter.clear();
     await ctx.close();
   });
 
   beforeEach(async () => {
     await limiter.clear();
-    await resetAdminTwoFa();
+    await resetAdminAuthState();
   });
 
   // ──────────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import { AppModule } from '../../app.module';
 import { CONTROL_DB } from '../../database/database.module';
 import { TenantConnectionCache } from '../../tenant-resolver/tenant-connection-cache';
 import type { TenantDb } from '../../tenant-resolver/tenant-context';
+import { RateLimiterService } from '../../rate-limit/rate-limiter.service';
 import { TwoFaPolicyService } from '../../tenant-auth/two-fa-policy.service';
 import { resetMutableState } from '../setup/db-helpers';
 import { TEST_TENANT } from '../setup/test-tenant';
@@ -123,6 +124,24 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
   app.enableShutdownHooks();
 
   await app.init();
+
+  // Rate limiter: estado limpio por suite.
+  //
+  // El limiter guarda sus contadores en Redis, asi que sobreviven tanto
+  // entre suites como entre corridas enteras de jest. La regla
+  // `auth.login.ip` (100 req / 15 min por IP) NO se limpia en login
+  // exitoso, y es a proposito: un atacante no debe poder borrar su
+  // contador global logueandose bien una sola vez.
+  //
+  // En produccion eso es lo correcto; en tests significa que las ~76
+  // suites, todas saliendo de la misma IP, agotan el presupuesto y de ahi
+  // en adelante TODO lo que necesita auth cae con 429 — cientos de tests
+  // en rojo por un motivo que no tiene nada que ver con lo que prueban.
+  //
+  // Limpiar aca le da a cada suite su presupuesto entero SIN apagar el
+  // limiter: `rate-limit.e2e.ts` lo necesita activo para poder probarlo,
+  // y ya se limpia a si mismo en sus propios hooks.
+  await app.get(RateLimiterService).clear();
 
   // 2FA policy: deshabilitada por default en tests (la mayoría asume
   // admin sin 2FA). El test del policy la habilita explícitamente.

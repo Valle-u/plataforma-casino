@@ -8093,3 +8093,81 @@ auth. Con `RATE_LIMIT_ENABLED=false` el problema desaparece.
 Es preexistente y no está resuelto — queda anotado para que el próximo agente
 no diagnostique de nuevo desde cero, y sobre todo para que **no lea un `pnpm
 test` en rojo como una regresión propia**.
+
+---
+
+## 2026-08-28 — Aislamiento de la suite e2e: el lockout, no el rate limiter
+
+**Corrige la entrada anterior de hoy** ("la suite completa no se puede correr
+entera"), que atribuía el problema al rate limiter de login. Era el último
+eslabón de la cadena, no el origen.
+
+**Contexto**: `pnpm test` desde `apps/api` daba ~62 suites y ~764 tests en rojo.
+Corriendo las suites de a una, pasaban. Apagar el rate limiter
+(`RATE_LIMIT_ENABLED=false`) bajaba a 30 suites / 343 tests — mejor, pero lejos
+de verde, y además rompe `rate-limit.e2e.ts`, que necesita el guard activo para
+poder probarlo.
+
+**La cadena real**:
+
+```
+MAX_FAILED_ATTEMPTS = 5 → una suite prueba credenciales malas
+        ↓
+users.locked_until se setea — y `users` NUNCA se resetea entre suites
+        ↓
+401 ACCOUNT_LOCKED en el login de toda suite posterior
+        ↓
+esos 401 acumulan en el rate limiter (sin reset-on-success, porque fallan)
+        ↓
+429 RATE_LIMITED
+```
+
+Lo que delató el orden: apagando el limiter, el fallo dominante pasó de 429 a
+**401** (512 ocurrencias). El 429 tapaba al 401.
+
+**Decisión**: restaurar en `resetMutableState()` el estado de auth mutable de
+los users seedeados, y limpiar el rate limiter por suite en
+`bootstrapTestApp()`.
+
+**Razón**: `users` no se puede truncar (sus ids se referencian por todos lados),
+pero cuatro de sus columnas SÍ son mutables y se filtran entre suites:
+`locked_until`, `failed_login_attempts`, `two_fa_enabled/secret` y `status`. Las
+cuatro producen el mismo síntoma —401 en el login del bootstrap— y ninguna es
+culpa de la suite que lo sufre. Ya había parches a mano para el 2FA en cuatro
+suites; centralizarlo lo cubre para las 76.
+
+Descartadas las otras dos opciones evaluadas: namespacear las claves de Redis
+por worker no sirve porque `jest.config.ts` fija `maxWorkers: 1` (todas las
+suites comparten worker), y usar un usuario distinto por suite obligaba a tocar
+las 76.
+
+**Resultado medido**: 62 → **14 suites** en rojo, 764 → **80 tests**. Con el
+tercer arreglo (abajo) `rate-limit.e2e.ts` pasó de 8 fallos a 1.
+
+**Implicaciones**: `resetMutableState()` deja de ser solo "truncar tablas" y
+pasa a garantizar también un estado de auth conocido. El comentario que decía
+"NO toca users/roles/permisos porque esos no cambian dentro de una suite normal"
+era la suposición que fallaba.
+
+### Lo que queda en rojo, y por qué no se tocó
+
+**`games.e2e.ts` (23 tests)** — hace `DELETE FROM games WHERE code NOT LIKE
+'e2e_seed_%'` para limpiar juegos de suites previas, y choca con la FK
+`game_sessions_game_id_games_id_fk`: `game_sessions` tampoco se trunca. Lo
+dispara el helper `ensureGameSession()` de `commissions-network-engine.e2e.ts`,
+que corre antes por orden alfabético. **Verificado que es previo**: salteando el
+test de fee agregado hoy, los 23 errores son idénticos. El arreglo natural es
+sumar `games` y `game_sessions` al truncate, pero hay que confirmar que ninguna
+suite dependa de juegos seedeados que sobrevivan.
+
+**`rate-limit.e2e.ts` (1 test)** — "reset-on-success: login correcto borra el
+contador". Hace exactamente 5 logins fallidos y después espera un 200, pero
+`MAX_FAILED_ATTEMPTS = 5` bloquea la cuenta justo ahí, así que devuelve 401
+ACCOUNT_LOCKED. El test intenta probar el reset del **rate limiter** (límite 10)
+pero choca con el **lockout de cuenta** (límite 5): nunca se pueden acumular 10
+fallos sin bloquear antes. Es un conflicto de diseño entre dos protecciones, no
+de aislamiento. No se tocó a propósito: cambiar la aserción de un test de
+seguridad para que pase requiere decidir primero qué debe probar.
+
+**BankTransactions (14), Notifications (13), Deposits y otras** — contaminación
+cruzada de otra naturaleza, sin investigar.

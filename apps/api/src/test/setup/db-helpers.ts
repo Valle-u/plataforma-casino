@@ -176,8 +176,9 @@ export async function resetTestTenantDatabase(): Promise<void> {
 
 /**
  * Reset ligero entre suites: limpia tablas mutables y deja a admin/cajero1/
- * cajero2 con balances en 0 y sin overrides. NO toca users/roles/permisos
- * porque esos no cambian dentro de una suite normal.
+ * cajero2 con balances en 0 y sin overrides. De `users` no borra filas (los
+ * ids se referencian por todos lados) pero SI restaura el estado de auth
+ * mutable — lockout, 2FA y status — que de otro modo se filtra entre suites.
  *
  * Mucho más rápido que drop+create (~50ms vs ~2s) y suficiente para evitar
  * contaminación cross-suite. Llamado desde el `beforeAll` de cada suite
@@ -223,6 +224,31 @@ export async function resetMutableState(): Promise<void> {
         notification_templates,
         push_subscriptions
       RESTART IDENTITY CASCADE
+    `);
+
+    // Estado de AUTH de los users seedeados.
+    //
+    // `users` no se trunca (los ids se referencian por todos lados), pero
+    // varias de sus columnas SI son mutables y se filtran entre suites:
+    //
+    //   - `locked_until` / `failed_login_attempts`: el lockout de cuenta.
+    //     Una suite que prueba credenciales malas deja al admin bloqueado y
+    //     TODAS las suites siguientes se caen con 401 al loguearse.
+    //   - `two_fa_enabled` / `two_fa_secret`: una suite que habilita 2FA y
+    //     no limpia obliga a las siguientes a pasar un codigo que no tienen.
+    //   - `status`: suspended/banned deja al user sin poder loguear.
+    //
+    // Los cuatro producen el MISMO sintoma (401 en el login del bootstrap) y
+    // ninguno es culpa de la suite que lo sufre. Antes esto se parchaba a mano
+    // en las suites de 2FA; centralizarlo lo cubre para todas.
+    await sql.unsafe(`
+      UPDATE users
+         SET locked_until = NULL,
+             failed_login_attempts = 0,
+             two_fa_enabled = false,
+             two_fa_secret = NULL,
+             status = 'active'
+       WHERE username IN ('jest_admin', 'jest_cajero1', 'jest_cajero2')
     `);
   } finally {
     await sql.end();
