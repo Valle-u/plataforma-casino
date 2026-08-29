@@ -13459,3 +13459,76 @@ instalado. **Los logs se siguen bajando desde el panel.**
   Gregmorn (SQL de una transacción con BEGIN/COMMIT, ya redactado en la
   conversación). Son datos de prueba con `settled_at` en NULL, invisibles para
   comisiones; el borrado es cosmético y no toca el ledger.
+
+---
+
+## 2026-08-28 22:40 AR — Claude (Opus 5) · addendum
+
+**Duración**: ~2h (continuación de la sesión de Gregmorn del mismo día)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Arrancó como una verificación —"¿el NetWin de Gregmorn entra bien en la
+comisión?"— y terminó destapando dos bugs, uno de plata y otro de tests.
+
+**1. El fee del proveedor se promediaba.** El NetWin de Gregmorn entraba
+perfecto (verificado contra la DB de prod: los 250,00 iniciales aparecían exactos
+en `sub_net_win`), pero el `provider_fee` no cerraba. El motor colapsaba los tres
+proveedores en **una tasa promedio ponderada** y se la aplicaba igual a todos los
+operadores. `getHousePnl` ya lo hacía bien, así que las dos pantallas daban
+números distintos para el mismo mes.
+
+Se reescribió para calcular el fee **por proveedor** sobre el subárbol de cada
+operador y sumarlos. Ver DEVLOG "Fee del proveedor: por proveedor, no promediado".
+
+**2. La suite e2e no se podía correr entera.** `pnpm test` daba 62 suites y 764
+tests en rojo. Se persiguió hasta la causa raíz —el **lockout de cuenta**, no el
+rate limiter— y se arregló. Ver DEVLOG "Aislamiento de la suite e2e".
+
+### Decisiones tomadas
+
+- **Fee por proveedor** (DEVLOG). Cambio de semántica: la regla "no hay fee sobre
+  base negativa" ahora se evalúa **por proveedor**, sin compensación cruzada.
+- **LEY C4b actualizada** — ahora dice explícitamente cómo se combinan varios
+  proveedores. Se le sacó el "ej. Palace 7%" que estaba desactualizado (es 6%).
+- **No se tocó** el test de `rate-limit` donde el lockout (5 intentos) choca con
+  el límite del guard (10). Es un conflicto de diseño entre dos protecciones;
+  cambiar la aserción de un test de seguridad requiere decidir antes qué debe
+  probar.
+
+### Commits creados
+
+- `f27c053` — `fix(commissions): cobrar el fee de cada proveedor, no un promedio`
+- `da580bc` — `test(e2e): resetear el lockout de cuenta entre suites`
+- `0eff9cf` — `docs(devlog): numeros finales del aislamiento de la suite e2e`
+
+Los tres pusheados a `main` y deployados (auto-deploy por webhook; API `done`,
+`/health` 200).
+
+### Estado al cerrar
+
+- **Fase actual**: Gregmorn integrado y verificado en prod; motor de comisiones
+  con el fee corregido.
+- **Próximo paso lógico**: verificar el fee nuevo **en pantalla**. Colgar a
+  maggie de `socio_test_1`, correr el compute de agosto y contrastar el
+  `provider_fee` contra la suma por proveedor. Hoy no se pudo: maggie cuelga de
+  `admin` (la Casa), así que el compute da 0 operadores — que es lo correcto.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **`pnpm test` sigue dando 14 suites en rojo, y NO es una regresión.** Cero
+  `ACCOUNT_LOCKED` y cero `429` — las cascadas se eliminaron. Lo que queda son
+  fallos propios de cada suite, documentados en DEVLOG con una hipótesis sin
+  verificar sobre `tenant_settings`. **No leas ese rojo como algo que rompiste.**
+- **`user_hierarchy` SÍ tiene historial** (`since`/`until`, único parcial sobre
+  `until IS NULL`). Una entrada vieja del DEVLOG decía lo contrario; está
+  corregida. Lo que falta es que el motor lo use: hoy recomputa con el árbol de
+  hoy.
+- **El fee se lee de `game_providers` al computar**, así que cambiarle el fee a
+  un proveedor se aplica retroactivamente a todo el período que recomputes.
+- Sigue pendiente de la sesión anterior: pedirle al proveedor que fuerce un
+  **rollback** en Stage (única parte del camino de la plata nunca ejercitada
+  contra su sistema real) y su respuesta sobre los **40 juegos de casino en vivo**
+  que devuelven `url: ""`.
