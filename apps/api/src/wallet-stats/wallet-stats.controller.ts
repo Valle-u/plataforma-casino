@@ -59,6 +59,18 @@ import {
  * para que el CSV y la pantalla digan lo mismo. Si aparece un tipo no mapeado,
  * el CSV cae al código crudo (fallback en el `value`).
  */
+/**
+ * Tipo de ronda en lenguaje claro para el CSV.
+ *
+ * Mismo texto que la pantalla, a proposito: si el CSV y la UI nombran
+ * distinto la misma cosa, la auditoria se vuelve discutible.
+ */
+const CSV_ROUND_ACTION_LABELS: Record<string, string> = {
+  bonus_buy: 'Compra de tiradas gratis',
+  free_spins: 'Tiradas gratis',
+  spin: 'Giro',
+};
+
 const CSV_TX_TYPE_LABELS: Record<WalletTxType, string> = {
   mint: 'Creación de fichas',
   burn: 'Destrucción de fichas',
@@ -285,6 +297,23 @@ export class WalletStatsController {
       { header: 'Motivo', value: (r) => r.reason ?? '' },
       { header: 'Notas', value: (r) => r.notes ?? '' },
       { header: 'Referencia interna', value: (r) => r.idempotencyKey ?? '' },
+      // Contexto de JUEGO (solo apuestas/premios/devoluciones de una ronda).
+      // Sin estas columnas una compra de tiradas gratis y un giro comun se
+      // exportaban identicos: dos "Apuesta" con distinto monto y nada mas.
+      { header: 'Juego', value: (r) => r.gameName ?? '' },
+      { header: 'Proveedor', value: (r) => r.gameProviderCode ?? '' },
+      {
+        header: 'Tipo de jugada',
+        value: (r) =>
+          r.roundAction
+            ? (CSV_ROUND_ACTION_LABELS[r.roundAction] ?? r.roundAction)
+            : '',
+      },
+      { header: 'Ronda', value: (r) => r.roundExternalId ?? '' },
+      // Totales de la RONDA entera: es lo que explica un premio de una tirada
+      // gratis, que no tiene apuesta propia.
+      { header: 'Ronda: apostado', value: (r) => r.roundBet ?? '' },
+      { header: 'Ronda: pagado', value: (r) => r.roundWin ?? '' },
       // Transferencia bancaria conciliada (solo cargas/retiros manuales).
       { header: 'Transferencia: monto', value: (r) => r.bankTxAmount ?? '' },
       { header: 'Transferencia: referencia', value: (r) => r.bankTxReference ?? '' },

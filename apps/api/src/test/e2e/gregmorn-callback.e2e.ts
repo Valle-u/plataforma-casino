@@ -94,13 +94,19 @@ async function seedGame(): Promise<void> {
 /** Rondas registradas para un `round_external_id` (ya normalizado, sin `_N`). */
 async function readRounds(
   roundExternalId: string,
-): Promise<{ bet: number; win: number; net: number; status: string }[]> {
+): Promise<{ bet: number; win: number; net: number; status: string; action: string | null }[]> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     const rows = await sql<
-      { bet_amount: string; win_amount: string; net_amount: string; status: string }[]
+      {
+        bet_amount: string;
+        win_amount: string;
+        net_amount: string;
+        status: string;
+        action: string | null;
+      }[]
     >`
-      SELECT bet_amount, win_amount, net_amount, status
+      SELECT bet_amount, win_amount, net_amount, status, action
       FROM game_rounds WHERE round_external_id = ${roundExternalId}
     `;
     return rows.map((r) => ({
@@ -108,6 +114,7 @@ async function readRounds(
       win: Number(r.win_amount),
       net: Number(r.net_amount),
       status: r.status,
+      action: r.action,
     }));
   } finally {
     await sql.end();
@@ -323,6 +330,7 @@ describe('Gregmorn callback (E2E)', () => {
     const inner = '1787962756';
     const info = (action: string): string =>
       `&sessionId=69929384&gameId=${GAME_ID}&roundId=${inner}&action=${action}`;
+    const infoBuy = `${info('spin')}&freeSpinAdd=10&byBonus=1`;
 
     // La compra: cobra la apuesta y deja la ronda ABIERTA.
     await callback(
@@ -333,7 +341,7 @@ describe('Gregmorn callback (E2E)', () => {
         win: 2,
         roundId: 'b1b0c0de-0000-4000-8000-000000000001',
         round_finished: false,
-        info: info('spin'),
+        info: infoBuy,
       }),
     );
 
@@ -361,10 +369,52 @@ describe('Gregmorn callback (E2E)', () => {
       win: 6, // 2 de la compra + 1 + 3 de las tiradas
       net: -4,
       status: 'settled',
+      action: 'bonus_buy', // la COMPRO: no se pisa con free_spins
     });
 
     // Y ninguna quedo colgada bajo el UUID de una accion suelta.
     expect(await readRounds('b1b0c0de-0000-4000-8000-000000000001')).toHaveLength(0);
+  });
+
+  it('tiradas gratis disparadas (no compradas) → la ronda queda como free_spins', async () => {
+    // Mismo recorrido que la compra pero SIN los marcadores `byBonus` /
+    // `freeSpinAdd`: aca las tiradas se dispararon solas. Distinguirlas
+    // importa porque una compra es plata que el jugador puso.
+    const inner = '1787999001';
+    const info = (action: string): string =>
+      `&sessionId=69929999&gameId=${GAME_ID}&roundId=${inner}&action=${action}`;
+
+    await callback(
+      ctx.request,
+      writeBet({
+        transactionId: 'tx-fst-spin',
+        bet: 5,
+        win: 0,
+        roundId: 'c2c0d0de-0000-4000-8000-000000000001',
+        round_finished: false,
+        info: info('spin'),
+      }),
+    );
+    await callback(
+      ctx.request,
+      writeBet({
+        transactionId: 'tx-fst-free',
+        bet: 0,
+        win: 8,
+        roundId: 'c2c0d0de-0000-4000-8000-000000000002',
+        round_finished: true,
+        info: info('freeSpin'),
+      }),
+    );
+
+    const rounds = await readRounds(inner);
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({
+      bet: 5,
+      win: 8,
+      status: 'settled',
+      action: 'free_spins', // subio desde `spin` al llegar la tirada
+    });
   });
 
   // ── Trampa #2: montos en string ───────────────────────────────────

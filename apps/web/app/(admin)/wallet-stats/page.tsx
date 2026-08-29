@@ -42,6 +42,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { providerLabel } from '@/lib/provider-label';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -150,6 +151,23 @@ const CATEGORIES: Category[] = [
     types: ['mint', 'burn', 'adjustment'],
   },
 ];
+
+// ── Tipo de RONDA en lenguaje claro ───────────────────────────────
+//
+// Sin esto una compra de tiradas gratis y un giro común se ven idénticos:
+// los dos dicen "Apuesta". Y los premios de las tiradas aparecen sin una
+// apuesta que los explique, como si salieran de la nada.
+const ROUND_ACTION: Record<string, { label: string; hint: string }> = {
+  bonus_buy: {
+    label: 'Compra de tiradas gratis',
+    hint: 'El jugador PAGÓ para entrar a la ronda de tiradas gratis. La apuesta es esa compra; las tiradas que siguen no vuelven a cobrar.',
+  },
+  free_spins: {
+    label: 'Tiradas gratis',
+    hint: 'La ronda disparó tiradas gratis sola (no se compraron). Los premios de esas tiradas no tienen apuesta propia.',
+  },
+  spin: { label: 'Giro', hint: 'Ronda común: se apuesta y se resuelve.' },
+};
 
 // ── Traducción del "origen" (source) a lenguaje claro ─────────────
 
@@ -799,8 +817,17 @@ function MovementsTab({
               </TR>
             </THead>
             <TBody>
-              {rows.map((r) => (
-                <MovementRowComponent key={r.id} row={r} />
+              {rows.map((r, i) => (
+                <MovementRowComponent
+                  key={r.id}
+                  row={r}
+                  // Una compra de tiradas gratis genera UNA apuesta y varios
+                  // premios, todos de la misma ronda. Marcarlos encadenados
+                  // evita leerlos como jugadas sueltas sin relación.
+                  continuaRonda={
+                    !!r.roundId && r.roundId === rows[i - 1]?.roundId
+                  }
+                />
               ))}
             </TBody>
           </Table>
@@ -835,8 +862,15 @@ function MovementsTab({
   );
 }
 
-function MovementRowComponent({ row }: { row: MovementRow }) {
+function MovementRowComponent({
+  row,
+  continuaRonda,
+}: {
+  row: MovementRow;
+  continuaRonda: boolean;
+}) {
   const dir = directionOf(row.type);
+  const ronda = row.roundAction ? ROUND_ACTION[row.roundAction] : undefined;
   return (
     <TR>
       <TD className="num text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
@@ -855,6 +889,25 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
             {TX_TYPE_DESCRIPTIONS[row.type]}
           </div>
         </div>
+        {ronda && (
+          <div
+            className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-[var(--color-fg-subtle)]"
+            title={ronda.hint}
+          >
+            {continuaRonda && (
+              <span className="text-[var(--color-fg-disabled)]">└</span>
+            )}
+            <span
+              className={
+                row.roundAction === 'bonus_buy'
+                  ? 'text-[var(--color-warning)]'
+                  : 'text-[var(--color-fg-subtle)]'
+              }
+            >
+              {ronda.label}
+            </span>
+          </div>
+        )}
       </TD>
       <TD className="text-right num font-mono whitespace-nowrap">
         <span
@@ -883,7 +936,30 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
         {row.actorUsername ? `@${row.actorUsername}` : 'sistema'}
       </TD>
       <TD className="hidden lg:table-cell text-[11px] text-[var(--color-fg-muted)]">
-        {sourceLabel(row.source)}
+        {row.gameName ? (
+          <span
+            className="inline-flex flex-col leading-tight"
+            title={
+              `Ronda ${row.roundExternalId ?? '?'}` +
+              (row.roundBet !== null
+                ? ` — apostado ${row.roundBet}, pagado ${row.roundWin ?? 0} en toda la ronda`
+                : '')
+            }
+          >
+            <span className="text-[var(--color-fg)]">{row.gameName}</span>
+            <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
+              {row.gameProviderCode ? providerLabel(row.gameProviderCode) : ''}
+              {row.roundExternalId && (
+                <span className="text-[var(--color-fg-disabled)]">
+                  {' · '}
+                  {row.roundExternalId.slice(0, 12)}
+                </span>
+              )}
+            </span>
+          </span>
+        ) : (
+          sourceLabel(row.source)
+        )}
         {row.bankTxId && (
           <span
             className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-[var(--color-success)]"

@@ -497,6 +497,7 @@ export class GregmornCallbackService {
         id: gameRounds.id,
         betAmount: gameRounds.betAmount,
         winAmount: gameRounds.winAmount,
+        action: gameRounds.action,
       })
       .from(gameRounds)
       .where(
@@ -520,6 +521,7 @@ export class GregmornCallbackService {
           winAmount: win.toFixed(2),
           netAmount: (win - bet).toFixed(2),
           status: finished ? 'settled' : 'placed',
+          action: resolveRoundKind(body, existing.action),
           // Los wallet tx llegan en callbacks distintos (el bet en el primero,
           // el win en el segundo). No pisar con null el que ya está guardado.
           ...(p.betWalletTxId ? { betWalletTxId: p.betWalletTxId } : {}),
@@ -539,6 +541,7 @@ export class GregmornCallbackService {
       winAmount: p.win.toFixed(2),
       netAmount: (p.win - p.bet).toFixed(2),
       status: finished ? 'settled' : 'placed',
+      action: resolveRoundKind(body, null),
       betWalletTxId: p.betWalletTxId,
       winWalletTxId: p.winWalletTxId,
       payload: body,
@@ -694,6 +697,50 @@ export function resolveRoundExternalId(body: {
     }
   }
   return normalizeRoundId((body.roundId ?? body.transactionId ?? '').trim());
+}
+
+/** Precedencia del tipo de ronda: comprar es mas especifico que disparar. */
+const ROUND_KIND_RANK: Record<string, number> = {
+  spin: 1,
+  free_spins: 2,
+  bonus_buy: 3,
+};
+
+/**
+ * Que TIPO de ronda es, mirando una accion a la vez.
+ *
+ * Se llama en CADA callback con lo que ya tenia la ronda, y devuelve el mas
+ * especifico de los dos. Una compra de tiradas gratis llega asi:
+ *
+ *   spin (bet 5000, `byBonus`)  -> bonus_buy
+ *   pick                        -> bonus_buy  (no lo pisa)
+ *   freeSpin x28                -> bonus_buy  (no lo pisa)
+ *
+ * y unas tiradas que se disparan solas, asi:
+ *
+ *   spin (bet 50)               -> spin
+ *   freeSpin                    -> free_spins (sube)
+ *
+ * La compra se detecta por `byBonus` / `freeSpinAdd` en el estado del juego,
+ * porque por `action` sola es indistinguible de un giro comun: las dos son
+ * `spin`. Es un campo que su spec no documenta -- si lo cambian, las compras
+ * pasan a contarse como `free_spins`, que es degradar sin romper.
+ */
+export function resolveRoundKind(
+  body: { info?: string },
+  previous: string | null,
+): string | null {
+  const info = typeof body.info === 'string' ? body.info : '';
+  let candidate: string | null = null;
+  if (/byBonus|freeSpinAdd/.test(info)) {
+    candidate = 'bonus_buy';
+  } else {
+    const action = /(?:^|[?&])action=([a-zA-Z]+)/.exec(info)?.[1];
+    if (action) candidate = /^free/i.test(action) ? 'free_spins' : 'spin';
+  }
+  const prevRank = previous ? (ROUND_KIND_RANK[previous] ?? 0) : 0;
+  const candRank = candidate ? (ROUND_KIND_RANK[candidate] ?? 0) : 0;
+  return candRank > prevRank ? candidate : previous;
 }
 
 export function parseAmount(value: unknown): number | null {

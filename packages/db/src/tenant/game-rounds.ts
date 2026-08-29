@@ -35,6 +35,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { generateUuidV7 } from '../utils/uuid';
 import { gameSessions } from './game-sessions';
 import { games } from './games';
@@ -110,6 +111,36 @@ export const gameRounds = pgTable(
      */
     payload: jsonb('payload').notNull().default({}),
 
+    /**
+     * Tipo de RONDA, normalizado en el callback.
+     *
+     * Sin esto una compra de tiradas gratis se ve identica a un giro normal
+     * en los reportes: un `bet` grande, y despues premios sin apuesta que los
+     * explique.
+     *
+     * No alcanza con guardar la accion cruda del proveedor: la compra y el
+     * giro comun llegan las dos como `action=spin`. Lo que las distingue es
+     * que la compra trae ademas `byBonus` / `freeSpinAdd` en el estado del
+     * juego. El dato util para auditar no es la accion suelta sino el tipo de
+     * ronda, que sale de mirar la ronda entera.
+     *
+     *   `bonus_buy`  el jugador COMPRO la feature.
+     *   `free_spins` corrio tiradas gratis sin comprarlas (se dispararon).
+     *   `spin`       ronda comun.
+     *   NULL         ronda pre-migracion 0106, o proveedor que no informa
+     *                (hoy Palace y Forever).
+     *
+     * Se va ACTUALIZANDO con las acciones de la ronda: abre como `spin` o
+     * `bonus_buy` y sube a `free_spins` si aparece una tirada gratis.
+     * `bonus_buy` nunca se pisa -- comprar es mas especifico que que se
+     * disparen solas.
+     *
+     * TEXT libre y no enum: todavia no conocemos el vocabulario completo de
+     * los proveedores. Ante un valor inesperado preferimos registrarlo antes
+     * que rechazar el callback -- la plata ya se movio.
+     */
+    action: text('action'),
+
     placedAt: timestamp('placed_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -138,6 +169,22 @@ export const gameRounds = pgTable(
     // Sin índice sobre status/settled_at hacían seq scan + sort de la tabla más
     // grande.
     index('game_rounds_status_settled').on(table.status, table.settledAt),
+    // Filtrar por tipo de jugada en reportes ("mostrame las compras de tiradas
+    // gratis"). Parcial: casi todas las filas viejas son NULL.
+    // Join inverso desde wallet_transactions (auditoria de Estadisticas de
+    // pago). La FK no crea indice del lado que referencia.
+    index('game_rounds_bet_wallet_tx_idx')
+      .on(table.betWalletTxId)
+      .where(sql`${table.betWalletTxId} IS NOT NULL`),
+    index('game_rounds_win_wallet_tx_idx')
+      .on(table.winWalletTxId)
+      .where(sql`${table.winWalletTxId} IS NOT NULL`),
+    index('game_rounds_rollback_wallet_tx_idx')
+      .on(table.rollbackWalletTxId)
+      .where(sql`${table.rollbackWalletTxId} IS NOT NULL`),
+    index('game_rounds_action_idx')
+      .on(table.action)
+      .where(sql`${table.action} IS NOT NULL`),
   ],
 );
 

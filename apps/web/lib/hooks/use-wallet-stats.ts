@@ -49,6 +49,20 @@ export interface MovementRow {
   bankTxSender: string | null;
   bankTxBank: string | null;
   bankTxReceivedAt: string | null;
+  /**
+   * Contexto de juego. NULL para todo lo que no venga de una ronda.
+   * Permite distinguir una compra de tiradas gratis de un giro comun, y
+   * agrupar los movimientos que pertenecen a la misma jugada.
+   */
+  roundId: string | null;
+  roundExternalId: string | null;
+  /** `bonus_buy` | `free_spins` | `spin` — ver game_rounds.action. */
+  roundAction: string | null;
+  /** Totales de la RONDA entera, no de este movimiento. */
+  roundBet: string | null;
+  roundWin: string | null;
+  gameName: string | null;
+  gameProviderCode: string | null;
   direction: 'in' | 'out';
 }
 

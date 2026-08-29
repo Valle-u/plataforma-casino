@@ -324,4 +324,58 @@ describe('WalletStatsService — auditoría netwin por ámbito (E2E)', () => {
     expect(adminNet.has(indep.id)).toBe(false);
     expect(adminNet.has(indepPlayer.id)).toBe(false);
   });
+  it('listMovements: una apuesta trae el contexto de la ronda que la originó', async () => {
+    // Sin esto la pantalla mostraba "Apuesta · Juego" y nada más: no se sabía
+    // de qué juego, de qué ronda, ni si esos pesos eran un giro común o la
+    // compra de una tanda de tiradas gratis.
+    const player = await mkUser('ctx_player', 'usuario_final');
+    const { gameId, sessionId } = await ensureGameSession();
+
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO wallets (id, user_id, balance)
+           VALUES (gen_random_uuid(), ${player.id}, '0')
+           ON CONFLICT (user_id) DO NOTHING`,
+    );
+    const w = await ctx.tenantDb.execute(
+      sql`SELECT id FROM wallets WHERE user_id = ${player.id} LIMIT 1`,
+    );
+    const walletId = rows(w)[0]!.id;
+
+    // La apuesta, y la ronda que la explica.
+    const tx = await ctx.tenantDb.execute(
+      sql`INSERT INTO wallet_transactions
+             (id, wallet_id, type, amount, balance_after, source, created_at)
+           VALUES
+             (gen_random_uuid(), ${walletId}, 'bet', '5000.00', '0.00',
+              'gregmorn_callback', now())
+           RETURNING id`,
+    );
+    const txId = rows(tx)[0]!.id;
+
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO game_rounds
+             (id, session_id, user_id, game_id, round_external_id,
+              bet_amount, win_amount, net_amount, status, action,
+              bet_wallet_tx_id, placed_at, settled_at)
+           VALUES
+             (gen_random_uuid(), ${sessionId}, ${player.id}, ${gameId},
+              'round-ctx-1', '5000.00', '827.50', '-4172.50', 'settled',
+              'bonus_buy', ${txId}, now(), now())`,
+    );
+
+    const page = await stats.listMovements(ctx.tenantDb, {
+      restrictToUserIds: [player.id],
+      limit: 50,
+      offset: 0,
+    });
+
+    const mov = page.data.find((m) => m.id === txId);
+    expect(mov).toBeDefined();
+    expect(mov!.gameName).toBe('WStats Test');
+    expect(mov!.roundExternalId).toBe('round-ctx-1');
+    expect(mov!.roundAction).toBe('bonus_buy');
+    // Totales de la RONDA entera: es lo que explica un premio sin apuesta.
+    expect(Number(mov!.roundBet)).toBeCloseTo(5000, 2);
+    expect(Number(mov!.roundWin)).toBeCloseTo(827.5, 2);
+  });
 });

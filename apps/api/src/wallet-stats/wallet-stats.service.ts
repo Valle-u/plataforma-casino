@@ -21,6 +21,7 @@ import { Injectable } from '@nestjs/common';
 import {
   and,
   eq,
+  or,
   gte,
   inArray,
   lte,
@@ -31,6 +32,7 @@ import {
 import {
   bankTransactions,
   gameRounds,
+  games,
   roles,
   userBonuses,
   userRoles,
@@ -113,6 +115,24 @@ export interface MovementRow {
   bankTxSender: string | null;
   bankTxBank: string | null;
   bankTxReceivedAt: Date | null;
+  /**
+   * Contexto de JUEGO del movimiento. NULL para todo lo que no sea una
+   * apuesta/premio/rollback de una ronda (cargas, transferencias, ajustes).
+   *
+   * Sin esto un `bet` de 5000 en la pantalla decía "Apuesta · Juego" y nada
+   * más: no se sabía de qué juego, de qué ronda, ni si eran 5000 de un giro
+   * normal o la compra de una tanda de tiradas gratis. `roundId` además
+   * permite AGRUPAR: una compra y sus 28 tiradas son una sola ronda.
+   */
+  roundId: string | null;
+  roundExternalId: string | null;
+  /** Tipo de ronda: `bonus_buy` | `free_spins` | `spin`. Ver game_rounds.action. */
+  roundAction: string | null;
+  /** Totales de la RONDA (no de este movimiento) — contexto para el premio. */
+  roundBet: string | null;
+  roundWin: string | null;
+  gameName: string | null;
+  gameProviderCode: string | null;
   /** Direction derivada del type — útil para colorear en UI. */
   direction: 'in' | 'out';
 }
@@ -309,6 +329,13 @@ export class WalletStatsService {
         bankTxSender: bankTransactions.senderName,
         bankTxBank: bankTransactions.bankName,
         bankTxReceivedAt: bankTransactions.receivedAt,
+        roundId: gameRounds.id,
+        roundExternalId: gameRounds.roundExternalId,
+        roundAction: gameRounds.action,
+        roundBet: gameRounds.betAmount,
+        roundWin: gameRounds.winAmount,
+        gameName: games.name,
+        gameProviderCode: games.providerCode,
       })
       .from(walletTransactions)
       .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
@@ -317,6 +344,20 @@ export class WalletStatsService {
         bankTransactions,
         eq(bankTransactions.matchedManualTxId, walletTransactions.id),
       )
+      // La ronda que originó el movimiento. Va por los tres enlaces porque
+      // un `bet` cuelga de bet_wallet_tx_id, un `win` de win_wallet_tx_id y
+      // una devolución de rollback_wallet_tx_id. Las tres columnas tienen
+      // índice parcial (migración 0106) — sin eso era seq scan de la tabla
+      // más grande en cada página.
+      .leftJoin(
+        gameRounds,
+        or(
+          eq(gameRounds.betWalletTxId, walletTransactions.id),
+          eq(gameRounds.winWalletTxId, walletTransactions.id),
+          eq(gameRounds.rollbackWalletTxId, walletTransactions.id),
+        ),
+      )
+      .leftJoin(games, eq(games.id, gameRounds.gameId))
       .where(where)
       .orderBy(sql`${walletTransactions.createdAt} DESC`)
       .limit(limit)

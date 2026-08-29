@@ -8244,3 +8244,75 @@ resolverlo.**
 4 tiradas gratis, todas con el mismo `roundId` interno y UUIDs distintos arriba,
 tiene que dar UNA ronda con los premios sumados. Las 3 suites de Gregmorn (50
 tests) en verde.
+
+---
+
+## 2026-08-29 — Auditoría de Estadísticas de pago: contexto de la jugada
+
+**Contexto**: Uriel pidió que la sección se pudiera auditar de verdad — "no hay
+diferencia cuando se compra rondas gratis, queda todo muy en el aire".
+
+Tenía razón y era peor de lo que parecía. Para cualquier jugada la pantalla
+mostraba:
+
+```
+Movimiento: "Apuesta"     Origen: "Juego"
+```
+
+Los tres proveedores colapsaban a "Juego". No se sabía qué juego, qué ronda, ni
+si esos 5.000 eran un giro común o la compra de una tanda de tiradas gratis. Y
+los premios de esas tiradas aparecían **sin apuesta que los explicara**, como si
+salieran de la nada.
+
+**Lo irónico**: el dato estaba. `game_rounds.bet_wallet_tx_id` /
+`win_wallet_tx_id` —la trazabilidad que se arregló el 2026-08-28— permite ir del
+movimiento a la ronda. Nadie estaba usando ese enlace.
+
+**Decisión**: tres capas.
+
+1. **Contexto de la jugada en cada movimiento** — LEFT JOIN de
+   `wallet_transactions` a `game_rounds` (por los **tres** enlaces: bet, win y
+   rollback) y de ahí a `games`. Suma juego, proveedor, ronda y los totales de
+   la ronda entera.
+
+2. **Tipo de ronda** — columna `game_rounds.action` (migración 0106).
+
+3. **Encadenado visual** — los movimientos de una misma ronda se marcan como
+   continuación, así una compra y sus 28 premios no se leen como 29 jugadas
+   sueltas.
+
+**Por qué `action` guarda el TIPO DE RONDA y no la acción cruda**: porque la
+compra y el giro común llegan las dos como `action=spin`. Lo que las distingue
+es que la compra trae además `byBonus` / `freeSpinAdd` en el estado del juego.
+El dato útil para auditar sale de mirar la ronda entera, no una acción suelta.
+Valores: `bonus_buy` | `free_spins` | `spin`.
+
+Se calcula en el callback y se **actualiza** con cada acción, con precedencia:
+`bonus_buy` (3) > `free_spins` (2) > `spin` (1). Una compra abre como
+`bonus_buy` y las 28 tiradas siguientes no la pisan; unas tiradas disparadas
+solas abren como `spin` y suben a `free_spins`.
+
+**Palace y Forever quedan en NULL, a propósito.** Se podría poner `spin` en
+todas, pero sería afirmar algo que no sabemos: si tienen tiradas gratis, no nos
+lo informan. NULL dice la verdad — "este proveedor no reporta el tipo de ronda".
+
+**Índices**: la migración agrega los tres índices parciales sobre
+`bet_wallet_tx_id`, `win_wallet_tx_id` y `rollback_wallet_tx_id`. La FK **no**
+crea índice del lado que referencia, así que sin esto cada página del listado
+hacía seq scan de `game_rounds` — la tabla que más rápido crece.
+
+**Fragilidad conocida**: la detección de la compra se apoya en `byBonus` /
+`freeSpinAdd`, campos que la spec de Gregmorn **no documenta** (mismo riesgo que
+el `roundId` de `info`, ya preguntado en
+`docs/gregmorn/98-pendientes-proveedor.md §2`). Si los cambian, las compras
+pasan a contarse como `free_spins`: degrada, no rompe.
+
+**CSV**: se agregaron las columnas Juego, Proveedor, Tipo de jugada, Ronda y los
+totales de la ronda, simétricas al bloque bancario que ya existía. Mismo texto
+que la pantalla — si el CSV y la UI nombran distinto la misma cosa, la auditoría
+se vuelve discutible.
+
+**Tests**: 2 nuevos en `gregmorn-callback.e2e.ts` (compra → `bonus_buy` que no
+se pisa; tiradas disparadas → sube a `free_spins`) y 1 en
+`wallet-stats-audit.e2e.ts` (el movimiento trae juego, ronda, tipo y los totales
+de la ronda).
