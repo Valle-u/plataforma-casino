@@ -8141,8 +8141,17 @@ por worker no sirve porque `jest.config.ts` fija `maxWorkers: 1` (todas las
 suites comparten worker), y usar un usuario distinto por suite obligaba a tocar
 las 76.
 
-**Resultado medido**: 62 → **14 suites** en rojo, 764 → **80 tests**. Con el
-tercer arreglo (abajo) `rate-limit.e2e.ts` pasó de 8 fallos a 1.
+**Resultado medido** (corrida completa, limiter ACTIVO):
+
+| | suites rojas | tests rojos |
+|---|---|---|
+| baseline (sin arreglos) | 62 | 764 |
+| solo `RATE_LIMIT_ENABLED=false` | 30 | 343 |
+| con los tres arreglos | **14** | **76** |
+
+Y lo que más importa: **0 ocurrencias de `ACCOUNT_LOCKED` y 0 de `HTTP
+429`**. Las dos cascadas quedaron eliminadas; los 76 que restan son fallos
+propios de cada suite, no contaminación de auth.
 
 **Implicaciones**: `resetMutableState()` deja de ser solo "truncar tablas" y
 pasa a garantizar también un estado de auth conocido. El comentario que decía
@@ -8169,5 +8178,17 @@ fallos sin bloquear antes. Es un conflicto de diseño entre dos protecciones, no
 de aislamiento. No se tocó a propósito: cambiar la aserción de un test de
 seguridad para que pase requiere decidir primero qué debe probar.
 
-**BankTransactions (14), Notifications (13), Deposits y otras** — contaminación
-cruzada de otra naturaleza, sin investigar.
+**BankTransactions, Notifications, Deposits y otras (~52 tests)** — fallos de
+aserción, no de auth. Dos muestras:
+
+- `BankTransactions`: el POST devuelve 400 donde el test espera 201.
+- `Notifications`: el dispatch falla con `web_push_disabled` en vez de
+  `user_has_no_push_subscription`.
+
+**Hipótesis sin verificar** (queda como pista para quien siga): las dos
+huelen a configuración faltante, y `resetMutableState()` trunca
+`tenant_settings` + `tenant_settings_history`. Es decir, el reset que arregla
+la contaminación de auth podría estar causando esta otra: las suites que
+re-seedean sus settings pasan y las que asumen defaults no. No lo comprobé —
+el siguiente paso natural sería revisar si esas suites pasaban antes de que
+`tenant_settings` entrara al truncate.
