@@ -13532,3 +13532,73 @@ Los tres pusheados a `main` y deployados (auto-deploy por webhook; API `done`,
   **rollback** en Stage (única parte del camino de la plata nunca ejercitada
   contra su sistema real) y su respuesta sobre los **40 juegos de casino en vivo**
   que devuelven `url: ""`.
+
+---
+
+## 2026-08-29 09:40 AR — Claude (Opus 5)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Verificación del período de agosto en producción, que destapó un bug de
+atribución en Gregmorn.
+
+**1. Se confirmó el fee por proveedor en prod.** Uriel colgó a maggie de
+`socio_test_1` y corrió el compute. El `provider_fee` dio **1.107,01** =
+9.708,50 × 6% (palace) + 5.245,00 × 10% (gregmorn). Con el modelo viejo habría
+dado 1.085,92. El arreglo de anoche quedó verificado contra datos reales.
+
+**2. Se encontraron 33 rondas trabadas en `placed`.** El wallet cuadraba exacto
+con las rondas —no había plata perdida— pero quedaban fuera del NetWin. Uriel
+aportó el dato que destrabó el análisis: había comprado tiradas gratis. Eran **3
+rondas lógicas**, no 33: una compra (`spin` bet 5000) + `pick` + 28
+`freeSpin`/`freeReSpin`, todas con el mismo `roundId` **interno**.
+
+Causa: agrupábamos por `body.roundId`, que en esos juegos es un UUID distinto por
+callback. Ver DEVLOG "Gregmorn: agrupar la ronda por el `roundId` de `info`".
+
+**3. Respondió el proveedor** dos de las cuatro abiertas (IPs por entorno, juegos
+en vivo sin ARS). Se documentó y se le envió el mensaje con las 3 que quedan.
+
+### Decisiones tomadas
+
+- **Agrupar por el `roundId` de `info`**, con fallback al de siempre (DEVLOG).
+  Riesgo asumido y anotado: ese campo **no está documentado** en su spec como
+  identificador de ronda.
+- **NO cerrar las 3 rondas trabadas por antigüedad.** Ya vimos un cierre llegar
+  13 minutos tarde; sin conocer su ventana máxima, cerrarlas arriesga contarlas
+  dos veces. Se les preguntó.
+- **No tocar el test de `rate-limit`** donde el lockout (5) choca con el límite
+  del guard (10). Es conflicto de diseño entre dos protecciones.
+
+### Commits creados
+
+- `f61f949` — `fix(gregmorn): agrupar la ronda por el roundId de "info"`
+- `62b1663` — `docs(gregmorn): respuesta del proveedor -- IPs por entorno y live games`
+- `1 más` — `docs(gregmorn): version final del mensaje al proveedor`
+
+Todos pusheados y deployados (auto-deploy, API `done`, `/health` 200).
+
+### Estado al cerrar
+
+- **Fase actual**: Gregmorn integrado; motor de comisiones con el fee por
+  proveedor verificado en prod.
+- **Próximo paso lógico**: esperar la respuesta del proveedor sobre las rondas
+  que no cierran.
+- **Bloqueos**: ninguno técnico.
+
+### Notas para próximo agente
+
+- ⚠️ **NO liquidar el período 2026-08 todavía.** Faltan **4.172,05** de NetWin en
+  la base (las 3 rondas trabadas), ~1.877 de comisión a la tasa 50% del socio.
+  Liquidar quema fichas de la Casa de forma irreversible sobre un número que
+  sabemos incompleto.
+- ⚠️ **Al migrar a la Prod del proveedor**: sumar `3.78.156.229` a la allowlist de
+  Cloudflare. Hoy sólo está `18.184.217.6` (Stage). Si no, los callbacks mueren
+  igual de silenciosamente que con Bot Fight Mode.
+- El arreglo de agrupación **no** destraba las 3 rondas viejas — sólo evita que
+  vuelva a pasar.
+- `pnpm test` da 14 suites en rojo y **no es una regresión** (ver la entrada
+  anterior y el DEVLOG).
