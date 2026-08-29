@@ -62,6 +62,11 @@ Reglas que quedaron en Cloudflare:
 | `Gregmorn callbacks` | host + ruta del callback | Permanente. Exceptúa WAF y rate limiting en esa ruta, desde cualquier IP, y la registra. |
 | `Gregmorn diagnostico (temporal)` | `ip.src eq 3.78.156.229` | Temporal. Borrar cuando la integración esté estable. |
 
+> ⚠️ **Al pasar a su entorno de Prod:** confirmaron el 2026-08-29 que
+> `3.78.156.229` es la IP de **producción** y `18.184.217.6` la de **Stage**.
+> Hoy la allowlist apunta a la de Stage. Si se migra sin sumar la de Prod, los
+> callbacks se mueren igual de silenciosamente que con Bot Fight Mode.
+
 Bot Fight Mode quedó **apagado**. Si alguna vez se vuelve a prender, esto se
 rompe igual y de la misma forma silenciosa.
 

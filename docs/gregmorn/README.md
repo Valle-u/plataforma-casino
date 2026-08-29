@@ -47,7 +47,7 @@
 | Soporte de ARS | ✅ confirmado |
 | Callback URL nuestra | ✅ enviada — `https://api.miamihub.vip/api/v1/game-provider/gregmorn/callback` |
 | IP nuestra (para su allowlist) | ✅ enviada — `147.93.32.111` |
-| IP de ellos (para nuestra allowlist) | ✅ `3.78.156.229` — ⬜ **falta cargarla en Cloudflare** |
+| IP de ellos (para nuestra allowlist) | ✅ `18.184.217.6` (Stage, cargada) · `3.78.156.229` (Prod) — ⬜ **sumar la de Prod al migrar** |
 | `callbackUrl` por request en `openGame` | ✅ confirmado que se puede |
 | login / password / secret key (Stage) | ✅ recibidas — ⬜ pendientes de cargar en `tenant_settings` |
 | **`user_id`** | ✅ **es el `user.id` del `/auth/login`** — no se carga a mano |

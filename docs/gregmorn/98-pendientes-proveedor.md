@@ -3,7 +3,7 @@
 > Cosas que necesitan respuesta de ellos (`GH_Support_Dave`). Se escribe en
 > **inglés**, sin saludo: la conversación ya está abierta.
 >
-> Última actualización: 2026-08-29.
+> Última actualización: 2026-08-29 (tras su respuesta de las 03:54).
 
 ---
 
@@ -69,9 +69,28 @@ Pedirles que fuercen uno en Stage.
 
 ---
 
-## 4. Los 40 juegos de casino en vivo (ABIERTO — desde 2026-08-28)
+## 4. Los 40 juegos de casino en vivo (RESUELTO — 2026-08-29)
 
-Devuelven `url: ""` con `StateId: "0"` al abrirlos. Reportado, sin respuesta.
+Devolvían `url: ""` con `StateId: "0"` al abrirlos. **Respondieron:** esos
+juegos **no soportan ARS** y los **quitaron de nuestra cuenta**. Pidieron
+re-sincronizar el catálogo.
+
+De nuestro lado no hace falta nada especial: el sync ya da de baja
+(`is_active = false`) los juegos que dejan de venir en `getUserGames`. Los 40
+ya figuran inactivos, así que no aparecen como jugables. Correr un sync más
+para confirmar es inocuo.
+
+---
+
+## 5. IPs de origen (RESUELTO — 2026-08-29)
+
+**Respondieron:** `3.78.156.229` es la IP de **producción**; la de **Stage**
+es `18.184.217.6`. Durante días sostuvieron que la primera era "la única",
+estando nosotros en Stage — de ahí venía el desfasaje que nos costó el
+diagnóstico del Bot Fight Mode.
+
+⚠️ **Al migrar a su Prod hay que sumar `3.78.156.229`** a la allowlist de
+Cloudflare. Hoy sólo está la de Stage.
 
 ---
 
@@ -104,6 +123,4 @@ Devuelven `url: ""` con `StateId: "0"` al abrirlos. Reportado, sin respuesta.
 >
 > **3. Rollback.** Still never exercised on Stage. Could you force one so we can
 > verify our handler against your real payload?
->
-> Also still pending from before: the ~40 live casino games returning `url: ""`
-> with `StateId: "0"`.
+

@@ -12,6 +12,8 @@ Qué recibimos, qué falta y dónde va cada cosa. Se actualiza a medida que resp
 | 2026-08-28 | Responden: **ARS sí**, su IP es `3.78.156.229`, el `callbackUrl` se puede pasar por request. **No contestan la del rollback.** |
 | 2026-08-28 | Mandan login, password y secret key de Stage. Falta el `user_id`. |
 | 2026-08-28 | Se les re-preguntan las 3 abiertas. **Contestan las 3**: el `user_id` sale del `/auth/login`; `3.78.156.229` es su única IP y avisarán antes de sumar otras; y para el `rollback` **aprueban `cmd + transactionId`** ("Yes, you can do it this way") después de consultarlo con su equipo de desarrollo. |
+| 2026-08-28 | Se les avisa que el problema era **nuestro**: Cloudflare Bot Fight Mode desafiaba sus callbacks en el borde. Se les corrige además que el `callbackUrl` **sí** se lee (sacarlo devolvía HTTP 500). Se les pide la lista completa de IPs de egreso y se reportan los 40 juegos en vivo con `url: ""`. |
+| 2026-08-29 | **Responden 2 de 2**: `3.78.156.229` es la IP de **Prod** y `18.184.217.6` la de **Stage** (hay que sumar la de Prod al migrar); y los juegos en vivo **no soportan ARS**, así que los **quitaron de la cuenta** — piden re-sincronizar. Quedan abiertas las de rondas sin cerrar, semántica del `roundId` y rollback (ver `98-pendientes-proveedor.md`). |
 
 ## Lo que les dimos
 
@@ -26,7 +28,12 @@ Qué recibimos, qué falta y dónde va cada cosa. Se actualiza a medida que resp
 ## Lo que nos dieron
 
 - **ARS soportado.** Era el bloqueante.
-- **Su IP de callbacks:** `3.78.156.229`.
+- **Sus IPs de callbacks:** `18.184.217.6` (**Stage**) y `3.78.156.229`
+  (**Prod**). ⚠️ Durante días dieron sólo la de Prod diciendo que era "la
+  única", mientras estábamos en Stage — de ahí que los callbacks llegaran
+  desde una IP que no coincidía con la declarada. Lo aclararon el 2026-08-29.
+  **Al pasar a Prod hay que sumar `3.78.156.229` a la allowlist de
+  Cloudflare**, o se rompe igual que antes.
 - **`callbackUrl` por request** en `openGame`: confirmado. Nos evita depender de la
   configuración por moneda de su panel.
 - **Credenciales de Stage:** login, password y secret API key.
