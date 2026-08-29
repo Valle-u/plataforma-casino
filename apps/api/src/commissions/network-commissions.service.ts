@@ -632,6 +632,45 @@ export class NetworkCommissionsService {
         ownNet.set(r.userId, toCents(r.bet) - toCents(r.win));
       }
 
+      // La MISMA NetWin que `ownNet`, pero desglosada por proveedor: cada
+      // proveedor cobra su propio fee (LEY C4b), asi que la mezcla de
+      // proveedores de cada red es lo que decide cuanto fee paga.
+      //
+      // Se mantiene en paralelo a `ownNet` en los TRES lugares donde este se
+      // ajusta (aca, el clawback y el windowing por elegibilidad). Si se
+      // desincronizan, el fee deja de cerrar contra lo que la Casa paga.
+      const ownNetByProv = new Map<string, Map<string, bigint>>();
+      const addProvNet = (uid: string, code: string, cents: bigint): void => {
+        if (cents === 0n) return;
+        let m = ownNetByProv.get(uid);
+        if (!m) {
+          m = new Map();
+          ownNetByProv.set(uid, m);
+        }
+        m.set(code, (m.get(code) ?? 0n) + cents);
+      };
+      {
+        const provRows = await tx
+          .select({
+            userId: gameRounds.userId,
+            providerCode: games.providerCode,
+            net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
+          })
+          .from(gameRounds)
+          .innerJoin(games, eq(games.id, gameRounds.gameId))
+          .where(
+            and(
+              eq(gameRounds.status, 'settled'),
+              gte(gameRounds.settledAt, periodStart),
+              lt(gameRounds.settledAt, periodEnd),
+            ),
+          )
+          .groupBy(gameRounds.userId, games.providerCode);
+        for (const r of provRows) {
+          addProvNet(r.userId, r.providerCode, toCents(r.net));
+        }
+      }
+
       // ── Clawback: rondas anuladas DESPUÉS de liquidar su período ─────────
       //
       // Si el proveedor anula una ronda de un mes ya pagado, esa comisión ya
@@ -669,10 +708,12 @@ export class NetworkCommissionsService {
           const anuladas = await tx
             .select({
               userId: gameRounds.userId,
+              providerCode: games.providerCode,
               origPeriod: sql<string>`to_char(date_trunc('month', ${gameRounds.settledAt} AT TIME ZONE 'UTC'), 'YYYY-MM')`,
               net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
             })
             .from(gameRounds)
+            .innerJoin(games, eq(games.id, gameRounds.gameId))
             .where(
               and(
                 eq(gameRounds.status, 'rolled_back'),
@@ -683,6 +724,7 @@ export class NetworkCommissionsService {
             )
             .groupBy(
               gameRounds.userId,
+              games.providerCode,
               sql`date_trunc('month', ${gameRounds.settledAt} AT TIME ZONE 'UTC')`,
             );
 
@@ -698,6 +740,7 @@ export class NetworkCommissionsService {
             // toda la cadena de ancestros, y el diferencial reparte la
             // reducción en la proporción que le toca a cada nivel.
             ownNet.set(r.userId, (ownNet.get(r.userId) ?? 0n) - cents);
+            addProvNet(r.userId, r.providerCode, -cents);
           }
         }
       }
@@ -786,10 +829,12 @@ export class NetworkCommissionsService {
         const windowed = await tx
           .select({
             userId: gameRounds.userId,
+            providerCode: games.providerCode,
             bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount}), 0)::text`,
             win: sql<string>`COALESCE(SUM(${gameRounds.winAmount}), 0)::text`,
           })
           .from(gameRounds)
+          .innerJoin(games, eq(games.id, gameRounds.gameId))
           .where(
             and(
               eq(gameRounds.status, 'settled'),
@@ -798,10 +843,11 @@ export class NetworkCommissionsService {
               inArray(gameRounds.userId, subtreeIds),
             ),
           )
-          .groupBy(gameRounds.userId);
+          .groupBy(gameRounds.userId, games.providerCode);
         for (const r of windowed) {
           const delta = toCents(r.bet) - toCents(r.win);
           ownNet.set(r.userId, (ownNet.get(r.userId) ?? 0n) + delta);
+          addProvNet(r.userId, r.providerCode, delta);
         }
       };
 
@@ -1116,15 +1162,19 @@ export class NetworkCommissionsService {
       //    Saltea operadores ya 'paid' (resultado final, no se recomputa).
       //    C4: deducciones DORMIDAS (DEDUCTIONS_ENABLED=false) → finalCommission
       //    == payable. El bloque F1 queda referenciado pero inerte.
-      // ── Costo del PROVEEDOR (LEY C): el proveedor (ej. Palace 7%) nos cobra un
-      //    fee sobre el NetWin. Se descuenta de la BASE de comisión ANTES de
-      //    aplicar las tasas de los operadores → los operadores cobran sobre
-      //    `NetWin × (1 − fee)`. Solo aplica a bases POSITIVAS (el proveedor no
-      //    reduce la deuda de una red que perdió). Como la comisión es lineal en
-      //    la base, esto es matemáticamente idéntico a reducir cada base.
-      //    MVP (un proveedor): fee exacto. Multi-proveedor: fee efectivo
-      //    ponderado por NetWin (el split per-operador fino es refinamiento
-      //    futuro). El monto de fee de cada operador se persiste (transparencia).
+      // ── Costo del PROVEEDOR (LEY C4b): cada proveedor nos cobra un fee
+      //    sobre la NetWin que generó. Se descuenta de la BASE de comisión
+      //    ANTES de aplicar las tasas de los operadores → los operadores
+      //    cobran sobre `NetWin × (1 − fee)`. Solo aplica a bases POSITIVAS
+      //    (el proveedor no reduce la deuda de una red que perdió). Como la
+      //    comisión es lineal en la base, es idéntico a reducir cada base.
+      //
+      //    El fee se calcula POR PROVEEDOR sobre la NetWin que cada red le
+      //    generó, y se suman — mismo criterio que `getHousePnl`, así lo que
+      //    el motor descuenta cierra exactamente contra lo que la Casa paga.
+      //    (Antes era una tasa promedio ponderada de toda la casa: con un
+      //    solo proveedor daba exacto, pero con varios el operador que jugaba
+      //    barato le terminaba subsidiando el costo al que jugaba caro.)
       const provFeeRows = await tx
         .select({
           code: gameProviders.code,
@@ -1134,39 +1184,52 @@ export class NetworkCommissionsService {
       const feeByProvider = new Map<string, bigint>(
         provFeeRows.map((r) => [r.code, toCents(r.feePct)]),
       );
-      const provNetRows = await tx
-        .select({
-          providerCode: games.providerCode,
-          net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
-        })
-        .from(gameRounds)
-        .innerJoin(games, eq(games.id, gameRounds.gameId))
-        .where(
-          and(
-            eq(gameRounds.status, 'settled'),
-            gte(gameRounds.settledAt, periodStart),
-            lt(gameRounds.settledAt, periodEnd),
-          ),
-        )
-        .groupBy(games.providerCode);
-      let feeWeightedNum = 0n; // Σ (netProvider × feeBp)
-      let feeNetTotal = 0n; // Σ netProvider
-      for (const r of provNetRows) {
-        const net = toCents(r.net);
-        feeWeightedNum += net * (feeByProvider.get(r.providerCode) ?? 0n);
-        feeNetTotal += net;
-      }
-      // Fee efectivo en bp (centésimas de %). Si el NetWin total ≤ 0 → sin fee.
-      const providerFeeBp =
-        feeNetTotal > 0n ? divRoundCents(feeWeightedNum, feeNetTotal) : 0n;
-      /** Fee (en cents) sobre una base dada; 0 si la base es ≤ 0. */
-      const feeOn = (cents: bigint): bigint =>
-        cents > 0n ? divRoundCents(cents * providerFeeBp, 10000n) : 0n;
-      /** Base de comisión POST-fee de un nodo (para el diferencial). */
-      const baseOf = (u: string): bigint => {
-        const s = subNetWin(u);
-        return s - feeOn(s);
+      /**
+       * NetWin del subtree DESGLOSADA por proveedor. Espejo exacto de
+       * `subNetWin` (misma poda de excluidos, mismo "un operador no aporta
+       * su propio juego"), pero sin colapsar de qué proveedor viene cada
+       * peso — que es justamente lo que decide el fee.
+       */
+      const subProvMemo = new Map<string, Map<string, bigint>>();
+      const subNetByProvider = (u: string): Map<string, bigint> => {
+        const cached = subProvMemo.get(u);
+        if (cached !== undefined) return cached;
+        const acc = new Map<string, bigint>();
+        if (excluded.has(u)) {
+          subProvMemo.set(u, acc);
+          return acc;
+        }
+        if (!isOperator(u)) {
+          for (const [code, net] of ownNetByProv.get(u) ?? []) {
+            acc.set(code, (acc.get(code) ?? 0n) + net);
+          }
+        }
+        for (const c of childrenMap.get(u) ?? []) {
+          for (const [code, net] of subNetByProvider(c)) {
+            acc.set(code, (acc.get(code) ?? 0n) + net);
+          }
+        }
+        subProvMemo.set(u, acc);
+        return acc;
       };
+      /**
+       * Fee total del subtree de `u`: cada proveedor cobra SU tasa sobre la
+       * NetWin que le generó esa red, y se suman.
+       *
+       * La positividad se evalúa POR PROVEEDOR: si una red perdió plata en
+       * uno y ganó en otro, el proveedor ganador cobra igual — no hay
+       * compensación cruzada entre proveedores.
+       */
+      const feeOfSubtree = (u: string): bigint => {
+        let fee = 0n;
+        for (const [code, net] of subNetByProvider(u)) {
+          if (net <= 0n) continue;
+          fee += divRoundCents(net * (feeByProvider.get(code) ?? 0n), 10000n);
+        }
+        return fee;
+      };
+      /** Base de comisión POST-fee de un nodo (para el diferencial). */
+      const baseOf = (u: string): bigint => subNetWin(u) - feeOfSubtree(u);
 
       const computed: Array<{
         op: string;
@@ -1202,7 +1265,7 @@ export class NetworkCommissionsService {
         const u = userMap.get(op)!;
         const rateOpBp = toCents(u.rate); // % en centésimas (5.00 → 500)
         const subOp = subNetWin(op); // NetWin del subtree PRE-fee (se registra).
-        const providerFee = feeOn(subOp); // costo proveedor sobre esa base.
+        const providerFee = feeOfSubtree(op); // fee real de SUS proveedores.
 
         // Aporte propio menos el de cada hijo operador directo (diferencial),
         // sobre la BASE POST-fee de cada nodo (`baseOf` = subNetWin − fee).

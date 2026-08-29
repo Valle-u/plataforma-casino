@@ -33,6 +33,7 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
   let adminId: string;
   let gameSession: { gameId: string; sessionId: string } | null = null;
   let roundSeq = 0;
+  const providerGames = new Map<string, { gameId: string; sessionId: string }>();
 
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
@@ -146,10 +147,11 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     carryover_out: string;
     payable: string;
     clawback: string;
+    provider_fee: string;
     status: string;
   } | null> {
     const r = await ctx.tenantDb.execute(
-      sql`SELECT sub_net_win, gross_commission, carryover_in, carryover_out, payable, clawback, status
+      sql`SELECT sub_net_win, gross_commission, carryover_in, carryover_out, payable, clawback, provider_fee, status
           FROM commission_network_periods
           WHERE operator_user_id = ${operatorId} AND period_start = ${periodStart.toISOString()}
           LIMIT 1`,
@@ -162,6 +164,7 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
         carryover_out: string;
         payable: string;
         clawback: string;
+        provider_fee: string;
         status: string;
       }>)[0] ?? null
     );
@@ -169,6 +172,64 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
 
   async function mkUser(label: string, role: string) {
     return createTestUser(ctx.request, adminToken, { suite: 'comm-net-engine', label, role });
+  }
+
+  /**
+   * Crea (idempotente) un proveedor con su fee y un juego que le pertenece.
+   * Códigos propios por test: cambiarle el fee a 'palace' rompería los demás
+   * casos de la suite, que asumen fee 0.
+   */
+  async function ensureProviderGame(
+    providerCode: string,
+    feePct: number,
+  ): Promise<{ gameId: string; sessionId: string }> {
+    const cached = providerGames.get(providerCode);
+    if (cached) return cached;
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO game_providers (id, code, display_name, commission_fee_pct)
+          VALUES (gen_random_uuid(), ${providerCode}, ${providerCode}, ${feePct.toFixed(2)})
+          ON CONFLICT (code) DO UPDATE SET commission_fee_pct = ${feePct.toFixed(2)}`,
+    );
+    const gameCode = `netwin_test_game_${providerCode}`;
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO games (id, code, name, category, provider_code)
+          VALUES (gen_random_uuid(), ${gameCode}, ${gameCode}, 'slots', ${providerCode})
+          ON CONFLICT (code) DO NOTHING`,
+    );
+    const g = await ctx.tenantDb.execute(
+      sql`SELECT id FROM games WHERE code = ${gameCode} LIMIT 1`,
+    );
+    const gameId = (g as unknown as Array<{ id: string }>)[0]!.id;
+    const s = await ctx.tenantDb.execute(
+      sql`INSERT INTO game_sessions (id, user_id, game_id, provider_session_id)
+          VALUES (gen_random_uuid(), ${adminId}, ${gameId}, ${`sess-${providerCode}`})
+          RETURNING id`,
+    );
+    const sessionId = (s as unknown as Array<{ id: string }>)[0]!.id;
+    const out = { gameId, sessionId };
+    providerGames.set(providerCode, out);
+    return out;
+  }
+
+  /** insertRound pero sobre un juego/proveedor concreto. Siempre 'settled'. */
+  async function insertRoundOn(
+    target: { gameId: string; sessionId: string },
+    userId: string,
+    bet: number,
+    win: number,
+    when: Date,
+  ): Promise<void> {
+    const net = (win - bet).toFixed(2);
+    const ext = `nw-${roundSeq++}`;
+    const whenIso = when.toISOString();
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO game_rounds
+            (id, session_id, user_id, game_id, round_external_id,
+             bet_amount, win_amount, net_amount, status, placed_at, settled_at)
+          VALUES
+            (gen_random_uuid(), ${target.sessionId}, ${userId}, ${target.gameId}, ${ext},
+             ${bet.toFixed(2)}, ${win.toFixed(2)}, ${net}, 'settled', ${whenIso}, ${whenIso})`,
+    );
   }
 
   // ── Tests ────────────────────────────────────────────────────────────
@@ -586,5 +647,61 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     expect(Number(r2.carryover_in)).toBeCloseTo(-50, 2);
     expect(Number(r2.carryover_out)).toBeCloseTo(-50, 2);
     expect(Number(r2.payable)).toBeCloseTo(0, 2);
+  });
+
+  // ── Fee del proveedor (LEY C4b) ──────────────────────────────────────
+  //
+  // El fee no es una tasa única de la Casa: cada proveedor cobra la suya
+  // sobre la NetWin que generó. Dos redes con la MISMA NetWin pero mezcla
+  // de proveedores opuesta tienen que pagar fees DISTINTOS.
+  //
+  // Período 2026-06: posterior a todos los demás de la suite, así la
+  // cascada de este compute no recomputa períodos ajenos.
+  it('fee del proveedor: cada operador paga el fee de los proveedores que jugó SU red', async () => {
+    const period = '2026-06';
+
+    // Dos proveedores con fees muy distintos, con códigos propios para no
+    // tocar 'palace' (fee 0, asumido por el resto de la suite).
+    const lo = await ensureProviderGame('feetest_lo', 5); // barato
+    const hi = await ensureProviderGame('feetest_hi', 25); // caro
+
+    const socioLo = await mkUser('t11_socio_lo', 'socio');
+    const socioHi = await mkUser('t11_socio_hi', 'socio');
+    const pLo = await mkUser('t11_p_lo', 'usuario_final');
+    const pHi = await mkUser('t11_p_hi', 'usuario_final');
+    await setParent(pLo.id, socioLo.id, 'jugador_de_socio');
+    await setParent(pHi.id, socioHi.id, 'jugador_de_socio');
+    await setRate(socioLo.id, 10);
+    await setRate(socioHi.id, 10);
+
+    // Misma NetWin (1000) para los dos; cada red juega un solo proveedor.
+    // La ÚNICA diferencia entre ambos operadores es el fee del proveedor.
+    await insertRoundOn(lo, pLo.id, 3000, 2000, P(period));
+    await insertRoundOn(hi, pHi.id, 3000, 2000, P(period));
+
+    await compute(period);
+
+    const rLo = (await getRow(socioLo.id, P(period)))!;
+    const rHi = (await getRow(socioHi.id, P(period)))!;
+
+    // NetWin idéntica: el fee es lo único que puede diferenciarlos.
+    expect(Number(rLo.sub_net_win)).toBeCloseTo(1000, 2);
+    expect(Number(rHi.sub_net_win)).toBeCloseTo(1000, 2);
+
+    // Fee = el del proveedor que jugó CADA red, no un promedio global:
+    //   lo:  1000 × 5%  =  50  → base 950 → gross 10%·950 = 95
+    //   hi:  1000 × 25% = 250  → base 750 → gross 10%·750 = 75
+    //
+    // Con el promedio ponderado global —(1000·5 + 1000·25)/2000 = 15%— los
+    // dos darían fee 150 y gross 85: el que juega barato le subsidia el
+    // costo al que juega caro, y la Casa nunca cierra contra lo que paga.
+    expect(Number(rLo.provider_fee)).toBeCloseTo(50, 2);
+    expect(Number(rHi.provider_fee)).toBeCloseTo(250, 2);
+    expect(Number(rLo.gross_commission)).toBeCloseTo(95, 2);
+    expect(Number(rHi.gross_commission)).toBeCloseTo(75, 2);
+
+    // Los fees que descuenta el motor tienen que sumar exactamente lo que la
+    // Casa le paga a los proveedores (mismo criterio que house-pnl).
+    expect(Number(rLo.provider_fee) + Number(rHi.provider_fee)).toBeCloseTo(300, 2);
   });
 });

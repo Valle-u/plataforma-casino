@@ -7992,3 +7992,104 @@ descuente cuando el período original sigue en `accrued`. Los 5 suites del motor
 **Lo que sigue pendiente del motor**: la **estructura** de la red no tiene
 snapshot histórico — un recompute usa la jerarquía actual. Es el único de los
 límites originales que queda abierto, y el más caro (tabla de vigencias).
+
+---
+
+## 2026-08-28 — Fee del proveedor: por proveedor, no promediado
+
+**Contexto**: con Gregmorn integrado pasamos a tener tres proveedores con fees
+muy distintos (forever 0%, palace 6%, gregmorn 10%). Verificando que la NetWin
+de Gregmorn entrara bien en la comisión apareció una discrepancia: el
+`provider_fee` persistido no coincidía con el fee calculado a mano por
+proveedor.
+
+**Lo que estaba pasando**: `computePeriod` colapsaba todos los proveedores en
+**una sola tasa promedio ponderada por NetWin** y se la aplicaba igual a todos
+los operadores:
+
+```
+providerFeeBp = Σ(netProveedor × feeProveedor) / Σ netProveedor
+feeDelOperador = subNetWin(op) × providerFeeBp
+```
+
+Con un solo proveedor da exacto, y estaba documentado como simplificación de
+MVP ("el split per-operador fino es refinamiento futuro"). Con varios deja de
+serlo: **el operador cuya red juega barato le subsidia el costo al que juega
+caro**, y la Casa nunca cierra contra lo que realmente le factura el proveedor.
+
+Peor: `getHousePnl` ya lo calculaba **bien** (agrupa por `userId` +
+`providerCode`, aplica el fee de cada uno y los suma). O sea que las dos
+pantallas mostraban números distintos para el mismo mes.
+
+**Opciones consideradas**:
+- A) Dejarlo y documentarlo más fuerte.
+- B) Calcular el fee por proveedor sobre el subárbol de cada operador.
+- C) Guardar el fee resuelto por ronda en `game_rounds`.
+
+**Decisión**: **B**.
+
+**Razón**: la implementación correcta ya existía en el mismo archivo
+(`getHousePnl`) — no era un rediseño sino unificar el criterio. C era la más
+exacta pero pedía migración y backfill de rondas históricas para resolver un
+problema que B ya resuelve con los datos que hay.
+
+**Implicaciones**: `ownNet` (NetWin por jugador) ahora tiene un espejo
+`ownNetByProv` desglosado por proveedor, que se mantiene sincronizado en los
+**tres** lugares donde `ownNet` se ajusta: la carga inicial, la resta del
+clawback y el windowing por elegibilidad. Si alguno se olvidara, el fee dejaría
+de cerrar. Sobre eso, `subNetByProvider(u)` es el espejo exacto de `subNetWin`
+(misma poda de excluidos, misma regla de que un operador no aporta su propio
+juego) y `feeOfSubtree(u)` suma el fee de cada proveedor.
+
+Desaparecen `providerFeeBp` y `feeOn()`.
+
+**Cambio de semántica a tener presente**: la regla "no hay fee sobre base
+negativa" ahora se evalúa **por proveedor**, no sobre el total del subárbol. Si
+una red pierde en un proveedor y gana en otro, el que ganó cobra igual — no hay
+compensación cruzada. Es lo que hace el proveedor en la vida real y lo que ya
+hacía `getHousePnl`.
+
+**Leyes**: C4b. No se rompe: dice que el fee es "configurable por proveedor", y
+recién ahora se consume así.
+
+**Impacto medido en prod (agosto 2026)**: sobre el subárbol de un socio con
+14.953,50 de NetWin, el fee pasa de 1.085,92 (promedio 7,26%) a 1.107,01
+(6% de palace + 10% de gregmorn). Diferencia 21,09 → a tasa 50%, 10,55 de
+comisión que se pagaban de más. El desvío crecía con la participación de
+Gregmorn: 1,04 cuando era el 2,5% del volumen, 21,09 al 33%.
+
+**Tests**: 1 nuevo en `commissions-network-engine.e2e.ts` — dos redes con la
+**misma** NetWin (1000) pero proveedores opuestos (5% vs 25%). Antes del arreglo
+las dos daban fee 150; ahora dan 50 y 250. Las 5 suites del motor (30 tests) en
+verde.
+
+**Alternativa abierta**: C (fee resuelto por ronda) sigue siendo la versión
+exacta si algún día el fee de un proveedor cambia a mitad de mes. Hoy el fee se
+lee de `game_providers` al computar, así que un cambio de fee se aplica
+retroactivamente a todo el período.
+
+---
+
+## 2026-08-28 — Dos correcciones a entradas anteriores
+
+**1. La estructura de la red SÍ tiene historial.** La entrada del clawback dice
+que "la **estructura** de la red no tiene snapshot histórico". Es inexacto:
+`user_hierarchy` es una tabla **temporal** (`since` / `until`, con índice único
+parcial `user_hierarchy_one_active_parent` sobre `until IS NULL`). Cada cambio
+de padre cierra la fila vieja e inserta una nueva, así que el historial completo
+está guardado.
+
+Lo que sigue siendo cierto es la consecuencia: **el motor no lo usa** — un
+recompute arma el árbol con las relaciones activas de hoy. La limitación es del
+compute, no de los datos, y eso la hace mucho más barata de resolver de lo que
+sugería la entrada anterior.
+
+**2. La suite completa de la API no se puede correr entera.** `pnpm test` da
+~60 suites en rojo, pero no por los tests: las 76 suites se loguean como
+`jest_admin` contra el mismo Redis y disparan el rate limiter de login (HTTP
+429, ~12 min de bloqueo). A partir de ahí cae en cascada todo lo que necesita
+auth. Con `RATE_LIMIT_ENABLED=false` el problema desaparece.
+
+Es preexistente y no está resuelto — queda anotado para que el próximo agente
+no diagnostique de nuevo desde cero, y sobre todo para que **no lea un `pnpm
+test` en rojo como una regresión propia**.
