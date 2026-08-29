@@ -96,5 +96,6 @@
 | [`00-intake.md`](00-intake.md) | Qué nos mandaron, qué falta, dónde van las credenciales. |
 | [`01-api-spec.md`](01-api-spec.md) | Los endpoints digeridos: auth, catálogo, launch y los 3 webhooks. |
 | [`02-signing.md`](02-signing.md) | El esquema de firma HMAC-SHA256. |
+| [`98-pendientes-proveedor.md`](98-pendientes-proveedor.md) | Preguntas abiertas con ellos + borrador del mensaje. |
 | [`99-integration-plan.md`](99-integration-plan.md) | Plan por fases y estado. |
 | [`openapi-v1.0.json`](openapi-v1.0.json) | Spec crudo, tal como lo mandaron. |

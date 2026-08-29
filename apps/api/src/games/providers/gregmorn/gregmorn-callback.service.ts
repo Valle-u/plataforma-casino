@@ -355,9 +355,7 @@ export class GregmornCallbackService {
     ctx: ResolvedContext,
     rollbackWalletTxId: string | null,
   ): Promise<void> {
-    const roundExternalId = normalizeRoundId(
-      (body.roundId ?? body.transactionId ?? '').trim(),
-    );
+    const roundExternalId = resolveRoundExternalId(body);
     if (!roundExternalId) return;
 
     await db
@@ -458,9 +456,7 @@ export class GregmornCallbackService {
     const providerGameId = body.gameId;
     if (!providerGameId) return; // sin gameId no se puede mapear el juego
 
-    const roundExternalId = normalizeRoundId(
-      (body.roundId ?? body.transactionId ?? '').trim(),
-    );
+    const roundExternalId = resolveRoundExternalId(body);
     if (!roundExternalId) return;
 
     // El sync guarda el gameId crudo en games.config.gregmorn.gameId.
@@ -658,6 +654,46 @@ export class GregmornCallbackService {
  */
 export function normalizeRoundId(raw: string): string {
   return raw.replace(/_\d+$/, '');
+}
+
+/**
+ * Id con el que se agrupan los callbacks de una MISMA ronda logica.
+ *
+ * El `roundId` de nivel superior NO sirve para agrupar en los juegos que
+ * mandan varias acciones por ronda (compra de tiradas gratis, respins): ahi
+ * llega un UUID DISTINTO en cada callback. El id real de la ronda viaja
+ * dentro de `info`, que es un query-string con el estado del juego:
+ *
+ *   &sessionId=69929384&gameId=1043&bet=5000&win=250
+ *   &roundId=1787962756&action=spin
+ *
+ * Verificado en prod (2026-08-29): una compra de tiradas gratis mando 30
+ * callbacks -- `spin` con la apuesta de 5000, `pick`, y 28
+ * `freeSpin`/`freeReSpin` con bet 0 -- todos con el mismo
+ * `roundId=1787962756` adentro y 30 UUIDs distintos arriba.
+ *
+ * Sin esto cada accion quedaba como una ronda separada. Y como el proveedor
+ * solo manda `round_finished: true` al cerrar la ronda ENTERA, las 29
+ * primeras se quedaban en `placed` para siempre: fuera del NetWin, y por lo
+ * tanto fuera de la base de comision (que filtra `status = settled`).
+ *
+ * Los callbacks del formato viejo (`1349885914_0` / `_1`) no traen `info`,
+ * asi que caen a `normalizeRoundId` y se comportan igual que antes.
+ */
+export function resolveRoundExternalId(body: {
+  info?: string;
+  roundId?: string;
+  transactionId?: string;
+}): string {
+  const info = body.info;
+  if (typeof info === 'string') {
+    const m = /(?:^|[?&])roundId=([^&]+)/.exec(info);
+    if (m) {
+      const inner = m[1]?.trim();
+      if (inner) return inner;
+    }
+  }
+  return normalizeRoundId((body.roundId ?? body.transactionId ?? '').trim());
 }
 
 export function parseAmount(value: unknown): number | null {

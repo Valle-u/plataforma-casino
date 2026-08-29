@@ -8192,3 +8192,55 @@ la contaminación de auth podría estar causando esta otra: las suites que
 re-seedean sus settings pasan y las que asumen defaults no. No lo comprobé —
 el siguiente paso natural sería revisar si esas suites pasaban antes de que
 `tenant_settings` entrara al truncate.
+
+---
+
+## 2026-08-29 — Gregmorn: agrupar la ronda por el `roundId` de `info`
+
+**Contexto**: verificando el período de agosto aparecieron 33 rondas de Gregmorn
+trabadas en `placed`, con 5.002,00 apostados. El wallet cuadraba exacto con las
+rondas —no había plata perdida— pero esas rondas quedaban fuera del NetWin y por
+lo tanto de la comisión.
+
+**Qué eran en realidad**: no 33 rondas sino **3**. La más grande era una compra
+de tiradas gratis: `spin` con bet 5000, un `pick`, y 28 acciones
+`freeSpin`/`freeReSpin` con bet 0.
+
+**La causa**: agrupábamos por `body.roundId`, que en estos juegos es un **UUID
+distinto en cada callback**. El id real de la ronda viaja dentro de `info`, un
+query-string con el estado del juego:
+
+```
+&sessionId=69929384&gameId=1043&bet=5000&win=250&roundId=1787962756&action=spin
+```
+
+Las 30 acciones de la compra compartían `roundId=1787962756` y tenían 30 UUIDs
+distintos arriba. Como el proveedor sólo manda `round_finished: true` al cerrar
+la ronda ENTERA, cada acción quedaba como una ronda propia y sin cerrar.
+
+**Decisión**: `resolveRoundExternalId(body)` — usa el `roundId` de `info` cuando
+está, y cae a `normalizeRoundId(body.roundId)` cuando no.
+
+**Razón**: los callbacks del formato viejo (`1349885914_0` / `_1`) no traen
+`info` con ese campo, así que siguen por el camino de siempre. El cambio es
+aditivo: no toca ninguna ronda ya registrada.
+
+**Riesgo asumido y anotado**: nos apoyamos en un campo que su spec **no
+documenta** como identificador de ronda. Si cambian el formato de `info`, el
+agrupamiento se rompe en silencio. Está en la lista de cosas a confirmarles
+(`docs/gregmorn/98-pendientes-proveedor.md` §2).
+
+**Lo que este cambio NO arregla**: las 3 rondas ya trabadas. Siguen en `placed`
+porque el proveedor nunca mandó el cierre — eso es comportamiento de ellos, no
+nuestro, y no hay forma de resolverlo sin saber si pueden mandar el cierre tarde
+(ya vimos uno llegar 13 minutos después). Cerrarlas por antigüedad sin esa
+respuesta arriesga contarlas dos veces. Ver §1 del mismo doc.
+
+**Impacto medido**: 4.172,05 de NetWin fuera de la base de agosto. A la tasa 50%
+del socio, ~1.877 de comisión sin pagar. **No liquidar el período hasta
+resolverlo.**
+
+**Tests**: 1 nuevo en `gregmorn-callback.e2e.ts` — una compra (bet 10, win 2) más
+4 tiradas gratis, todas con el mismo `roundId` interno y UUIDs distintos arriba,
+tiene que dar UNA ronda con los premios sumados. Las 3 suites de Gregmorn (50
+tests) en verde.

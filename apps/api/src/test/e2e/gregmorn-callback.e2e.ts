@@ -314,6 +314,59 @@ describe('Gregmorn callback (E2E)', () => {
     });
   });
 
+  it('compra de tiradas gratis: N acciones con el MISMO roundId interno → UNA ronda', async () => {
+    // Los juegos con compra de features mandan UNA ACCION POR CALLBACK, y el
+    // `roundId` de arriba es un UUID distinto en cada una. El id real de la
+    // ronda viaja adentro de `info`. En prod una sola compra genero 30
+    // callbacks (spin + pick + 28 freeSpin/freeReSpin); sin agrupar por el id
+    // interno quedaban 30 rondas, 29 de ellas en `placed` para siempre.
+    const inner = '1787962756';
+    const info = (action: string): string =>
+      `&sessionId=69929384&gameId=${GAME_ID}&roundId=${inner}&action=${action}`;
+
+    // La compra: cobra la apuesta y deja la ronda ABIERTA.
+    await callback(
+      ctx.request,
+      writeBet({
+        transactionId: 'tx-fs-buy',
+        bet: 10,
+        win: 2,
+        roundId: 'b1b0c0de-0000-4000-8000-000000000001',
+        round_finished: false,
+        info: info('spin'),
+      }),
+    );
+
+    // Las tiradas gratis: bet 0, y la ultima cierra la ronda.
+    const wins = [0, 1, 0, 3];
+    for (const [i, win] of wins.entries()) {
+      await callback(
+        ctx.request,
+        writeBet({
+          transactionId: `tx-fs-${i}`,
+          bet: 0,
+          win,
+          roundId: `b1b0c0de-0000-4000-8000-00000000001${i}`,
+          round_finished: i === wins.length - 1,
+          info: info('freeSpin'),
+        }),
+      );
+    }
+
+    // UNA ronda: la apuesta de la compra y la suma de TODOS los premios.
+    const rounds = await readRounds(inner);
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({
+      bet: 10,
+      win: 6, // 2 de la compra + 1 + 3 de las tiradas
+      net: -4,
+      status: 'settled',
+    });
+
+    // Y ninguna quedo colgada bajo el UUID de una accion suelta.
+    expect(await readRounds('b1b0c0de-0000-4000-8000-000000000001')).toHaveLength(0);
+  });
+
   // ── Trampa #2: montos en string ───────────────────────────────────
 
   it('acepta bet y win como STRING (vendors SL-Games / X-Games)', async () => {
