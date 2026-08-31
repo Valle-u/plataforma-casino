@@ -5,8 +5,7 @@
  * El chrome (sidebar + header con buscador) lo provee play/layout.tsx.
  *
  * Composición (de arriba a abajo):
- *   1. Header: título "Juegos" + subtítulo (conteo) + control de orden
- *      (Populares / Nuevos / A-Z).
+ *   1. Header: título "Juegos" + subtítulo (conteo).
  *   2. Tabs de categoría: Todos + las categorías presentes (con conteo).
  *   3. Filtro de proveedor: Todos + proveedores presentes.
  *   4. Buscador (preserva la función del catálogo viejo).
@@ -40,7 +39,6 @@ import {
 } from '@/lib/hooks/use-games';
 import { useAuth } from '@/lib/auth-context';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
-import { cn } from '@/lib/cn';
 import { FilterChip } from '@/components/player/filter-chip';
 import { GameSearch } from '@/components/player/game-search';
 import { HomeGameCard } from '@/components/player/home-game-card';
@@ -53,15 +51,7 @@ const GameModal = dynamic(
   { ssr: false },
 );
 
-type SortKey = 'pop' | 'new' | 'az';
-
 const PAGE_SIZE = 30;
-
-const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'pop', label: 'Populares' },
-  { id: 'new', label: 'Nuevos' },
-  { id: 'az', label: 'A-Z' },
-];
 
 /** category → label + color de acento. Las 5 categorías que soporta el backend;
  *  en la UI solo aparecen las que tienen juegos (conteo real vía facets). */
@@ -123,7 +113,6 @@ function isPlayable(game: PlayerGame): boolean {
 function GameLobbyContent() {
   const [tab, setTab] = useState<LobbyTab>('all');
   const [studio, setStudio] = useState<string>('all');
-  const [sort, setSort] = useState<SortKey>('pop');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
@@ -232,30 +221,14 @@ function GameLobbyContent() {
   const total = query.data?.total ?? 0;
   const hasMore = query.data?.hasMore ?? false;
 
-  // Filtrado client-side solo por sort sobre la página actual (provider ya es server-side).
-  const filtered = useMemo(() => {
-    const list = games.slice();
-    // Orden
-    if (sort === 'az') {
-      list.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    } else if (sort === 'new') {
-      list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    } else {
-      // Populares (el orden POR DEFECTO): destacados primero y después el
-      // orden curado del catálogo. Espeja lo que hace el backend, si no la
-      // página llegaba con los destacados adelante y este sort los volvía a
-      // enterrar.
-      //
-      // Que pesen acá y NO en "Nuevos" ni "A-Z" es a propósito: cuando el
-      // jugador elige un criterio explícito, se le respeta; cuando no eligió
-      // nada, mandan los destacados.
-      list.sort((a, b) => {
-        if (a.featured !== b.featured) return a.featured ? -1 : 1;
-        return a.sortOrder - b.sortOrder;
-      });
-    }
-    return list;
-  }, [games, sort]);
+  // El orden lo decide el BACKEND: destacados primero, después el orden
+  // curado del catálogo. Ya no se reordena en el cliente.
+  //
+  // Antes había un selector "Populares / Nuevos / A-Z" arriba a la derecha.
+  // Se sacó: eran tres formas de ver lo mismo que obligaban a decidir antes
+  // de mirar, y el orden por defecto ya pone adelante lo que conviene. Menos
+  // controles arriba también es menos ruido entre el jugador y los juegos.
+  const filtered = games;
 
   const subtitle = useMemo(() => {
     if (query.isLoading) return 'Cargando catálogo…';
@@ -305,40 +278,10 @@ function GameLobbyContent() {
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      {/* 1) Header: título + subtítulo + orden */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-display text-[34px] leading-none">Juegos</h1>
-          <p className="text-[13px] text-[var(--color-fg-muted)]">{subtitle}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
-            Ordenar
-          </span>
-          <div className="flex items-center gap-1">
-            {SORTS.map((s) => {
-              const active = sort === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSort(s.id)}
-                  className={cn(
-                    'h-8 rounded-[var(--radius-sm)] px-3 text-[12px] font-medium transition-colors',
-                    active
-                      ? 'text-[var(--color-accent-fg)]'
-                      : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
-                  )}
-                  style={
-                    active ? { background: 'var(--gradient-accent)' } : undefined
-                  }
-                >
-                  {s.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      {/* 1) Header: título + subtítulo */}
+      <header className="flex flex-col gap-1">
+        <h1 className="font-display text-[34px] leading-none">Juegos</h1>
+        <p className="text-[13px] text-[var(--color-fg-muted)]">{subtitle}</p>
       </header>
 
       {/* 2) Tabs de categoría */}

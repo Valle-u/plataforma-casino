@@ -8935,3 +8935,28 @@ lo está es peor que no mostrar nada. Si se quiere social proof, que salga de
 generan. El `EPERM: symlink` del final es la limitación conocida de Windows con
 `output: 'standalone'` — en Docker compila (ver la entrada del 2026-08-31 sobre
 los builds).
+
+---
+
+## 2026-08-31 — Fuera el selector de orden del lobby
+
+**Contexto**: Uriel pidió sacar el control "Populares / Nuevos / A-Z" de arriba a
+la derecha en la sección de juegos.
+
+**Qué se fue**: el selector, su estado, y **todo el reordenamiento en el
+cliente**. El orden ahora lo decide sólo el backend — destacados primero, después
+el orden curado (`sortOrder`).
+
+**Por qué el cambio es más grande de lo que parece**: ese selector era el último
+lugar donde el cliente reordenaba la lista. La página llegaba ordenada del
+servidor y el cliente la volvía a ordenar encima, lo que había obligado a
+duplicar la regla de destacados en los dos lados para que no se pisaran (ver la
+entrada "Destacados: prioridad en el ranking"). Ahora hay **un solo lugar** donde
+se decide el orden.
+
+**Coherente con el resto de la sesión**: tres formas de ver lo mismo obligan a
+decidir antes de mirar. Para el público de esta plataforma —muchos jugadores
+mayores— cada control arriba es una decisión más entre ellos y los juegos, y el
+orden por defecto ya pone adelante lo que conviene.
+
+El header queda con título y subtítulo nomás.
