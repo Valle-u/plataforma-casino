@@ -47,6 +47,8 @@ export async function matchBankTxForDeposit(
       reference: ref,
       receivedAt: new Date().toISOString(),
       direction: 'incoming',
+      bankName: 'Banco Test',
+      senderName: 'Remitente Test',
     });
   if (btx.status !== 201) {
     throw new Error(

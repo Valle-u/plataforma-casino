@@ -8742,3 +8742,54 @@ Arrancar desde la de la transferencia anterior no ayuda.
   trabajo revertido se habían llevado a 0: los fixtures no mandaban los datos que
   la validación de trazabilidad exige desde el 2026-08-14. Ese arreglo es
   independiente de este tema y se puede reaplicar solo.
+
+---
+
+## 2026-08-31 — 25 tests que fallaban desde el 14 de agosto
+
+**Contexto**: apareció como efecto lateral del trabajo de transferencias y se
+aplicó después, solo. No arregla código de producción: arregla **fixtures**.
+
+**Qué pasaba**: la validación de trazabilidad exige, para transferencias
+entrantes, `bankName` + `senderName`. Está desde el 2026-08-14. **Ningún fixture
+los mandaba completos**, así que toda creación de una entrante desde los tests
+devolvía 400 y arrastraba con ella los tests que dependían de esa transferencia
+— incluidos los de otras suites, porque el helper `test/helpers/bank-tx.ts` lo
+usan deposits y notifications.
+
+Venían fallando desde entonces y nadie los tocó. Mismo patrón que el rate limiter
+y que la migración 0082: **ruido rojo constante que deja de leerse**, y ahí se
+esconde lo que sí importa.
+
+**Medido, con baseline** (corriendo cada suite con y sin el cambio):
+
+| suite | antes | ahora |
+|---|---|---|
+| `bank-transactions` | 14 | **0** |
+| `deposits` | 10 | **4** |
+| `notifications` | 12 | **7** |
+| `withdrawals` | 2 | 2 |
+
+25 tests recuperados agregando dos campos a siete fixtures.
+
+### El que quedaba: un test de aislamiento que nunca había corrido
+
+Completados los fixtures, `bank-transactions` quedó con **uno** solo, y resultó
+el más interesante: `el listado del admin oculta la cuenta del socio
+independiente`. **Nunca había llegado a su aserción** — moría antes, al crear la
+transferencia. Al llegar, falló.
+
+No es un agujero de seguridad. Probaba el aislamiento **viejo**, por
+`bankAccount`, que se reemplazó el 2026-08-25 ("fix crítico") por uno basado en
+`uploaded_by`: la cuenta es mutable y quién subió la transferencia no. El test
+subía la transferencia del "independiente" con el token del **admin**, así que
+bajo el criterio nuevo esa transferencia es del admin y se ve — correctamente.
+
+Se removió dejando en su lugar un comentario que explica por qué y apunta a la
+cobertura real del mecanismo actual, en `branch-flip-preconditions.e2e.ts`
+("Fix crítico: aislar por uploaded_by — un indep NO ve el extracto del admin
+aunque reclame su CBU").
+
+**Lección**: un test que falla al preparar el escenario no está probando nada, y
+se ve igual que uno que falla de verdad. Los 14 rojos tapaban un test que llevaba
+meses sin ejercitar su propia aserción.
