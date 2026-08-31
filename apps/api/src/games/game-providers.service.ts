@@ -23,6 +23,7 @@ import { gameProviders, games, type GameProvider } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { NotificationsService } from '../notifications/notifications.service';
 import { GameProviderLogsService } from './game-provider-logs.service';
+import { refreshStudios } from './refresh-studios';
 import { ProviderBackendRegistry } from './providers/provider-backend.registry';
 import type { IProviderBackend } from './providers/provider-backend.interface';
 
@@ -346,6 +347,19 @@ export class GameProvidersService {
         .update(games)
         .set({ isHidden: false, isDisabled: false, updatedAt: new Date() })
         .where(eq(games.providerCode, code));
+      // Estudio de cada juego, para el filtro del lobby. Se recalcula sobre
+      // el catálogo ENTERO y no solo el de este proveedor: la canonización
+      // cruza proveedores (si no, Gregmorn daría `EGT` y Forever `Egt`, dos
+      // chips para el mismo estudio). Best-effort — que falle no invalida un
+      // sync que ya trajo bien el catálogo.
+      try {
+        const n = await refreshStudios(db);
+        if (n > 0) this.logger.log(`Estudios recalculados: ${n} juegos.`);
+      } catch (err) {
+        this.logger.warn(
+          `No se pudieron recalcular los estudios: ${(err as Error).message}`,
+        );
+      }
       await db
         .update(gameProviders)
         .set({

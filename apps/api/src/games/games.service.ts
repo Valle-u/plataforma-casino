@@ -22,7 +22,7 @@ import {
   eq,
   gt,
   inArray,
-  isNotNull,
+  isNull,
   notInArray,
   or,
   sql,
@@ -255,10 +255,10 @@ export class GamesService {
     db: TenantDb,
     filters: {
       category?: Game['category'];
-      providerId?: number;
-      /** Sprint 57: true → solo juegos de proveedores SIN nombre oficial
-       *  (el chip "Otros" del lobby). Complementa el filtro por providerId. */
-      providerNoName?: boolean;
+      /** Nombre del estudio, ya canonizado (`games.studio`). */
+      studio?: string;
+      /** true → solo juegos SIN estudio conocido (el chip "Otros"). */
+      studioNone?: boolean;
       /** Filtro por adapter (provider_code): 'palace' | 'forever'. Para el
        *  filtro por proveedor del lobby multi-proveedor. */
       providerCode?: string;
@@ -284,38 +284,26 @@ export class GamesService {
     }
     if (filters.category) conditions.push(eq(games.category, filters.category));
     if (filters.providerCode) conditions.push(eq(games.providerCode, filters.providerCode));
-    if (filters.providerId !== undefined) conditions.push(eq(games.palaceProviderId, filters.providerId));
-    // "Otros": mutuamente excluyente con un providerId concreto.
-    if (filters.providerNoName && filters.providerId === undefined) {
-      const namedIds = Object.keys(await this.getProviderNames(db)).map(Number);
-      // Juegos con provider asignado pero cuyo provider no tiene nombre.
-      conditions.push(isNotNull(games.palaceProviderId));
-      if (namedIds.length > 0) conditions.push(notInArray(games.palaceProviderId, namedIds));
+    if (filters.studio !== undefined) conditions.push(eq(games.studio, filters.studio));
+    // "Otros": el proveedor no informa estudio. Mutuamente excluyente con un
+    // estudio concreto.
+    if (filters.studioNone && filters.studio === undefined) {
+      conditions.push(isNull(games.studio));
     }
     if (filters.featuredOnly) conditions.push(eq(games.featured, true));
     if (filters.search && filters.search.trim() !== '') {
       const term = filters.search.trim().toLowerCase();
       const like = `%${term}%`;
-      // Palace: el nombre del estudio NO está en la tabla `games` sino en el
-      // mapa provider_id → nombre (tenant_settings). Resolvemos qué provider_ids
-      // matchean el término para poder buscar "pragmatic", "pgsoft", etc.
-      const names = await this.getProviderNames(db);
-      const matchedProviderIds = Object.entries(names)
-        .filter(([, name]) => name.toLowerCase().includes(term))
-        .map(([id]) => Number(id))
-        .filter((n) => Number.isFinite(n));
-      // Busca por: nombre/código del juego, código del adapter
-      // (palace/forever), vendor de Forever (config.forever.vendorCode, ej.
-      // 'slot-pragmatic') y estudio de Palace (provider_ids resueltos arriba).
+      // El estudio ahora vive en la tabla (`games.studio`, migración 0107), así
+      // que buscar "pragmatic" lo encuentra en los TRES proveedores. Antes
+      // había que resolver el mapa provider_id → nombre de Palace y solo
+      // funcionaba para los juegos de Palace.
       conditions.push(
         or(
           sql`LOWER(${games.name}) LIKE ${like}`,
           sql`LOWER(${games.code}) LIKE ${like}`,
           sql`LOWER(${games.providerCode}) LIKE ${like}`,
-          sql`LOWER(${games.config} -> 'forever' ->> 'vendorCode') LIKE ${like}`,
-          matchedProviderIds.length > 0
-            ? inArray(games.palaceProviderId, matchedProviderIds)
-            : undefined,
+          sql`LOWER(${games.studio}) LIKE ${like}`,
         )!,
       );
     }
@@ -364,7 +352,7 @@ export class GamesService {
   ): Promise<{
     total: number;
     categories: { category: Game['category']; count: number }[];
-    studios: { palaceProviderId: number | null; count: number }[];
+    studios: { studio: string | null; count: number }[];
   }> {
     const conditions = [
       eq(games.isActive, true),
@@ -392,12 +380,12 @@ export class GamesService {
         .groupBy(games.category),
       db
         .select({
-          palaceProviderId: games.palaceProviderId,
+          studio: games.studio,
           count: sql<number>`count(*)::int`,
         })
         .from(games)
         .where(where)
-        .groupBy(games.palaceProviderId),
+        .groupBy(games.studio),
       db
         .select({ total: sql<number>`count(*)::int` })
         .from(games)

@@ -102,8 +102,8 @@ export class GamesController {
   async listActive(
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
-    @Query('providerId') providerId?: string,
-    @Query('providerNoName') providerNoName?: string,
+    @Query('studio') studio?: string,
+    @Query('studioNone') studioNone?: string,
     @Query('providerCode') providerCode?: string,
     @Query('featuredOnly') featuredOnly?: string,
     @Query('search') search?: string,
@@ -113,8 +113,8 @@ export class GamesController {
     const db = req.tenantContext!.db;
     return this.service.listActiveForPlayer(db, {
       category: category as Game['category'] | undefined,
-      providerId: providerId ? parseInt(providerId, 10) : undefined,
-      providerNoName: providerNoName === 'true',
+      studio: studio || undefined,
+      studioNone: studioNone === 'true',
       providerCode: providerCode || undefined,
       featuredOnly: featuredOnly === 'true',
       search: search || undefined,

@@ -43,9 +43,12 @@ interface ListResponse {
 
 export interface ListGamesFilters {
   category?: GameCategory;
-  providerId?: number;
-  /** Sprint 57: true → solo juegos de proveedores sin nombre (chip "Otros"). */
-  providerNoName?: boolean;
+  /** Nombre del estudio ya canonizado (games.studio). Sirve para los tres
+   *  proveedores; antes esto era el provider_id de Palace y solo filtraba
+   *  los juegos de Palace. */
+  studio?: string;
+  /** true → solo juegos SIN estudio conocido (el chip "Otros"). */
+  studioNone?: boolean;
   /** Filtro por adapter (provider_code): 'palace' | 'forever'. Lobby multi-proveedor. */
   providerCode?: string;
   featuredOnly?: boolean;
@@ -57,8 +60,8 @@ export interface ListGamesFilters {
 function buildQuery(f: ListGamesFilters): string {
   const params = new URLSearchParams();
   if (f.category) params.set('category', f.category);
-  if (f.providerId !== undefined) params.set('providerId', String(f.providerId));
-  if (f.providerNoName) params.set('providerNoName', 'true');
+  if (f.studio !== undefined) params.set('studio', f.studio);
+  if (f.studioNone) params.set('studioNone', 'true');
   if (f.providerCode) params.set('providerCode', f.providerCode);
   if (f.featuredOnly) params.set('featuredOnly', 'true');
   if (f.search) params.set('search', f.search);
@@ -147,7 +150,8 @@ export function useGameProviders() {
 export interface GameFacets {
   total: number;
   categories: { category: GameCategory; count: number }[];
-  studios: { palaceProviderId: number | null; count: number }[];
+  /** Estudio ya canonizado. `null` = el proveedor no lo informa (chip "Otros"). */
+  studios: { studio: string | null; count: number }[];
 }
 
 /**

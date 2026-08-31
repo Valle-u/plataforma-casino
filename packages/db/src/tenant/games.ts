@@ -32,6 +32,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { generateUuidV7 } from '../utils/uuid';
 
 export const gameCategoryEnum = pgEnum('game_category', [
@@ -90,6 +91,32 @@ export const games = pgTable(
      * NULL si el juego no es de Palace. Usado en `game/game-url` para
      * construir el launch.
      */
+    /**
+     * ESTUDIO que hizo el juego, unificado entre proveedores.
+     *
+     * El filtro por estudio del lobby estaba cableado a `palaceProviderId`,
+     * que solo Palace llena -- Gregmorn y Forever quedaban sin filtrar aunque
+     * el dato existiera, cada uno en su lugar:
+     *
+     *   palace     palaceProviderId -> nombre en tenant_settings
+     *   gregmorn   config.gregmorn.provider    "Pragmatic", "wazdan"
+     *   forever    config.forever.vendorCode   "slot-pragmatic"
+     *
+     * Guarda el nombre VISIBLE ya canonizado por el sync: las variantes se
+     * agrupan por minusculas y gana la que tiene mayusculas (se lee como
+     * nombre propio, no como code), despues la mas frecuente. Cruza
+     * proveedores a proposito -- al jugador le importa jugar Pragmatic, no
+     * por que agregador le llega.
+     *
+     * NULL = el proveedor no informa estudio, o el juego es anterior a la
+     * migracion 0107. En el lobby caen al chip "Otros".
+     *
+     * Limite conocido: Palace dice "Pragmatic Play" y Gregmorn "Pragmatic";
+     * son claves distintas y quedan como dos chips. Unirlos pide un
+     * diccionario de alias.
+     */
+    studio: text('studio'),
+
     palaceProviderId: integer('palace_provider_id'),
 
     /**
@@ -125,6 +152,10 @@ export const games = pgTable(
   (table) => [
     uniqueIndex('games_code_unique').on(table.code),
     // Hot path lobby: list active + by category.
+    // El lobby agrupa y filtra por estudio en cada carga.
+    index('games_studio_idx')
+      .on(table.studio)
+      .where(sql`${table.studio} IS NOT NULL`),
     index('games_active_category_sort').on(
       table.isActive,
       table.category,

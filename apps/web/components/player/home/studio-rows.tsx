@@ -6,7 +6,6 @@ import { HomeGameCard } from '@/components/player/home-game-card';
 import {
   useActiveGames,
   useGameFacets,
-  useGameProviders,
 } from '@/lib/hooks/use-games';
 
 /**
@@ -25,7 +24,7 @@ const MAX_STUDIO_ROWS = 6;
 const GAMES_PER_ROW = 14;
 
 interface Studio {
-  id: number;
+  id: string;
   name: string;
   count: number;
 }
@@ -38,20 +37,20 @@ export function StudioRows({
   isDesktop?: boolean;
 }) {
   const facets = useGameFacets();
-  const providers = useGameProviders();
-  const nameMap = providers.data?.providers ?? {};
 
+  // El backend ya devuelve el estudio canonizado y unificado entre los tres
+  // proveedores (games.studio). Antes esto resolvía el provider_id de Palace
+  // contra un mapa de nombres, así que la home solo mostraba filas de Palace.
   const studios = useMemo<Studio[]>(() => {
     const raw = facets.data?.studios ?? [];
     const out: Studio[] = [];
     for (const s of raw) {
-      if (s.palaceProviderId == null) continue;
-      const name = nameMap[s.palaceProviderId]?.trim();
+      const name = s.studio?.trim();
       if (!name) continue;
-      out.push({ id: s.palaceProviderId, name, count: s.count });
+      out.push({ id: name, name, count: s.count });
     }
     return out.sort((a, b) => b.count - a.count).slice(0, MAX_STUDIO_ROWS);
-  }, [facets.data, nameMap]);
+  }, [facets.data]);
 
   if (studios.length === 0) return null;
 
@@ -79,7 +78,7 @@ function StudioRow({
   isDesktop?: boolean;
 }) {
   const query = useActiveGames({
-    providerId: studio.id,
+    studio: studio.id,
     limit: GAMES_PER_ROW,
   });
   const games = query.data?.data ?? [];

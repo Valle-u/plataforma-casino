@@ -38,7 +38,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   useActiveGames,
   useGameFacets,
-  useGameProviders,
   type GameCategory,
   type PlayerGame,
 } from '@/lib/hooks/use-games';
@@ -85,9 +84,9 @@ const CATEGORY_DISPLAY_ORDER: GameCategory[] = [
 ];
 const KNOWN_CATEGORIES = new Set<string>(CATEGORY_DISPLAY_ORDER);
 
-/** Sprint 57: id sentinel del chip "Otros" (agrupa estudios sin nombre
+/** Sentinela del chip "Otros" (agrupa los juegos cuyo proveedor no informa
  *  oficial). Nunca choca con ids reales de Palace (positivos). */
-const OTHERS_PROVIDER = -1;
+const OTHERS_STUDIO = '__otros__';
 
 function isPlayable(game: PlayerGame): boolean {
   // Palace: requiere provider_id + game_symbol para construir el launch URL.
@@ -119,7 +118,7 @@ function playersFor(i: number): number {
 
 function GameLobbyContent() {
   const [tab, setTab] = useState<'all' | GameCategory>('all');
-  const [providerId, setProviderId] = useState<number | 'all'>('all');
+  const [studio, setStudio] = useState<string>('all');
   const [sort, setSort] = useState<SortKey>('pop');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -154,25 +153,20 @@ function GameLobbyContent() {
     }
   }, [queryParam]);
 
-  // Deep-link de estudio desde la home (/play/lobby?studio=<id>). Pre-selecciona
-  // el filtro de estudio al montar / cuando cambia el param; los clicks en los
-  // chips manejan el estado directo.
+  // Deep-link desde la home (/play/lobby?studio=Pragmatic). Ahora viaja el
+  // NOMBRE del estudio y no el provider_id de Palace: sirve para los tres
+  // proveedores y el link se lee.
   const studioParam = searchParams.get('studio');
   useEffect(() => {
     if (studioParam) {
-      const n = parseInt(studioParam, 10);
-      if (!Number.isNaN(n)) {
-        setProviderId(n);
-        setPage(0);
-      }
+      setStudio(studioParam);
+      setPage(0);
     }
   }, [studioParam]);
 
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
 
-  const providerNames = useGameProviders();
-  const nameMap = providerNames.data?.providers ?? {};
 
   // Conteos reales (una sola pasada en el backend, ver /tenant/games/facets):
   //  - global → cuántos juegos tiene cada categoría (para los tabs).
@@ -191,37 +185,35 @@ function GameLobbyContent() {
     [catCounts],
   );
 
-  // Estudios (Palace provider_id) presentes en la categoría actual, con conteo
-  // real. Con nombre oficial → chip individual (ordenado por cantidad); sin
-  // nombre → un único chip "Otros". Si NINGÚN estudio tiene nombre todavía
-  // (ej. antes de autorizar la IP del server en Palace) el filtro no se muestra.
+  // Estudios presentes en la categoría actual, con conteo real. El backend ya
+  // los devuelve canonizados y unificados entre proveedores (games.studio,
+  // migración 0107) — antes esto resolvía el provider_id de Palace contra un
+  // mapa de nombres y los juegos de Gregmorn y Forever quedaban todos en
+  // "Otros".
   const studios = useMemo(() => {
     const raw = studioFacets.data?.studios ?? [];
-    const named: { id: number; name: string; count: number }[] = [];
+    const named: { id: string; name: string; count: number }[] = [];
     let othersCount = 0;
     for (const s of raw) {
-      const name =
-        s.palaceProviderId != null ? nameMap[s.palaceProviderId] : undefined;
-      if (s.palaceProviderId != null && name && name.trim()) {
-        named.push({ id: s.palaceProviderId, name: name.trim(), count: s.count });
-      } else {
-        othersCount += s.count;
-      }
+      const name = s.studio?.trim();
+      if (name) named.push({ id: name, name, count: s.count });
+      else othersCount += s.count;
     }
     named.sort((a, b) => b.count - a.count);
     if (named.length > 0 && othersCount > 0) {
-      named.push({ id: OTHERS_PROVIDER, name: 'Otros', count: othersCount });
+      named.push({ id: OTHERS_STUDIO, name: 'Otros', count: othersCount });
     }
     return named;
-  }, [studioFacets.data, nameMap]);
+  }, [studioFacets.data]);
 
-  // "Otros" solo existe si hay estudios sin nombre en la categoría actual.
-  const isOthers = providerId === OTHERS_PROVIDER && studios.some((p) => p.id === OTHERS_PROVIDER);
+  // "Otros" solo existe si hay juegos sin estudio en la categoría actual.
+  const isOthers =
+    studio === OTHERS_STUDIO && studios.some((p) => p.id === OTHERS_STUDIO);
 
   const query = useActiveGames({
     category: tab !== 'all' ? tab : undefined,
-    providerId: providerId !== 'all' && !isOthers ? providerId : undefined,
-    providerNoName: isOthers ? true : undefined,
+    studio: studio !== 'all' && !isOthers ? studio : undefined,
+    studioNone: isOthers ? true : undefined,
     search: searchDebounced || undefined,
     limit: PAGE_SIZE,
     offset,
@@ -262,7 +254,7 @@ function GameLobbyContent() {
   const handleTabChange = (newTab: 'all' | GameCategory) => {
     setTab(newTab);
     setPage(0);
-    setProviderId('all');
+    setStudio('all');
     setSearch('');
     // Mantener la URL sincronizada con el tab (refrescar/back no pierden el filtro).
     const params = new URLSearchParams(searchParams.toString());
@@ -275,8 +267,8 @@ function GameLobbyContent() {
     router.replace(qs ? `/play/lobby?${qs}` : '/play/lobby', { scroll: false });
   };
 
-  const handleProviderChange = (newProviderId: number | 'all') => {
-    setProviderId(newProviderId);
+  const handleStudioChange = (next: string) => {
+    setStudio(next);
     setPage(0);
   };
 
@@ -352,8 +344,8 @@ function GameLobbyContent() {
         ))}
       </div>
 
-      {/* 3) Filtro por estudio (Palace) — solo aparece si hay estudios con
-             nombre oficial en la categoría actual. */}
+      {/* 3) Filtro por estudio — de los TRES proveedores. Solo aparece si hay
+             estudios en la categoría actual. */}
       {studios.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
@@ -361,16 +353,16 @@ function GameLobbyContent() {
           </span>
           <ProviderChip
             label="Todos"
-            active={providerId === 'all'}
-            onClick={() => handleProviderChange('all')}
+            active={studio === 'all'}
+            onClick={() => handleStudioChange('all')}
           />
           {studios.map((p) => (
             <ProviderChip
               key={p.id}
               label={p.name}
               count={p.count}
-              active={providerId === p.id}
-              onClick={() => handleProviderChange(p.id)}
+              active={studio === p.id}
+              onClick={() => handleStudioChange(p.id)}
             />
           ))}
         </div>

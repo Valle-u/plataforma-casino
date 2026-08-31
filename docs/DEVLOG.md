@@ -8316,3 +8316,67 @@ se vuelve discutible.
 se pisa; tiradas disparadas → sube a `free_spins`) y 1 en
 `wallet-stats-audit.e2e.ts` (el movimiento trae juego, ronda, tipo y los totales
 de la ronda).
+
+---
+
+## 2026-08-29 — Filtro por estudio: de Palace-only a los tres proveedores
+
+**Contexto**: Uriel pidió que el filtro por estudio del lobby funcionara también
+para Gregmorn.
+
+**Lo que pasaba**: el filtro agrupaba por `palace_provider_id`, una columna que
+**solo Palace llena**. Los 2.840 juegos activos de Gregmorn y los 4.791 de
+Forever no se podían filtrar por estudio — y la home, que arma filas por
+estudio, solo mostraba estudios de Palace.
+
+Lo irónico es que el dato existía en los tres, cada uno en su lugar:
+
+```
+palace     palace_provider_id       → nombre en tenant_settings
+gregmorn   config.gregmorn.provider   "Pragmatic", "wazdan"
+forever    config.forever.vendorCode  "slot-pragmatic"
+```
+
+**Decisión**: columna `games.studio` normalizada (migración 0107), llenada por
+un paso compartido que corre al final de cada sync.
+
+**Por qué un paso compartido y no cada sync por su cuenta**: la canonización
+**cruza proveedores**. Si cada sync normalizara lo suyo, Gregmorn produciría
+`EGT` y Forever `Egt` — dos chips para el mismo estudio. `refreshStudios()` mira
+el catálogo entero de una vez. Vive como función suelta (no como método de un
+service) porque la llaman `GamesService` y el flujo de sync, y `GamesService` ya
+inyecta `GameProvidersService`: meterla en cualquiera de los dos creaba un ciclo
+por una query que no necesita inyectar nada.
+
+**Regla de canonización**: se agrupa por minúsculas y gana la variante **con
+mayúsculas** —se lee como nombre propio y no como un code— y recién después la
+más frecuente. Sin esa preferencia ganaría `pragmatic` (633 juegos de Forever)
+sobre `Pragmatic` (304 de Gregmorn). Si ninguna variante tiene mayúsculas se
+aplica `initcap`.
+
+Datos reales del backfill: Gregmorn declaraba **60 estudios** que son **46**
+—`Pragmatic` y `pragmatic` eran el mismo—, y el resultado unifica entre
+proveedores: `Pragmatic` queda con 1.156 juegos (Forever + Gregmorn), `EGT` con
+470 (los tres). Cobertura: **0 juegos sin estudio** en Gregmorn y Forever, 60 en
+Palace (los que no están en su mapa de nombres → chip "Otros").
+
+**Efecto lateral bueno**: la búsqueda mejoró sola. Antes resolvía el mapa
+`provider_id → nombre` de Palace y solo encontraba estudios de Palace; ahora
+busca `games.studio` y "pragmatic" trae los tres proveedores.
+
+**El chip "Otros" se simplificó**: era "juegos con provider_id asignado pero sin
+nombre oficial" (requería resolver el mapa en cada request); ahora es
+`studio IS NULL`.
+
+**Límite conocido**: Palace dice "Pragmatic Play" y Gregmorn "Pragmatic". Son
+claves distintas y quedan como dos chips. Unirlos pide un diccionario de alias
+por estudio — fuera de alcance, se resuelve el día que moleste.
+
+**Deep-link**: `/play/lobby?studio=<id numérico>` pasó a
+`/play/lobby?studio=Pragmatic`. Sirve para los tres proveedores y el link se lee.
+
+**Tests**: el que buscaba por `vendorCode` de Forever ahora ejercita la
+derivación real (llama a `refreshStudios` en vez de asumir el valor), y se
+agregó uno de canonización: un juego de Forever con `slot-pragmatic` y uno de
+Gregmorn con `Pragmatic` tienen que terminar los dos en `Pragmatic`. Las 6
+suites de games (85 tests) en verde.

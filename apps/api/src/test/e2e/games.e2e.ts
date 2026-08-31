@@ -23,6 +23,7 @@ import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { createTestUser } from '../helpers/test-users';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { TEST_TENANT } from '../setup/test-tenant';
+import { refreshStudios } from '../../games/refresh-studios';
 
 describe('Games catalog (E2E, Sprint 34)', () => {
   let ctx: TestApp;
@@ -222,6 +223,10 @@ describe('Games catalog (E2E, Sprint 34)', () => {
           providerCode: 'forever',
           config: { forever: { vendorCode: 'slot-pragmatic', gameCode: 'gatestest', gameType: 1 } },
         });
+      // El estudio no viene en el alta: lo DERIVA el mismo paso que corre al
+      // final de cada sync (migración 0107). Llamarlo acá hace que el test
+      // ejercite el camino real y no un valor puesto a mano.
+      await refreshStudios(ctx.tenantDb);
     });
     afterEach(async () => {
       await ctx.tenantDb.execute(
@@ -239,13 +244,43 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       expect(data.every((g) => g.providerCode === 'forever')).toBe(true);
     });
 
-    it('search por vendor de Forever ("pragmatic" vía vendorCode slot-pragmatic)', async () => {
+    it('search por ESTUDIO ("pragmatic" derivado del vendorCode slot-pragmatic)', async () => {
       const res = await ctx.request
         .get('/tenant/games/active?search=pragmatic')
         .set('Host', TEST_TENANT.host);
       expect(res.status).toBe(200);
       const codes = (res.body as { data: Array<{ code: string }> }).data.map((g) => g.code);
       expect(codes).toContain('e2e_search_forever_prag');
+    });
+
+    it('el estudio se canoniza: `slot-pragmatic` y `Pragmatic` caen en el mismo', async () => {
+      // Forever manda codes en minúscula (`slot-pragmatic`) y Gregmorn nombres
+      // con mayúscula (`Pragmatic`). Sin canonizar quedaban dos chips para el
+      // mismo estudio; peor, Gregmorn mandaba `Pragmatic` Y `pragmatic`.
+      await ctx.tenantDb.execute(
+        sql`INSERT INTO games (id, code, name, category, provider_code, config)
+             VALUES (gen_random_uuid(), 'e2e_studio_greg', 'Otro Test', 'slots',
+                     'gregmorn', '{"gregmorn":{"provider":"Pragmatic"}}'::jsonb)`,
+      );
+      await refreshStudios(ctx.tenantDb);
+
+      const r = await ctx.tenantDb.execute(
+        sql`SELECT code, studio FROM games
+             WHERE code IN ('e2e_search_forever_prag', 'e2e_studio_greg')`,
+      );
+      const byCode = new Map(
+        (r as unknown as { code: string; studio: string | null }[]).map((x) => [
+          x.code,
+          x.studio,
+        ]),
+      );
+      // Gana la variante CON mayúsculas, no la más frecuente.
+      expect(byCode.get('e2e_studio_greg')).toBe('Pragmatic');
+      expect(byCode.get('e2e_search_forever_prag')).toBe('Pragmatic');
+
+      await ctx.tenantDb.execute(
+        sql`DELETE FROM games WHERE code = 'e2e_studio_greg'`,
+      );
     });
 
     it('search por nombre del juego sigue funcionando', async () => {
