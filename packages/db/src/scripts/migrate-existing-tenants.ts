@@ -18,6 +18,22 @@ import { migrateTenantDatabase } from '../migrate-tenant';
 
 loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
 
+/**
+ * Codigo de error de Postgres, buscando en la cadena de causas.
+ *
+ * Drizzle envuelve el PostgresError en un DrizzleQueryError, asi que el
+ * `code` no esta en el error de arriba.
+ */
+function pgCode(err: unknown): string | undefined {
+  let cur: unknown = err;
+  for (let i = 0; i < 5 && cur; i += 1) {
+    const code = (cur as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL_CONTROL;
   if (!url) throw new Error('DATABASE_URL_CONTROL no definido.');
@@ -42,6 +58,14 @@ async function main(): Promise<void> {
       await migrateTenantDatabase(tenantUrl);
       console.log('OK');
     } catch (err: unknown) {
+      // 3D000 = la base no existe. Pasa siempre con el tenant de tests,
+      // cuya DB la crea y la borra la suite: entre corridas no esta. Volcar
+      // un stack de 20 lineas por algo esperado entrena a ignorar la salida
+      // del script, y ahi se cuelan los errores que si importan.
+      if (pgCode(err) === '3D000') {
+        console.log('SKIP — la base no existe (normal si es un tenant efimero)');
+        continue;
+      }
       console.log('ERROR');
       console.error(err);
     }

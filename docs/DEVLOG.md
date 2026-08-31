@@ -8380,3 +8380,62 @@ derivación real (llama a `refreshStudios` en vez de asumir el valor), y se
 agregó uno de canonización: un juego de Forever con `slot-pragmatic` y uno de
 Gregmorn con `Pragmatic` tienen que terminar los dos en `Pragmatic`. Las 6
 suites de games (85 tests) en verde.
+
+---
+
+## 2026-08-31 — Migraciones locales: journal desincronizado
+
+**Contexto**: `pnpm db:migrate:tenants` fallaba en todas las bases de dev con
+`PostgresError: la relación «referral_codes» ya existe`. Nadie podía probar un
+cambio de esquema en local — la API levantaba pero devolvía 500 en el lobby por
+faltar `games.studio` (migración 0107).
+
+**Diagnóstico (dos hipótesis descartadas antes de la buena)**:
+
+1. *"Las bases se crearon con drizzle push y no tienen journal"* — falso.
+   `__drizzle_migrations` existía, con **83 filas**. Mi primera consulta usó
+   `to_regclass('__drizzle_migrations')`, que busca en `public`; drizzle la
+   guarda en el esquema `drizzle`. Buscando bien aparecía.
+
+2. *"El journal está vacío y reaplica todo"* — falso. Tenía 83 de 109. El
+   problema era **dónde** se cortaba.
+
+Lo real: `0082_referral_codes` **se aplicó pero no quedó registrada**. El
+migrador de drizzle decide con
+`Number(lastDbMigration.created_at) < migration.folderMillis`, así que con el
+cursor en la 0081 volvía a intentar la 0082 desde cero y chocaba con su propia
+tabla. `tenant_demo_dev` tenía además otras 4 en el mismo estado (0084, 0085,
+0086, 0087, 0093).
+
+**Decisión**: reconciliar `__drizzle_migrations` (opción b), no recrear las
+bases (opción a).
+
+**Razón**: recrear era más limpio en abstracto pero tiraba los datos de dev, y
+el desvío real era de 5 filas sobre 109. La reconciliación se hizo con un script
+efímero que, por cada migración pendiente, la intenta dentro de una transacción:
+si pasa, la aplica y la registra **en la misma transacción**; si falla con un
+código de "ya existe" (42P07 tabla, 42P06 esquema, 42701 columna, 42710 objeto,
+42723 función), la marca como aplicada y sigue; con cualquier otro error, aborta.
+
+**El script NO quedó en el repo, a propósito.** Marcar migraciones como
+aplicadas sin ejecutarlas es exactamente lo que no querés que exista a mano el
+día que alguien lo apunte a producción. El procedimiento queda acá; rehacerlo
+son 40 líneas y obliga a pensar antes de correrlo.
+
+Estado final: las 3 bases de dev con **109/109** y `games.studio` presente.
+
+**Dos mejoras al runner, que son las que evitan que esto se repita**:
+
+- **Una base que no existe ya no vuelca un stack.** El tenant `jest` tiene su DB
+  solo mientras corre la suite; entre corridas no está. Ahora se detecta `3D000`
+  y se imprime `SKIP — la base no existe (normal si es un tenant efímero)`.
+- **Se silencian los NOTICE esperados** (`42P07` / `42P06`, "ya existe,
+  omitiendo") que el cliente volcaba como un objeto de varias líneas por tenant.
+  El resto de los notices se siguen mostrando.
+
+Las dos apuntan a lo mismo: la salida del script volvía a leerse. Veinte líneas
+de ruido esperado por corrida entrenan a ignorarla, y ahí es donde se cuela el
+error que sí importa — que es justamente lo que pasó con la 0082.
+
+**Producción no estaba afectada**: corre las migraciones al arrancar con
+`MIGRATE_ON_BOOT=1` y fail-fast, y la 0107 se aplicó ahí sin problemas.
