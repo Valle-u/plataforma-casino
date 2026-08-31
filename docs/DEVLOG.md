@@ -8584,3 +8584,75 @@ filtro. El filtro "Destacados" sigue existiendo para verlos solos.
 inversa del resultado esperado (el común en 1, el destacado en 999). Si el
 ranking dejara de mirar `featured`, el común saldría primero y el test falla. 90
 tests de las 6 suites de games en verde.
+
+---
+
+## 2026-08-31 — La campana marcaba avisos que no se podían leer
+
+**Contexto**: Uriel reportó que el badge de notificaciones siempre muestra
+pendientes aunque estén todas leídas, y que "marcar como leído" no hace nada.
+
+**Los dos síntomas eran el mismo bug.** Tres consultas del mismo servicio
+hablaban de conjuntos distintos:
+
+```sql
+-- listar la bandeja: TODOS los canales
+where user_id = $1
+
+-- contar el badge: TODOS los canales, cualquier estado no leído
+where user_id = $1 and status <> 'read'
+
+-- marcar todas: SOLO in_app + sent
+where user_id = $1 and channel = 'in_app' and status = 'sent'
+```
+
+Todo lo que caía fuera de esa intersección contaba en el badge y **no se podía
+limpiar nunca**. Medido en prod:
+
+| usuario | badge | limpiables | atascadas |
+|---|---|---|---|
+| admin | 11 | 7 | 4 |
+| usertest_1 | 7 | 0 | **7** |
+| maggie | 2 | 0 | **2** |
+
+Las atascadas eran `email: failed` (5) y `web_push: failed` (8) — **registros de
+entrega fallida**, no mensajes. Para `usertest_1` el botón no cambiaba
+literalmente nada: no tenía una sola notificación que la query pudiera tocar. De
+ahí "el botón no funciona".
+
+**Decisión**: la bandeja del usuario es **solo `in_app`**, y las tres consultas
+usan ese mismo criterio.
+
+**Razón**: los otros canales son registros de envío. El usuario no puede
+accionarlos ni marcarlos leídos —`markAsRead` ya los rechazaba explícitamente— y
+verlos ahí solo ensucia. Se siguen viendo donde sirven: el panel, en
+"Notificaciones enviadas".
+
+`markAllAsReadForUser` además deja de exigir `status = 'sent'`: limpia todo
+`in_app` no leído. El invariante es que **el contador y la acción alcancen
+exactamente el mismo conjunto**; si se separan, el botón vuelve a parecer roto.
+
+**El frontend estaba bien.** El dropdown del jugador llama la mutation e
+invalida las queries correctamente. No se tocó.
+
+### La campana del PANEL es otra cosa
+
+`components/admin/notifications-bell.tsx` no lee la tabla `notifications`: arma
+el panel con contadores en vivo (depósitos esperando, retiros por pagar,
+transferencias sin matchear, cuentas duplicadas, proveedores en mantenimiento).
+
+Su badge cuenta **trabajo abierto**, no mensajes, y por eso no tiene ni puede
+tener "marcar como leído" — baja cuando resolvés lo que lo generó. Su propio
+comentario lo dice desde que se creó. Queda anotado porque el nombre invita a
+confundirla con una bandeja de entrada.
+
+**Tests**: 1 nuevo — con un `in_app` y un `email`, el contador arranca en 1 (no
+2), y tras marcar todas queda en **0**; la bandeja lista solo el `in_app`. Antes
+del arreglo quedaba en 1 para siempre. Se renombró además
+`markAllAsReadForUser solo afecta in_app status=sent`, que prometía más de lo que
+verificaba.
+
+**Nota sobre la suite**: `notifications.e2e.ts` tiene 12 fallos **preexistentes**
+(verificado corriéndola con y sin el cambio: 12 en ambos casos). Vienen del
+helper de transferencias, que devuelve `BANK_TX_INCOMING_BANK_DATA_REQUIRED`, y
+de `tenant_settings` truncado — los mismos de la entrada del aislamiento e2e.

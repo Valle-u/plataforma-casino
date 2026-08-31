@@ -318,7 +318,7 @@ describe('Notifications (E2E)', () => {
       expect(onlyUnread[0]!.subject).toBe('Test: c');
     });
 
-    it('markAllAsReadForUser solo afecta in_app status=sent', async () => {
+    it('markAllAsReadForUser no toca los canales de envío (email)', async () => {
       const u = await createTestUser(ctx.request, adminToken, {
         suite: 'notif-readall',
         label: 'p',
@@ -351,6 +351,41 @@ describe('Notifications (E2E)', () => {
       const emails = rows.filter((r) => r.channel === 'email');
       expect(emails).toHaveLength(1);
       expect(emails[0]!.status).toBe('pending');
+    });
+
+    it('tras marcar todas, el contador queda en 0 (badge que no se limpia)', async () => {
+      // El bug: el contador contaba TODOS los canales y "marcar todas" solo
+      // tocaba in_app. Un email pendiente o un push fallido quedaba sumando en
+      // el badge para siempre, y el botón parecía no hacer nada.
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-badge',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'in_app',
+        payload: { title: 'a', message: 'b' },
+      });
+      // Este es el que rompía el contador: otro canal, que el usuario no
+      // puede leer ni accionar desde la campana.
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'email',
+        payload: { title: 'c', message: 'd' },
+      });
+
+      expect(await service.countUnreadForUser(db, u.id)).toBe(1);
+      await service.markAllAsReadForUser(db, u.id);
+      expect(await service.countUnreadForUser(db, u.id)).toBe(0);
+
+      // Y la bandeja tampoco lista el email: no es un mensaje para leer.
+      const bandeja = await service.listForUser(db, u.id);
+      expect(bandeja).toHaveLength(1);
+      expect(bandeja[0]!.channel).toBe('in_app');
     });
   });
 

@@ -222,9 +222,18 @@ export class NotificationsService {
   ): Promise<Notification[]> {
     const limit = Math.min(100, opts.limit ?? 50);
     const offset = Math.max(0, opts.offset ?? 0);
+    // La bandeja del usuario es SOLO `in_app`. Los otros canales (email, sms,
+    // web_push) son registros de ENVÍO, no mensajes para leer: mostrarlos acá
+    // llenaba la campana de fallas de entrega que el usuario no puede accionar
+    // ni marcar como leídas. Se siguen viendo en el panel, en "Notificaciones
+    // enviadas", que es donde sirven.
+    const mine = and(
+      eq(notifications.userId, userId),
+      eq(notifications.channel, 'in_app'),
+    );
     const whereClause = opts.onlyUnread
-      ? and(eq(notifications.userId, userId), sql`${notifications.status} <> 'read'`)
-      : eq(notifications.userId, userId);
+      ? and(mine, sql`${notifications.status} <> 'read'`)
+      : mine;
     return db
       .select()
       .from(notifications)
@@ -345,7 +354,11 @@ export class NotificationsService {
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
       .where(
-        and(eq(notifications.userId, userId), sql`${notifications.status} <> 'read'`),
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.channel, 'in_app'),
+          sql`${notifications.status} <> 'read'`,
+        ),
       );
     return rows[0]?.count ?? 0;
   }
@@ -405,7 +418,12 @@ export class NotificationsService {
         and(
           eq(notifications.userId, userId),
           eq(notifications.channel, 'in_app'),
-          eq(notifications.status, 'sent'),
+          // Todo lo NO leído, no solo lo `sent`. Antes el contador contaba
+          // `<> read` y esto solo limpiaba `sent`: cualquier otro estado
+          // quedaba en el badge y el botón "Marcar leídas" no lo tocaba
+          // NUNCA. Los dos lados tienen que hablar del mismo conjunto o el
+          // botón parece roto.
+          sql`${notifications.status} <> 'read'`,
         ),
       )
       .returning({ id: notifications.id });
