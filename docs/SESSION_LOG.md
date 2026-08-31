@@ -13764,11 +13764,14 @@ de Uriel **no se insistió con el rollback**, queda pendiente.
 
 ## 2026-08-31 19:30 AR — Claude (Opus 5) · addendum
 
-**Duración**: ~45min
+**Duración**: ~1h30
 **Usuario**: Uriel
 
 Se retomaron los dos pendientes que habían quedado anotados al cerrar. Los dos
-resultaron ser distintos de como estaban descriptos.
+resultaron ser **distintos de como estaban descriptos**: el de Cloudflare no
+existía, y el de `bank_accounts` era la mitad menos grave del problema real.
+Después Uriel pidió además borrar la regla temporal de Cloudflare y verificar
+los logs de arranque.
 
 ### 1. Cloudflare — la nota estaba mal, no había nada que hacer
 
@@ -13823,10 +13826,22 @@ impide que arranque la API, así que está escrita para no fallar nunca.
 Verificada contra un Postgres real en las tres ramas (tabla ausente / vacía /
 con filas) y corrida contra los tenants locales.
 
+### Commits creados
+
+- `26af2d5` — `fix(db): sacar bank_accounts y destrabar el timestamp quemado`
+- `abd9bd3` — `docs(gregmorn): borrar la regla temporal de Cloudflare`
+- `51d8cd6` — `docs(session-log): bank_accounts estaba vacia, se borro limpia`
+
+Todos en `main`, pusheados y deployados.
+
 ### Estado al cerrar
 
 - **Bloqueos**: ninguno.
-- Deployado. Al arrancar, la API de producción corre la migración en cada tenant.
+- **Los tres pendientes quedaron cerrados y verificados en producción**: la
+  migración corrió (`✔ miamihub`, sin warnings), la tabla ya no está, el
+  timestamp quedó destrabado, y Cloudflare tiene una sola regla anclada a la
+  ruta del callback — con un POST real comprobando que sigue llegando a la app.
+- Fuera de Gregmorn no queda nada abierto de esta sesión.
 
 ### Notas para próximo agente
 
