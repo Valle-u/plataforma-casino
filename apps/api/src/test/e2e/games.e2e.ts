@@ -569,6 +569,32 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       expect(codes).toContain('e2e_featured_tab');
     });
 
+    it('el listado de admin filtra por ?featuredOnly=true', async () => {
+      // Es lo que permite REVISAR la selección: sin esto se podía destacar un
+      // juego pero no volver a encontrarlo entre miles del catálogo.
+      await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_featured_tab',
+          name: 'Destacado Test',
+          category: 'slots',
+          featured: true,
+        });
+
+      const res = await ctx.request
+        .get('/tenant/games?featuredOnly=true&limit=100')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const data = (res.body as { data: Array<{ code: string; featured: boolean }> })
+        .data;
+      expect(data.some((g) => g.code === 'e2e_featured_tab')).toBe(true);
+      // Y NADA que no esté destacado.
+      expect(data.every((g) => g.featured)).toBe(true);
+    });
+
     it('el conteo NO se acota por categoría — la pestaña vive al lado de ellas', async () => {
       await ctx.request
         .post('/tenant/games')

@@ -8493,3 +8493,47 @@ reseteo, o los destacados elegidos a mano se borrarían en cada sync.
 **Tests**: 2 nuevos en `games.e2e.ts` — que el conteo suba al marcar un
 destacado y que `?featuredOnly=true` lo liste, y que el conteo no se acote por
 categoría. 87 tests de las 6 suites de games en verde.
+
+---
+
+## 2026-08-31 — Selector de destacados: lo que faltaba no era la pantalla
+
+**Contexto**: quedaba pendiente "que los destacados se puedan elegir a mano desde
+la sección de proveedores-juegos".
+
+**Lo que encontré al ir a construirlo**: ya existía casi todo. La pestaña
+"Juegos" del panel (`components/admin/games-tab.tsx`) tiene multi-select,
+acciones masivas y una estrella en la fila cuando el juego está destacado. Y el
+backend soporta `featured` entero — creable, actualizable, filtrable, y con un
+endpoint `POST /games/bulk` que lo aplica a varios de una.
+
+**Lo que faltaba eran dos cosas chicas que juntas volvían la función
+inservible**:
+
+1. **No se podía QUITAR el destacado.** Había botón "Destacar" y ninguno para
+   deshacerlo: un juego marcado quedaba en la sección para siempre, al menos
+   desde el panel.
+2. **No se podía VER cuáles estaban destacados.** Sin un filtro, encontrar los
+   marcados entre 9.462 juegos era imposible. No se podía revisar la selección
+   ni corregirla.
+
+Se podía marcar, pero no curar. Que es justamente lo que uno quiere hacer con
+una sección de destacados.
+
+**Cambios**: botón "Quitar destacado" en la barra masiva, y un toggle
+"Destacados" junto a los filtros de categoría y estado. El backend solo
+necesitaba **exponer** `featuredOnly` como query param en `GET /tenant/games` —
+el filtro ya estaba implementado en `ListGamesFilters`, solo que el controller no
+lo leía.
+
+**Verificado antes de construir**: que el sync NO pise `featured`. Era el riesgo
+anotado en la entrada anterior — el sync sí resetea `isHidden`/`isDisabled` por
+decisión explícita, así que había que confirmarlo. Los tres proveedores lo
+preservan: Gregmorn y Forever lo excluyen del `onConflictDoUpdate` con un
+comentario que lo dice, y en Palace el `featured: false` está solo en la rama de
+creación — el update por conflicto toca `name`, `category` e `isActive` nada más.
+Los destacados elegidos a mano sobreviven a las sincronizaciones.
+
+**Tests**: 1 nuevo — que `GET /tenant/games?featuredOnly=true` devuelva el
+destacado y **nada** que no lo esté. Es cableado de controller, de lo que se
+rompe sin hacer ruido. 88 tests de las 6 suites de games en verde.

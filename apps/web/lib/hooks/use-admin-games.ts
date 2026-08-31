@@ -48,6 +48,8 @@ export interface AdminGamesResponse {
 export interface AdminGamesFilters {
   category?: GameCategory;
   status?: GameStatus;
+  /** Solo los destacados — para revisar y curar la selección actual. */
+  featuredOnly?: boolean;
   search?: string;
   providerCode?: string;
   limit?: number;
@@ -58,6 +60,7 @@ function buildQuery(f: AdminGamesFilters): string {
   const p = new URLSearchParams();
   if (f.category) p.set('category', f.category);
   if (f.status) p.set('status', f.status);
+  if (f.featuredOnly) p.set('featuredOnly', 'true');
   if (f.search && f.search.trim()) p.set('search', f.search.trim());
   if (f.providerCode) p.set('providerCode', f.providerCode);
   if (f.limit !== undefined) p.set('limit', String(f.limit));

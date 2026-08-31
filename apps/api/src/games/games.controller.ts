@@ -361,6 +361,7 @@ export class GamesController {
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
     @Query('activeOnly') activeOnly?: string,
+    @Query('featuredOnly') featuredOnly?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
     @Query('providerCode') providerCode?: string,
@@ -371,6 +372,7 @@ export class GamesController {
     const result = await this.service.list(db, {
       category: category as Game['category'] | undefined,
       activeOnly: activeOnly === 'true',
+      featuredOnly: featuredOnly === 'true',
       status: status as
         | 'visible'
         | 'hidden'

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Search, Eye, EyeOff, Ban, Star, Loader2 } from 'lucide-react';
+import { Search, Eye, EyeOff, Ban, Star, StarOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isApiError } from '@/lib/api-client';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
@@ -44,6 +44,9 @@ export function GamesTab() {
   }, []);
   const [category, setCategory] = useState<GameCategory | ''>('');
   const [status, setStatus] = useState<GameStatus | ''>('');
+  // Sin este filtro se podía destacar un juego pero no volver a encontrarlo:
+  // con miles en el catálogo, revisar la selección actual era imposible.
+  const [featuredOnly, setFeaturedOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -51,6 +54,7 @@ export function GamesTab() {
     search: debSearch,
     category: category || undefined,
     status: status || undefined,
+    featuredOnly: featuredOnly || undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
@@ -169,6 +173,26 @@ export function GamesTab() {
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => {
+            setFeaturedOnly((v) => !v);
+            resetFilters();
+          }}
+          aria-pressed={featuredOnly}
+          title="Ver solo los juegos destacados"
+          className={
+            'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 text-[13px] transition-colors ' +
+            (featuredOnly
+              ? 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)]'
+              : 'border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]')
+          }
+        >
+          <Star
+            className={'size-3.5' + (featuredOnly ? ' fill-current' : '')}
+          />
+          Destacados
+        </button>
       </div>
 
       {/* Barra de acciones masivas */}
@@ -192,6 +216,14 @@ export function GamesTab() {
             </BulkBtn>
             <BulkBtn onClick={() => void runBulk({ featured: true })} disabled={bulk.isPending}>
               <Star className="size-3.5" /> Destacar
+            </BulkBtn>
+            {/* Sin esto se podía destacar pero nunca deshacerlo desde el panel:
+                el juego quedaba en la sección Destacados para siempre. */}
+            <BulkBtn
+              onClick={() => void runBulk({ featured: false })}
+              disabled={bulk.isPending}
+            >
+              <StarOff className="size-3.5" /> Quitar destacado
             </BulkBtn>
           </div>
         </div>
