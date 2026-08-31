@@ -8697,3 +8697,72 @@ valer para esconder un puntito.
 **No confundir con** el arreglo de la misma jornada en la bandeja del jugador
 (`notifications.service.ts`): ahí sí había un bug real de datos. Acá no había
 bug — faltaba una función.
+
+---
+
+## 2026-08-31 — Cuentas bancarias propias (paso 1 de 2)
+
+**Contexto**: Uriel pidió que al cargar una transferencia no se guarden los datos
+del tercero, y que en la sección de cuenta propia aparezcan **solo los nuestros**
+— eligiéndolos de una lista, no tipeándolos.
+
+**La evidencia, de su propia base**:
+
+```
+direction  bank_name      account_holder   sender_name
+incoming   Mercado Pago   Julio Voltio     Juan Perez     (6)
+incoming   Personal Pay   Juan Pérez       Ricardo Gómez  (1)   ← acá se coló
+outgoing   Mercado Pago   Julio Voltio     Juan Perez     (1)
+```
+
+En esa fila **"Juan Pérez" quedó como titular de NUESTRA cuenta**, cuando en las
+otras seis es el tercero que envía. El mismo nombre figura una vez como titular
+propio y seis como contraparte. Nada lo impedía: son dos cajas de texto libre que
+se tipean en cada carga. Y `bank_account` está vacío en las 9 filas.
+
+**Lo que faltaba no era una validación**: el concepto de "nuestras cuentas
+bancarias" **no existía en ningún lado** — ni tabla, ni setting, ni constante.
+
+**Decisión**: tabla `bank_accounts` (migración 0108) + pantalla en Configuración.
+
+**Por qué tabla y no un JSON en `tenant_settings`**: son datos operativos con
+alta, baja y edición, referenciados desde transferencias que ya existen. Un
+array en un setting no da integridad ni historial, y editarlo a mano para dar de
+baja una cuenta es justo el tipo de operación donde se pierde plata.
+
+**Baja LÓGICA, nunca DELETE**: las transferencias viejas se cargaron con esa
+cuenta. Borrarla dejaría huérfano un dato de auditoría de plata real. Una cuenta
+inactiva sale del selector pero las transferencias que la usaron la siguen
+mostrando.
+
+**Índice único parcial** sobre `(titular, banco, identificador)` de las activas,
+comparando en minúsculas y sin espacios: dos cuentas iguales serían
+indistinguibles en el selector y se elegiría cualquiera. Parcial sobre las
+activas a propósito — una dada de baja puede recrearse.
+
+**Permisos: se reusan los de transferencias**, no se crean nuevos. Leer pide
+`bank_tx.view` (lo necesita el selector), escribir pide `bank_tx.edit`. Agregar
+permisos toca el modelo de roles, que el CLAUDE.md marca como área sensible; si
+más adelante conviene separarlo es un permiso nuevo + su seed.
+
+**Tests**: 8 en `bank-accounts.e2e.ts` — alta, edición, listado, que no se pueda
+repetir una cuenta activa (incluyendo mayúsculas y espacios distintos), que dos
+cuentas del mismo banco convivan si el identificador difiere, que la baja sea
+lógica y que una cuenta dada de baja se pueda volver a crear. El índice único se
+ejercita contra la base real, no simulado.
+
+### Lo que falta (paso 2)
+
+- El formulario de transferencias todavía tiene las cajas de texto libre: hay
+  que reemplazarlas por el selector.
+- Dejar de capturar `senderName` / `senderCbu` en las dos direcciones.
+- **Cortar el autocompletado del pago de retiros**, que hoy precarga
+  `senderName: withdrawal.userDisplayName` — el nombre del jugador entra solo.
+  Sin esto el cambio queda a medias y en silencio.
+- Invertir la validación de entrantes: exigir la cuenta propia, no el tercero.
+- El buscador de la sección filtra por `senderName`; hay que decidir por qué
+  busca cuando ese dato deje de cargarse.
+
+**Nota**: `bank-transactions.e2e.ts` tiene 14 fallos **preexistentes**
+(verificado con y sin el cambio: 14 en ambos casos), del helper que devuelve
+`BANK_TX_INCOMING_BANK_DATA_REQUIRED`.

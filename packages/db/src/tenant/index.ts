@@ -69,6 +69,7 @@ export * from './game-providers';
 export * from './game-provider-logs';
 export * from './game-sessions';
 export * from './game-rounds';
+export * from './bank-accounts';
 export * from './bank-transactions';
 export * from './achievement-definitions';
 export * from './user-achievements';

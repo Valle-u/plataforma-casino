@@ -22,6 +22,7 @@ import {
   BellRing,
   Eye,
   Globe,
+  Landmark,
   Layers,
   LayoutGrid,
   LayoutTemplate,
@@ -57,6 +58,7 @@ import { SectionMarca } from '@/components/admin/settings/section-marca';
 import { SectionSistema } from '@/components/admin/settings/section-sistema';
 import { SectionPermisos } from '@/components/admin/settings/section-permisos';
 import { SectionPlantillas } from '@/components/admin/settings/section-plantillas';
+import { SectionCuentasBancarias } from '@/components/admin/settings/section-cuentas-bancarias';
 import { SectionNotificacionesEnviadas } from '@/components/admin/settings/section-notificaciones-enviadas';
 import { SettingRow } from '@/components/admin/settings/settings-common';
 import { useDesignEditor } from '@/components/admin/settings/use-design-editor';
@@ -71,6 +73,7 @@ type SectionId =
   | 'sistema'
   | 'permisos'
   | 'plantillas'
+  | 'cuentas-bancarias'
   | 'enviadas';
 
 const SECTIONS: Array<{
@@ -133,6 +136,14 @@ const SECTIONS: Array<{
     description: 'El registro de todos los avisos enviados; reintentá los que fallaron.',
     keywords: ['notificaciones', 'enviadas', 'registro', 'cola', 'reintentar', 'fallidas'],
     perm: ['notifications.view_any', 'notifications.export', 'notifications.retry'],
+  },
+  {
+    id: 'cuentas-bancarias',
+    label: 'Cuentas bancarias',
+    icon: Landmark,
+    description: 'Tus cuentas para recibir y enviar transferencias.',
+    keywords: ['cuentas', 'bancarias', 'banco', 'titular', 'cbu', 'alias', 'transferencias'],
+    perm: ['bank_tx.view'],
   },
   {
     id: 'permisos',
@@ -404,6 +415,8 @@ function ActiveSection({
       return <SectionPermisos />;
     case 'plantillas':
       return <SectionPlantillas />;
+    case 'cuentas-bancarias':
+      return <SectionCuentasBancarias />;
     case 'enviadas':
       return <SectionNotificacionesEnviadas />;
   }
