@@ -13830,11 +13830,22 @@ con filas) y corrida contra los tenants locales.
 
 ### Notas para próximo agente
 
-- ⚠️ **Revisar en los logs del primer arranque** si apareció el `WARNING` de
-  `bank_accounts tenia filas`. Si apareció, hay una tabla
-  `bank_accounts_huerfana_20260831` con datos que alguien cargó en la hora que
-  la pantalla estuvo viva: revisar y borrar a mano. Si no apareció, la tabla se
-  borró limpia y no queda nada.
+- ✅ **La tabla estaba vacía y se borró limpia.** Se leyeron los logs completos
+  (91 KB) del arranque que corrió la migración: el bloque va de
+  `Migrando 1 tenant(s)…` a `✔ miamihub (tenant_miamihub)` sin nada en el medio,
+  y no hay ni una mención a `bank_accounts` ni un solo `WARNING` de Postgres. No
+  quedó ninguna `bank_accounts_huerfana_20260831`: no hay nada que revisar.
+- **Producción tiene un solo tenant**: `miamihub` (`tenant_miamihub`). Se ve en
+  el log de migraciones de cada arranque.
+- **Los logs de contenedor de Dokploy SÍ se pueden leer sin entrar al panel**,
+  aunque no haya endpoint REST: van por WebSocket a
+  `wss://dokploy.miamihub.vip/docker-container-logs?containerId=<id>&tail=<n>`,
+  autenticando con el header `x-api-key`. El `containerId` sale de
+  `GET /api/docker.getContainersByAppNameMatch?appName=casino-api-hnwmew`. Ojo:
+  para ver el efecto de una migración hay que pedir los logs del contenedor que
+  la corrió, no del que esté corriendo ahora — cada deploy rota el contenedor y
+  en el siguiente arranque la migración ya figura aplicada y no vuelve a emitir
+  nada.
 - ⚠️ **Hay un hueco deliberado en los `when` del journal de tenant**:
   1789300900000 está quemado por la migración revertida. No "arreglarlo".
 - **Lección**: revertir el archivo de una migración no revierte la migración. Si
