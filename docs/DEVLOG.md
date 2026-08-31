@@ -8840,3 +8840,45 @@ el código **es** la forma correcta de mostrarlos.
 "chip" es la palabra en inglés. La regla no dice que sean distintas: dice que en
 castellano se escribe "ficha". Lo único que sí es otro concepto son los botones
 tipo píldora de la UI, que vienen del diseño web y no del casino.
+
+---
+
+## 2026-08-31 — Buscador en la home del casino (/play)
+
+**Contexto**: Uriel pidió buscador y filtro en la home del jugador. El motivo
+importa más que el pedido: *"la página la va a jugar mucha gente anciana que
+capaz no sabe cómo cambiar de sección"*. O sea que mandarlos al lobby no es una
+respuesta — si el juego no está en la grilla de la home, para ellos no existe.
+
+**Lo que encontré al abrirlo**: la home ya tenía chips de categoría, pero
+`useActiveGames()` se llamaba **sin filtros** — o sea con el default del backend,
+**30 juegos** — y los chips filtraban *en el cliente sobre esos 30*.
+
+Con 2.840 juegos activos eso significa que elegir una categoría que no estuviera
+entre los primeros 30 mostraba **la grilla vacía**. Un bug latente que el
+buscador habría heredado y empeorado.
+
+**Cambios**:
+
+- Búsqueda y categoría van al **servidor**, no se filtran en el cliente.
+- El límite de la home sube a 60. No hay paginado acá: lo que no entra, no
+  existe. Con el buscador andando alcanza — quien busca algo puntual lo escribe.
+- Las categorías salen de las **facetas** (conteos globales), no de los juegos
+  mostrados. Si salieran de la grilla, al elegir "Mesa" los juegos traídos serían
+  todos de mesa y los demás chips desaparecerían: el jugador quedaría encerrado
+  en la categoría que eligió, sin forma visible de salir.
+
+**Decisiones de accesibilidad**, que acá son el requisito y no un detalle:
+
+- El buscador tiene **etiqueta escrita** ("Buscar un juego"), no solo una lupa.
+  Un ícono solo no se lee como "acá se busca" si no crecíste con esa convención.
+- Input de **56px de alto y texto de 16px**. Los 16px además evitan que Safari
+  haga zoom al enfocar, que desorienta.
+- Botón de borrar de **40px**, no una crucecita de 16.
+- Los chips de categoría pasaron de **30px a 44px** de alto — el mínimo táctil
+  recomendado. Con 30px, un pulgar sobre un celular se erra.
+- Cuando la búsqueda no encuentra nada, el mensaje **dice qué se buscó** y
+  sugiere qué hacer, en vez de un "sin resultados" seco.
+
+**Pendiente**: no se pudo verificar renderizado (el panel pide login y no
+ingreso credenciales). Verificado: typecheck, lint y build de Next limpios.
