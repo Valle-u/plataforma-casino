@@ -688,7 +688,8 @@ export class WithdrawalsService {
         amount: dto.amount,
         currency: dto.currency ?? locked.currencyFiat,
         direction: 'outgoing',
-        senderName: dto.senderName,
+        // Idem el otro upload de este service: no se manda el nombre del
+        // tercero. Ver el comentario de abajo.
         receiptUrl: dto.receiptUrl,
         receiptStorageKey: dto.receiptStorageKey,
         receiptHash: dto.receiptHash,
@@ -855,7 +856,10 @@ export class WithdrawalsService {
         amount: pay.amount,
         currency: pay.currency ?? params.currencyFiat,
         direction: 'outgoing',
-        senderName: pay.senderName,
+        // NO se manda `pay.senderName`: era el nombre del JUGADOR que cobra,
+        // precargado por el modal de pago. Es exactamente el dato de tercero
+        // que se dejó de guardar; si siguiera acá, entraría por atrás en cada
+        // retiro pagado y el cambio quedaría a medias y en silencio.
         receiptUrl: pay.receiptUrl,
         receiptStorageKey: pay.receiptStorageKey,
         receiptHash: pay.receiptHash,

@@ -8766,3 +8766,73 @@ ejercita contra la base real, no simulado.
 **Nota**: `bank-transactions.e2e.ts` tiene 14 fallos **preexistentes**
 (verificado con y sin el cambio: 14 en ambos casos), del helper que devuelve
 `BANK_TX_INCOMING_BANK_DATA_REQUIRED`.
+
+---
+
+## 2026-08-31 — Cuentas propias (paso 2): el selector reemplaza al texto libre
+
+**Contexto**: paso 2 de lo empezado en la entrada anterior. Al ir a reemplazar
+las cajas de texto apareció algo que no estaba en el plan.
+
+**Ya existía un mecanismo de "cuentas guardadas"… en `localStorage`.**
+`lib/bank-accounts-storage.ts` guardaba las cuentas **por dispositivo**, con
+opción de escribir una "cuenta nueva" a mano. Y guardaba también
+`bank-tx:last-counterparty-v1` — el último tercero — para autocompletarlo en la
+siguiente carga.
+
+Eso explica el bug mejor de lo que lo teníamos: las cuentas no se compartían
+entre operadores, el modo "cuenta nueva" dejaba escribir cualquier cosa, y el
+nombre del tercero se recordaba solo. Por ahí entró el jugador al campo de
+nuestra cuenta.
+
+**Cambios**:
+
+- El formulario lee las cuentas del servidor (`useBankAccounts`), no del
+  navegador. Se fue el modo "cuenta nueva" y el botón de borrar cuenta: se
+  administran en Configuración.
+- Se fue el campo del tercero y su autocompletado.
+- **El modal de edición también**: si ahí seguía siendo texto libre, se podía
+  volver a meter un tercero editando y el arreglo del alta no servía de nada.
+  Preselecciona la cuenta buscándola por titular + banco; si no matchea ninguna
+  (fila vieja, o cuenta dada de baja) queda vacío y hay que elegir una — son
+  justamente las filas que conviene corregir.
+- **El pago de retiros deja de mandar `senderName`**, en sus DOS llamadas. Ahí
+  se precargaba el nombre del jugador que cobra: sin esto el dato seguiría
+  entrando por atrás en cada retiro pagado, y el cambio quedaría a medias y en
+  silencio.
+- Validación invertida: entrantes exigen `bankName` + `accountHolder` (nuestra
+  cuenta) en vez de `bankName` + `senderName` (mezclaba lo nuestro con el
+  tercero, y el mensaje de error también).
+- El buscador pasa a filtrar por banco y titular nuestros. Antes buscaba por
+  contraparte y habría quedado mudo.
+
+Lo único que sigue en `localStorage` es **cuál fue la última cuenta usada**: es
+una comodidad del operador, no un dato de la transferencia.
+
+### Efecto lateral: la suite pasó de 14 rojos a 0
+
+`bank-transactions.e2e.ts` tenía **14 fallos preexistentes**. No eran flakes:
+sus fixtures no mandaban los datos que la validación de trazabilidad exige desde
+el 2026-08-14. Venían fallando desde entonces y nadie los arregló — el mismo
+patrón que el rate limiter: ruido rojo constante que deja de leerse.
+
+Completando los fixtures quedó **1 solo** fallo, y resultó ser el más
+interesante: un test de aislamiento de sub-red independiente que **nunca había
+llegado a su aserción** porque moría al crear la transferencia.
+
+Al llegar, falló. Y no por un agujero de seguridad: probaba el aislamiento
+**viejo**, por `bankAccount`, reemplazado el 2026-08-25 por uno basado en
+`uploaded_by` (la cuenta es mutable, quién subió no). El test subía la
+transferencia del "independiente" con el token del **admin**, así que bajo el
+criterio nuevo esa transferencia es del admin y se ve — correctamente.
+
+Se removió, dejando en su lugar un comentario que explica por qué y apunta a la
+cobertura real del mecanismo actual, en `branch-flip-preconditions.e2e.ts`
+("Fix crítico: aislar por uploaded_by — un indep NO ve el extracto del admin
+aunque reclame su CBU").
+
+**Estado**: 25/25 en verde entre `bank-accounts` y `bank-transactions`.
+
+**Pendiente**: los datos de terceros ya cargados (9 filas) siguen ahí. Se decidió
+no tocarlos — algunas están conciliadas con depósitos y retiros, y borrar un dato
+de auditoría de una conciliación hecha es irreversible.

@@ -19,7 +19,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/modal';
+import { Select } from '@/components/ui/select';
 import { isApiError } from '@/lib/api-client';
+import { useBankAccounts } from '@/lib/hooks/use-bank-accounts';
 import {
   useUpdateBankTransaction,
   type BankTransaction,
@@ -44,10 +46,13 @@ export function EditBankTxModal({
   // ref (no controlados) para no perder el foco al tipear en Opera. Se pre-cargan
   // con defaultValue + key={transaction.id}.
   const [direction, setDirection] = useState<BankTxDirection>('incoming');
-  const accountHolderRef = useRef<HTMLInputElement>(null);
-  const bankNameRef = useRef<HTMLInputElement>(null);
+  // La cuenta propia se ELIGE de las cargadas en Configuración. Si acá
+  // siguiera siendo texto libre, se podría volver a escribir un tercero
+  // editando, y el arreglo del alta no serviría de nada.
+  const accountsQuery = useBankAccounts();
+  const accounts = accountsQuery.data?.data ?? [];
+  const [accountId, setAccountId] = useState('');
   const amountRef = useRef<HTMLInputElement>(null);
-  const senderNameRef = useRef<HTMLInputElement>(null);
   const referenceRef = useRef<HTMLInputElement>(null);
   const receivedAtRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLInputElement>(null);
@@ -55,6 +60,26 @@ export function EditBankTxModal({
   useEffect(() => {
     if (open && transaction) setDirection(transaction.direction);
   }, [open, transaction]);
+
+  // Preseleccionar la cuenta con la que se cargó la transferencia, buscándola
+  // por titular + banco (que es lo que quedó guardado en la fila).
+  //
+  // Si no matchea ninguna -- una transferencia vieja cargada a mano, o con una
+  // cuenta que después se dio de baja -- el selector queda vacío y hay que
+  // elegir una para poder guardar. Es a propósito: son justamente las filas
+  // que conviene corregir, y guardarlas sin cuenta propia dejaría el dato tan
+  // suelto como antes.
+  useEffect(() => {
+    if (!open || !transaction) return;
+    const norm = (v: string | null | undefined) =>
+      (v ?? '').trim().toLowerCase();
+    const match = accounts.find(
+      (a) =>
+        norm(a.accountHolder) === norm(transaction.accountHolder) &&
+        norm(a.bankName) === norm(transaction.bankName),
+    );
+    setAccountId(match?.id ?? '');
+  }, [open, transaction, accounts]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,15 +90,21 @@ export function EditBankTxModal({
       toast.error('Monto y fecha son obligatorios');
       return;
     }
+    const cuenta = accounts.find((a) => a.id === accountId);
+    if (!cuenta) {
+      toast.error(
+        'Elegí con qué cuenta propia se hizo la transferencia.',
+      );
+      return;
+    }
     try {
       await update.mutateAsync({
         id: transaction.id,
         payload: {
           amount,
           direction,
-          accountHolder: accountHolderRef.current?.value.trim() || undefined,
-          bankName: bankNameRef.current?.value.trim() || undefined,
-          senderName: senderNameRef.current?.value.trim() || undefined,
+          accountHolder: cuenta?.accountHolder,
+          bankName: cuenta?.bankName,
           reference: referenceRef.current?.value.trim() || undefined,
           receivedAt: arDatetimeLocalToIso(receivedAt) ?? new Date(receivedAt).toISOString(),
           notes: notesRef.current?.value.trim() || undefined,
@@ -88,7 +119,6 @@ export function EditBankTxModal({
     }
   }
 
-  const isOutgoing = direction === 'outgoing';
 
   return (
     <Modal
@@ -161,19 +191,18 @@ export function EditBankTxModal({
             ))}
           </div>
         </Field>
-        <Field label="Titular de la cuenta">
-          <Input
-            ref={accountHolderRef}
-            defaultValue={transaction?.accountHolder ?? ''}
-            placeholder="Juan Pérez"
-          />
-        </Field>
-        <Field label="Banco">
-          <Input
-            ref={bankNameRef}
-            defaultValue={transaction?.bankName ?? ''}
-            placeholder="Banco Nación"
-          />
+        <Field label="Cuenta propia" required>
+          <Select
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            <option value="">Elegí una cuenta…</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.bankName} · {a.accountHolder}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Monto" required>
           <Input
@@ -194,13 +223,7 @@ export function EditBankTxModal({
             defaultValue={transaction ? isoToArDatetimeLocal(transaction.receivedAt) : ''}
           />
         </Field>
-        <Field label={isOutgoing ? 'Titular que recibe' : 'Titular que envía'}>
-          <Input
-            ref={senderNameRef}
-            defaultValue={transaction?.senderName ?? ''}
-            placeholder="Juan Pérez"
-          />
-        </Field>
+
         <Field label="Referencia / concepto">
           <Input
             ref={referenceRef}

@@ -42,6 +42,11 @@ export async function matchBankTxForDeposit(
     .set('Authorization', adminToken)
     .send({
       bankAccount: '0000000000000000000000',
+      // Cuenta PROPIA: el alta la exige para entrantes (trazabilidad). El
+      // helper no la mandaba y venia fallando desde que se agrego la regla,
+      // arrastrando 14 tests de la suite de transferencias.
+      bankName: 'Banco Test',
+      accountHolder: 'Casino Test',
       amount: '1.00',
       currency: 'ARS',
       reference: ref,

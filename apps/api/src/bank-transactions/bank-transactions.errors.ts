@@ -98,7 +98,7 @@ export class BankTransactionOutgoingReceiptRequiredError extends Error {
 export class BankTransactionIncomingBankDataRequiredError extends Error {
   constructor() {
     super(
-      'Las transferencias entrantes requieren el Banco y el Titular que envía (para la trazabilidad).',
+      'Las transferencias entrantes requieren el Banco y el Titular de la cuenta propia con la que se recibió.',
     );
     this.name = 'BankTransactionIncomingBankDataRequiredError';
   }

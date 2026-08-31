@@ -53,16 +53,14 @@ import { BankTxCardList } from '@/components/admin/bank-tx-card-list';
 import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
 import { MatchManualTxModal } from '@/components/admin/match-manual-tx-modal';
 import { BankTxDetailDrawer } from '@/components/admin/bank-tx-detail-drawer';
+// Del storage por dispositivo solo queda la última cuenta usada: es una
+// comodidad del operador, no un dato de la transferencia. Las cuentas en sí
+// pasaron al servidor (tabla `bank_accounts`).
 import {
-  deleteSavedAccount,
   loadLastAccountId,
-  loadLastCounterparty,
-  loadSavedAccounts,
   saveLastAccountId,
-  saveLastCounterparty,
-  upsertSavedAccount,
-  type SavedBankAccount,
 } from '@/lib/bank-accounts-storage';
+import { useBankAccounts } from '@/lib/hooks/use-bank-accounts';
 import { cn } from '@/lib/cn';
 import {
   arDatetimeLocalToIso,
@@ -219,11 +217,12 @@ export default function BankTransactionsPage() {
         />
       )}
 
-      {/* Buscador por contraparte — filtra el listado por senderName (ILIKE). */}
+      {/* Busca por NUESTRA cuenta (banco / titular). Antes buscaba por el
+          nombre de la contraparte, que dejó de guardarse. */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
         <Input
-          placeholder="Buscar por nombre de la contraparte…"
+          placeholder="Buscar por banco o titular de tu cuenta…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9 h-11 lg:h-9"
@@ -539,15 +538,18 @@ function UploadForm({
   const uploadProof = useUploadBankTxProof();
   const [form, setForm] = useState({
     direction: defaultDirection,
-    accountId: '', // '' = "Nueva cuenta…"
-    newAccountHolder: '',
-    newBankName: '',
+    accountId: '',
     date: todayLocalDate(),
     time: nowLocalTime(),
-    senderName: '',
     amount: '',
   });
-  const [accounts, setAccounts] = useState<SavedBankAccount[]>([]);
+
+  // Las cuentas propias salen del servidor, no del navegador. Antes vivían en
+  // localStorage por dispositivo y el form dejaba escribir una "cuenta nueva"
+  // a mano: por ese agujero terminó cargado el nombre de un jugador como
+  // titular de NUESTRA cuenta. Ahora se administran en Configuración.
+  const accountsQuery = useBankAccounts();
+  const accounts = accountsQuery.data?.data ?? [];
 
   // Sprint 52: comprobante obligatorio para transferencias salientes
   // (two-step: /upload-proof → mandamos receiptUrl + receiptStorageKey).
@@ -564,21 +566,19 @@ function UploadForm({
   // Sprint 56: autofocus al monto tras cargar → "carga en cadena" sin re-tocar el form.
   const amountRef = useRef<HTMLInputElement>(null);
 
-  // Cargar las cuentas guardadas del dispositivo y preseleccionar la
-  // última usada (auto: "último valor usado"). Sprint 56: también se
-  // autocompleta el último titular que envió/recibió (contraparte).
+  // Preseleccionar la última cuenta usada. Eso SÍ sigue en localStorage: es
+  // una comodidad por dispositivo (qué cuenta suele usar este operador), no
+  // un dato de la transferencia. Si ya no existe o está dada de baja, cae a
+  // la primera activa.
   useEffect(() => {
-    const saved = loadSavedAccounts();
-    setAccounts(saved);
-    const lastId = loadLastAccountId();
-    const lastExists = lastId !== null && saved.some((a) => a.id === lastId);
-    const lastCounterparty = loadLastCounterparty();
-    setForm((f) => ({
-      ...f,
-      accountId: lastExists && lastId ? lastId : (saved[0]?.id ?? ''),
-      senderName: lastCounterparty ?? '',
-    }));
-  }, []);
+    if (accounts.length === 0) return;
+    setForm((f) => {
+      if (f.accountId && accounts.some((a) => a.id === f.accountId)) return f;
+      const lastId = loadLastAccountId();
+      const lastExists = lastId !== null && accounts.some((a) => a.id === lastId);
+      return { ...f, accountId: lastExists && lastId ? lastId : accounts[0]!.id };
+    });
+  }, [accounts]);
 
   // Sincronizar el form con la dirección del tab activo cuando cambia.
   // El empleado puede pisarla a mano dentro del form si quiere.
@@ -590,11 +590,6 @@ function UploadForm({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function removeAccount(id: string) {
-    deleteSavedAccount(id);
-    setAccounts(loadSavedAccounts());
-    setForm((f) => ({ ...f, accountId: '' }));
-  }
 
   const handleFile = async (file: File): Promise<void> => {
     setProofError(null);
@@ -642,34 +637,19 @@ function UploadForm({
       toast.error('El monto es obligatorio');
       return;
     }
-    if (!form.senderName.trim()) {
-      toast.error(
-        form.direction === 'outgoing'
-          ? 'El titular que recibe es obligatorio'
-          : 'El titular que envía es obligatorio',
-      );
-      return;
-    }
+
     if (form.direction === 'outgoing' && !proof) {
       toast.error('El comprobante es obligatorio para transferencias salientes');
       return;
     }
-    // Resolver la cuenta propia: seleccionada o nueva (queda guardada).
-    let account: SavedBankAccount;
-    if (form.accountId) {
-      const selected = accounts.find((a) => a.id === form.accountId);
-      if (!selected) {
-        toast.error('Cuenta seleccionada inválida');
-        return;
-      }
-      account = selected;
-    } else {
-      if (!form.newBankName.trim() || !form.newAccountHolder.trim()) {
-        toast.error('Completá el titular y el banco de la nueva cuenta');
-        return;
-      }
-      account = upsertSavedAccount(form.newBankName, form.newAccountHolder);
-      setAccounts(loadSavedAccounts());
+    // La cuenta propia se ELIGE. Ya no se puede escribir a mano: por ahí se
+    // colaba un tercero en el campo de nuestra cuenta.
+    const account = accounts.find((a) => a.id === form.accountId);
+    if (!account) {
+      toast.error(
+        'Elegí con qué cuenta propia se hizo la transferencia. Se administran en Configuración → Cuentas bancarias.',
+      );
+      return;
     }
     try {
       await upload.mutateAsync({
@@ -678,7 +658,6 @@ function UploadForm({
         direction: form.direction,
         accountHolder: account.accountHolder,
         bankName: account.bankName,
-        senderName: form.senderName.trim(),
         receiptUrl: form.direction === 'outgoing' ? proof?.receiptUrl : undefined,
         receiptStorageKey:
           form.direction === 'outgoing' ? proof?.receiptStorageKey : undefined,
@@ -686,10 +665,6 @@ function UploadForm({
         receivedAt: combineDateTime(form.date, form.time),
       });
       saveLastAccountId(account.id);
-      // Sprint 56: el último titular que envió/recibió queda autocompletado
-      // para la siguiente carga (carga en cadena del mismo cliente).
-      const senderName = form.senderName.trim();
-      saveLastCounterparty(senderName);
       toast.success(
         form.direction === 'outgoing'
           ? 'Transferencia saliente cargada'
@@ -699,7 +674,6 @@ function UploadForm({
       setForm((f) => ({
         ...f,
         amount: '',
-        senderName,
         date: todayLocalDate(),
         time: nowLocalTime(),
       }));
@@ -710,10 +684,6 @@ function UploadForm({
       });
     }
   }
-
-  const isNewAccount = form.accountId === '';
-  const counterpartyLabel =
-    form.direction === 'outgoing' ? 'Titular que recibe' : 'Titular que envía';
 
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
@@ -773,37 +743,8 @@ function UploadForm({
                   ))}
                 </Select>
               </div>
-              {!isNewAccount && (
-                <button
-                  type="button"
-                  onClick={() => removeAccount(form.accountId)}
-                  className="size-9 shrink-0 flex items-center justify-center border border-[var(--color-border)] text-[var(--color-fg-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)] transition-colors"
-                  aria-label="Borrar esta cuenta guardada"
-                  title="Borrar esta cuenta guardada"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              )}
             </div>
           </Field>
-          {isNewAccount && (
-            <>
-              <Field label="Titular de la cuenta" required>
-                <Input
-                  value={form.newAccountHolder}
-                  onChange={(e) => update('newAccountHolder', e.target.value)}
-                  placeholder="Juan Pérez"
-                />
-              </Field>
-              <Field label="Banco" required>
-                <Input
-                  value={form.newBankName}
-                  onChange={(e) => update('newBankName', e.target.value)}
-                  placeholder="Banco Nación"
-                />
-              </Field>
-            </>
-          )}
           {/* Sprint 56: Fecha+Hora. En mobile (<sm) van apiladas full-width:
               los inputs nativos date/time de iOS tienen ancho mínimo intrínseco
               (~200px) y en 2 columnas (157px) desbordan y se superponen entre sí.
@@ -848,16 +789,7 @@ function UploadForm({
               enterKeyHint="next"
             />
           </Field>
-          <Field label={`${counterpartyLabel}`} required>
-            <Input
-              value={form.senderName}
-              onChange={(e) => update('senderName', e.target.value)}
-              placeholder="Juan Pérez"
-              autoCapitalize="words"
-              autoComplete="off"
-              enterKeyHint="done"
-            />
-          </Field>
+
           {form.direction === 'outgoing' && (
             <Field label="Comprobante de la transferencia" required>
               {!proof ? (
