@@ -8697,3 +8697,48 @@ valer para esconder un puntito.
 **No confundir con** el arreglo de la misma jornada en la bandeja del jugador
 (`notifications.service.ts`): ahí sí había un bug real de datos. Acá no había
 bug — faltaba una función.
+
+---
+
+## 2026-08-31 — Transferencias: qué se recuerda entre cargas
+
+**Corrige un malentendido mío.** El pedido era que el formulario **recuerde
+automáticamente** el titular, el banco y la fecha, y que al recordar una cuenta
+no se guarde el tercero. Lo leí como *qué campos deben existir* y terminé
+armando una tabla, una pantalla y sacando inputs que hacen falta. Se revirtió
+entero (commit `d2b3e60`; backup en la rama `backup/cuentas-propias-2026-08-31`
+y el tag `backup-cuentas-propias-707f86c`).
+
+**El cambio real es chico.** Al cargar una transferencia detrás de otra, el
+formulario recuerda:
+
+| campo | antes | ahora |
+|---|---|---|
+| cuenta propia (titular + banco) | se recordaba | **se recuerda** |
+| fecha | se reseteaba a hoy | **se recuerda** |
+| titular que envía/recibe | **se recordaba** | se limpia |
+| monto | se limpiaba | se limpia |
+| hora | se ponía la actual | se pone la actual |
+
+**Por qué la fecha se recuerda**: se cargan extractos enteros, y todos los
+movimientos son del mismo día. Resetear a hoy obligaba a re-elegir la fecha en
+cada carga de un extracto viejo.
+
+**Por qué el tercero NO**: es una persona distinta en cada transferencia. Se
+autocompletaba con el de la carga anterior (`bank-tx:last-counterparty-v1`), y
+alcanzaba con no mirarlo para cargar una transferencia a nombre de quien no era.
+Ese es el riesgo real que había: no que el campo existiera, sino que viniera
+lleno con un dato viejo.
+
+**Por qué la hora no**: es la del comprobante, distinta en cada movimiento.
+Arrancar desde la de la transferencia anterior no ayuda.
+
+### Lo que quedó pendiente del revert
+
+- La migración **0108 ya corrió en producción** (`MIGRATE_ON_BOOT`), así que la
+  tabla `bank_accounts` quedó creada y sin usar. Es inofensiva — ninguna consulta
+  la toca. Sacarla pide una migración aparte.
+- `bank-transactions.e2e.ts` vuelve a sus **14 fallos preexistentes**. Durante el
+  trabajo revertido se habían llevado a 0: los fixtures no mandaban los datos que
+  la validación de trazabilidad exige desde el 2026-08-14. Ese arreglo es
+  independiente de este tema y se puede reaplicar solo.

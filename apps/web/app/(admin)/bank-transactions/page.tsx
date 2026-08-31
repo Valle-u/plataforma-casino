@@ -56,10 +56,8 @@ import { BankTxDetailDrawer } from '@/components/admin/bank-tx-detail-drawer';
 import {
   deleteSavedAccount,
   loadLastAccountId,
-  loadLastCounterparty,
   loadSavedAccounts,
   saveLastAccountId,
-  saveLastCounterparty,
   upsertSavedAccount,
   type SavedBankAccount,
 } from '@/lib/bank-accounts-storage';
@@ -565,18 +563,22 @@ function UploadForm({
   const amountRef = useRef<HTMLInputElement>(null);
 
   // Cargar las cuentas guardadas del dispositivo y preseleccionar la
-  // última usada (auto: "último valor usado"). Sprint 56: también se
-  // autocompleta el último titular que envió/recibió (contraparte).
+  // última usada.
+  //
+  // El titular que envía/recibe NO se recuerda: es una persona distinta en
+  // cada transferencia. Autocompletarlo hacía que el nombre del anterior
+  // quedara puesto, y alcanzaba con no mirarlo para cargar una transferencia
+  // a nombre de quien no era.
   useEffect(() => {
     const saved = loadSavedAccounts();
     setAccounts(saved);
     const lastId = loadLastAccountId();
     const lastExists = lastId !== null && saved.some((a) => a.id === lastId);
-    const lastCounterparty = loadLastCounterparty();
+
     setForm((f) => ({
       ...f,
       accountId: lastExists && lastId ? lastId : (saved[0]?.id ?? ''),
-      senderName: lastCounterparty ?? '',
+
     }));
   }, []);
 
@@ -686,21 +688,23 @@ function UploadForm({
         receivedAt: combineDateTime(form.date, form.time),
       });
       saveLastAccountId(account.id);
-      // Sprint 56: el último titular que envió/recibió queda autocompletado
-      // para la siguiente carga (carga en cadena del mismo cliente).
-      const senderName = form.senderName.trim();
-      saveLastCounterparty(senderName);
       toast.success(
         form.direction === 'outgoing'
           ? 'Transferencia saliente cargada'
           : 'Transferencia entrante cargada',
       );
       clearProof();
+      // Queda listo para la siguiente carga: se conservan la CUENTA PROPIA
+      // (titular + banco) y la FECHA, que son los que se repiten cuando se
+      // carga un extracto entero. Se limpian el monto y el titular que
+      // envía/recibe, que cambian en cada una.
+      //
+      // La hora sí se pone en la actual: es la del comprobante, y arrancar
+      // desde la de la transferencia anterior no ayuda a nadie.
       setForm((f) => ({
         ...f,
         amount: '',
-        senderName,
-        date: todayLocalDate(),
+        senderName: '',
         time: nowLocalTime(),
       }));
       amountRef.current?.focus();
