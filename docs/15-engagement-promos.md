@@ -228,7 +228,7 @@ promotion_audit
 
 ## B3. Sorteo por tickets
 
-- Configuración: ratio `chips_apostados → 1 ticket`, juegos elegibles, período de generación, fecha de draw, premios.
+- Configuración: ratio `chips_apostados` (fichas apostadas) → 1 ticket, juegos elegibles, período de generación, fecha de draw, premios.
 - Tickets se generan **en tiempo real** al cerrarse cada round (job rápido).
 - Draw: algoritmo verificable con seed pública.
   - Al cerrar el período, se publica el `seed_hash` (commit).
@@ -307,7 +307,7 @@ Un usuario participa de los 4 a la vez con la misma actividad.
 
 ## C2. Métricas rankeables
 
-- `bet_volume` — total apostado (chips)
+- `bet_volume` — total apostado (fichas)
 - `rounds_count` — cantidad de rounds jugados
 - `gross_won` — total ganado bruto
 - `player_netwin` — neto (ganó − perdió) **del jugador**

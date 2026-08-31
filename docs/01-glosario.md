@@ -83,6 +83,22 @@ Rol con permisos a la carta. No tiene set de permisos por defecto fuerte; el adm
 ## F
 
 **Fichas**
+
+> ⚠️ **Se llaman FICHAS. Nunca "chips".** En todo texto que lea una persona —
+> interfaz, mensajes de error, notificaciones, documentación, mensajes al dueño —
+> la unidad es **ficha / fichas**. Es la palabra del negocio y la que usan los
+> operadores; "chips" es una traducción que se cuela sola y confunde.
+>
+> **Excepción, en código:** los identificadores van en inglés por convención del
+> proyecto (ver AGENTS.md), así que `amountChips`, `chips_por_unidad` o
+> `sellChips` se quedan como están. Lo que nunca puede pasar es que "chips"
+> llegue a la pantalla.
+>
+> **Ojo, hay un homónimo:** en la interfaz también se llaman *chips* los botones
+> chiquitos tipo píldora (los filtros del lobby, los canales de notificación).
+> Ésos SÍ son chips y no se tocan. Si dice "chips de proveedor" o "channel
+> chips", habla de botones, no de plata.
+
 Unidad interna de valor del casino. **1 ficha = 1 peso (ARS), FIJO** (E1). El sistema crea (mint) y destruye (burn) fichas; no hay pool externo. Lo configurable es el **ratio fiat ↔ ficha por método de pago** (ej. 1 USDT = N fichas), no la equivalencia peso-ficha, que es fija. Toda operación de juego se mide en fichas.
 
 ---

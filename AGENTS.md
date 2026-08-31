@@ -32,6 +32,13 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
    - Código (variables, funciones, tablas, comentarios técnicos): **inglés**.
    - Documentación (`/docs`, `README.md`): **español**.
    - Mensajes de UI: configurables por tenant; default español.
+9. **Se llaman FICHAS, nunca "chips"**. En todo texto que lea una persona —
+   interfaz, errores, notificaciones, docs, mensajes al dueño— la unidad es
+   **ficha / fichas**. Es la palabra del negocio; "chips" se cuela sola al
+   traducir y confunde. En **código** los identificadores siguen en inglés
+   (`amountChips`, `sellChips`): lo que nunca puede pasar es que "chips" llegue a
+   la pantalla. Ojo con el homónimo: los botones tipo píldora de la UI también
+   se llaman *chips* y **ésos sí son chips**. Ver `docs/01-glosario.md`.
 
 ---
 

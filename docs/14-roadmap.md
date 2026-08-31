@@ -504,7 +504,7 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 1. **Admin trigger del dispatcher de notifications** — `POST /tenant/notifications/dispatch` para forzar procesamiento inmediato post-retry.
 2. **"Re-encolar todas las failed" bulk action** — riesgo de doble envío masivo; tratar con cuidado.
 3. **Subir archivos de comprobante propiamente** (S3/R2 + signed URLs) — hoy es URL externa que el jugador pega manual.
-4. **Tasa de cambio configurable por payment_method** — el ratio chips/fiat hoy lo decide el cajero al aprobar. Sumar `config.ratio` opcional + auto-llenado en el modal del jugador.
+4. **Tasa de cambio configurable por payment_method** — el ratio fichas/fiat hoy lo decide el cajero al aprobar. Sumar `config.ratio` opcional + auto-llenado en el modal del jugador.
 
 ---
 
