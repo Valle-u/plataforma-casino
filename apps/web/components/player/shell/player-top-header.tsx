@@ -18,6 +18,7 @@
 import { usePathname } from 'next/navigation';
 import { LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { useScrolled } from '@/lib/hooks/use-scrolled';
 import { cn } from '@/lib/cn';
 import { UserMenu } from './user-menu';
 import { NotificationsDropdown } from '@/components/player/notifications-dropdown';
@@ -25,19 +26,31 @@ import { NotificationsDropdown } from '@/components/player/notifications-dropdow
 export function PlayerTopHeader() {
   const { user, openLoginModal, openRegisterModal } = useAuth();
   const pathname = usePathname();
+  const scrolled = useScrolled();
+
   const isHome = pathname === '/play';
+  // Transparente solo arriba de todo del home; en cuanto te movés, sólido.
+  // Sin esto, al volverse fijo el header flota SIN fondo sobre el contenido
+  // y se ve todo encimado.
+  const floating = isHome && !scrolled;
 
   return (
     <header
       className={cn(
-        'sticky top-0 z-30 flex h-16 w-full items-center gap-3.5 px-6',
-        isHome
+        // `relative` para el scrim. El `sticky` vive en el wrapper de
+        // `app/play/layout.tsx`: un sticky solo se pega dentro de su padre, y
+        // ese wrapper mide lo mismo que el header.
+        //
+        // Sin `transition-colors` a propósito — ver el aviso en
+        // `use-scrolled.ts`.
+        'relative flex h-16 w-full items-center gap-3.5 px-6',
+        floating
           ? 'bg-transparent'
           : 'border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur',
       )}
     >
-      {/* Scrim de legibilidad solo en el home (sobre el banner claro). */}
-      {isHome && (
+      {/* Scrim de legibilidad solo mientras flota sobre el banner. */}
+      {floating && (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10"

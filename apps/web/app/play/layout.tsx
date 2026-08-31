@@ -200,7 +200,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
           <PlayerSidebar />
         </div>
         <div className="flex min-h-screen flex-col">
-          <div className="hidden lg:block">
+          {/* Mismo motivo que abajo: el sticky va en el wrapper. */}
+          <div className="sticky top-0 z-30 hidden lg:block">
             <PlayerTopHeader />
           </div>
           {/* El `sticky` va ACÁ y no en el header.
