@@ -55,12 +55,20 @@ Dos aprendizajes para el próximo proveedor seamless:
    salían de `18.184.217.6`. Una regla anclada a una IP declarada por un tercero
    es frágil; conviene anclarla a **nuestra propia ruta**, que sí controlamos.
 
-Reglas que quedaron en Cloudflare:
+Regla que quedó en Cloudflare (una sola, desde el 2026-08-31):
 
 | Regla | Expresión | Para qué |
 |---|---|---|
-| `Gregmorn callbacks` | host + ruta del callback | Permanente. Exceptúa WAF y rate limiting en esa ruta, desde cualquier IP, y la registra. |
-| `Gregmorn diagnostico (temporal)` | `ip.src eq 3.78.156.229` | Temporal. Borrar cuando la integración esté estable. |
+| `Gregmorn callbacks` | `http.host eq "api.miamihub.vip" and starts_with(http.request.uri.path, "/api/v1/game-provider/gregmorn/callback")` | Permanente. Exceptúa WAF, rate limiting y SBFM en esa ruta, desde cualquier IP, y la registra. |
+
+Hubo una segunda, `Gregmorn diagnostico (temporal)` (`ip.src eq 3.78.156.229`),
+**borrada el 2026-08-31**. Era un `skip` para *cualquier* request de esa IP, a
+cualquier host y ruta: mucho más amplio de lo necesario. Antes de borrarla se
+verificó que el controller expone exactamente dos rutas
+(`callback` y `callback/:token`), las dos bajo el prefijo que cubre la regla de
+arriba, así que no había tráfico legítimo que dependiera solo de ella. Después
+se comprobó que un POST al callback sigue llegando a la aplicación (contesta
+`INVALID_SIGNATURE`, no una página de Cloudflare).
 
 > ✅ **Al pasar a su entorno de Prod no hace falta tocar nada** (verificado el
 > 2026-08-31 leyendo la config con la API de Cloudflare). Este doc decía antes
@@ -70,8 +78,8 @@ Reglas que quedaron en Cloudflare:
 > cualquier IP. Esa regla por ruta es la que sostiene todo; la de IP es
 > redundante para los callbacks.
 >
-> Sigue en pie borrar `Gregmorn diagnostico (temporal)` cuando la integración
-> esté estable. Bot Fight Mode se verificó apagado (`fight_mode: false`).
+> `Gregmorn diagnostico (temporal)` ya **se borró** (2026-08-31). Bot Fight Mode
+> se verificó apagado (`fight_mode: false`).
 
 Bot Fight Mode quedó **apagado**. Si alguna vez se vuelve a prender, esto se
 rompe igual y de la misma forma silenciosa.

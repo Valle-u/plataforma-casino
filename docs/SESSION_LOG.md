@@ -13792,11 +13792,18 @@ Se corrigió la afirmación falsa en los cuatro lugares donde estaba:
 `00-intake.md` (dos), `98-pendientes-proveedor.md`, `99-integration-plan.md` y
 la nota de la entrada anterior de este log.
 
-**Queda pendiente de verdad**: borrar la regla `Gregmorn diagnostico (temporal)`
-cuando la integración esté estable. Es un `skip` de WAF y rate limiting para
-*cualquier* request de esa IP, a cualquier host y ruta — mucho más amplio de lo
-que hace falta, porque la regla por ruta ya cubre los callbacks. **No se tocó**:
-sacar una regla de seguridad no estaba en el pedido.
+**La regla `Gregmorn diagnostico (temporal)` se borró** (a pedido de Uriel, más
+tarde en la misma sesión). Era un `skip` de WAF y rate limiting para *cualquier*
+request de esa IP, a cualquier host y ruta — mucho más amplio de lo que hace
+falta, porque la regla por ruta ya cubre los callbacks.
+
+Antes de borrarla se guardó la definición exacta (por si hay que recrearla) y se
+verificó que el controller de Gregmorn expone exactamente dos rutas, las dos
+bajo el prefijo de la regla permanente. La IP borrada era además la de **Prod**
+del proveedor, y nosotros estamos en **Stage**: hoy no capturaba nada. Después
+del borrado se comprobó que un POST al callback sigue llegando a la aplicación
+(contesta `INVALID_SIGNATURE`, no una página de Cloudflare). El ruleset quedó en
+la versión 6 con una sola regla.
 
 ### 2. bank_accounts — la tabla huérfana era la mitad menos grave
 

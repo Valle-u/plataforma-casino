@@ -137,10 +137,11 @@ config real con la API de Cloudflare. Lo que hay es:
 - `Gregmorn diagnostico (temporal)` — `ip.src eq 3.78.156.229`, o sea la de
   **Prod**, ya cargada y activa.
 
-Así que la migración a su Prod no necesita ningún cambio en Cloudflare. Lo que
-sí sigue pendiente es **borrar la regla temporal** cuando la integración esté
-estable: es un `skip` de WAF y rate limiting para *cualquier* request de esa
-IP, a cualquier host y ruta, mucho más amplio de lo necesario.
+Así que la migración a su Prod no necesita ningún cambio en Cloudflare.
+
+✅ **La regla temporal se borró el 2026-08-31.** Era un `skip` de WAF y rate
+limiting para *cualquier* request de esa IP, a cualquier host y ruta, mucho más
+amplio de lo necesario. Queda solo `Gregmorn callbacks`, anclada a la ruta.
 
 ---
 
