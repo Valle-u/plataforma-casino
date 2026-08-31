@@ -13602,3 +13602,156 @@ Todos pusheados y deployados (auto-deploy, API `done`, `/health` 200).
   vuelva a pasar.
 - `pnpm test` da 14 suites en rojo y **no es una regresión** (ver la entrada
   anterior y el DEVLOG).
+
+---
+
+## 2026-08-31 18:45 AR — Claude (Opus 5)
+
+**Duración**: ~6h (12:40 → 18:40 AR)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sesión larga y casi toda de **interfaz del jugador**. Arrancó en el motor de
+comisiones y terminó en el banner.
+
+**1. Comisiones — fee por proveedor (verificado en prod).** El motor sacaba UN
+promedio ponderado global de la comisión del proveedor y lo aplicaba a todo el
+subárbol. Con Palace al 7% y Gregmorn al 10% eso daba mal. Ahora el fee se
+calcula **por proveedor** y se suma (`feeOfSubtree` en
+`network-commissions.service.ts`). Impacto medido en producción: 21,09.
+
+**2. Filtro por estudio, unificado entre los tres proveedores.** Los estudios
+venían con grafías distintas por proveedor (60 variantes). Se canonizan en
+`games/refresh-studios.ts`, quedaron **46**. Como 46 chips de golpe son una
+pared que empuja la grilla abajo del fold, el filtro muestra los más jugados en
+una fila que scrollea y manda el resto a un buscador (ActionSheet en celular,
+Modal en desktop).
+
+**3. Destacados.** Pestaña propia al lado de Todos/Slots/En vivo, fuera del
+criterio de orden. Se marcan a mano desde el panel. Además **van primero** en el
+ranking, en la búsqueda y en la pestaña Juegos del panel.
+
+**4. Filtro por proveedor** en la pestaña Juegos del panel.
+
+**5. Notificaciones.** El badge marcaba no leídas para siempre y "marcar como
+leído" no hacía nada: el contador y el marcado usaban criterios distintos. Se
+arreglaron los dos y se agregó silenciar la campana del panel.
+
+**6. Cuentas bancarias — entendí mal el pedido y hubo que revertir.** Uriel
+quería que el formulario **recordara solo titular, banco y fecha**; yo construí
+una tabla de cuentas propias con selector y saqué inputs que hacían falta. Se
+hizo backup (rama `backup/cuentas-propias-2026-08-31` + tag
+`backup-cuentas-propias-707f86c`), se revirtió entero y se hizo el cambio chico.
+
+**7. Fixtures de tests recuperadas.** 25 tests de `bank-tx` fallaban desde
+agosto por fixtures incompletas.
+
+**8. Terminología: la unidad se llama FICHAS, nunca "chips".** Se corrigió en
+docs y plataforma. El último resto no era un literal sino un DATO
+(`wallets.currency = 'CHIPS'`) que se imprimía crudo en 3 lugares de Soporte —
+por eso un grep de strings no lo encontraba. Se formatea en la vista con
+`lib/format-currency.ts`.
+
+**9. Buscador y filtro en `/play`.** Pedido con un motivo que cambia el diseño:
+muchos jugadores son personas mayores que no navegan entre secciones. Al
+abrirlo apareció un **bug latente**: la home pedía juegos sin filtros (default
+de 30) y filtraba por categoría en el CLIENTE — con 2.840 juegos activos, elegir
+una categoría fuera de esos 30 mostraba la grilla vacía.
+
+**10. Unificación visual entre `/play` y el lobby.** Había tres tamaños del
+mismo control (buscador de 44 vs 56px; chips de 30, 36 y 44px) y dos cards. Se
+unificó **hacia la versión accesible**, no hacia un promedio: `GameSearch`,
+`FilterChip` (44px, el mínimo táctil) y `HomeGameCard` como LA card del jugador.
+
+**11. Se sacó el contador de jugadores** (era un número inventado:
+`120 + ((i * 173) % 820)`) y **el selector de orden** Populares/Nuevos/A-Z.
+
+**12. Banner: arrastre en mobile, flechas en desktop.** Último pedido, ver abajo.
+
+**13. Proveedor.** Se le mandó el mensaje con las preguntas abiertas. Por pedido
+de Uriel **no se insistió con el rollback**, queda pendiente.
+
+### Decisiones tomadas
+
+- **Fee de comisión por proveedor, no promedio global.** El promedio ponderado
+  era una simplificación que se rompe apenas dos proveedores tienen tasas
+  distintas, que es el caso normal.
+- **Unificar hacia la card accesible.** La de la home no era "la simple", era la
+  pensada para gente grande (Sprint 54). Si los jugadores mayores entran por la
+  home, también entran al lobby.
+- **Las facetas de categoría salen de conteos globales, no de los juegos
+  mostrados.** Si salieran de la grilla, al elegir "Mesa" el resto de los chips
+  desaparecería y el jugador quedaría encerrado ahí.
+- **Un solo lugar decide el orden (el backend).** Sacar el selector de orden
+  eliminó el último punto donde el cliente reordenaba encima de lo que ya venía
+  ordenado, que había obligado a duplicar la regla de destacados en los dos
+  lados.
+- **Banner: flechas abajo y del lado opuesto al copy**, no centradas a los
+  costados. En desktop el texto ocupa la mitad del ancho y una flecha centrada a
+  la izquierda cae justo sobre el título. Ver DEVLOG.
+- **La interacción manual pausa la autorotación 10s.** No estaba pedido, pero
+  sin eso el cambio no sirve: arrastrás para ver una promo y a los segundos el
+  carrusel te la saca.
+
+### Commits creados
+
+22 commits, todos en `main`, pusheados y deployados.
+
+- `ddd1b70` — `feat(games): filtro por estudio para los tres proveedores`
+- `773fdbe` — `feat(lobby): filtro por estudio progresivo y adaptado a celular`
+- `13613ea` — `fix(db): runner de migraciones legible ante bases ausentes`
+- `cb2ea0c` — `feat(lobby): Destacados como pestaña, fuera del criterio de orden`
+- `7aa0290` — `feat(admin): quitar destacado y filtrar por destacados`
+- `b2c2561` — `feat(admin): filtro por proveedor en la pestaña Juegos`
+- `7fcac75` — `feat(lobby): los destacados van primero en el ranking y la busqueda`
+- `81594cf` — `feat(admin): los destacados tambien primero en la pestaña Juegos`
+- `345a39d` — `fix(notifications): el badge contaba avisos que no se podian leer`
+- `763315f` — `feat(admin): la campana del panel se puede silenciar`
+- `9143c34` — `feat(bank): cuentas bancarias propias, tabla y pantalla` ⚠️ revertido
+- `707f86c` — `feat(bank): el selector de cuenta propia reemplaza al texto libre` ⚠️ revertido
+- `d2b3e60` — `Revert: cuentas propias como tabla + selector`
+- `2db260e` — `fix(bank-tx): dejar de recordar el titular que envia/recibe`
+- `e759803` — `test(bank-tx): completar fixtures — 25 tests que fallaban desde agosto`
+- `be14642` — `docs: fijar que la unidad se llama FICHAS, nunca "chips"`
+- `a6ed818` — `fix(ui): mostrar "fichas" donde se imprimia el codigo CHIPS`
+- `e952098` — `feat(play): buscador de juegos en la home del casino`
+- `a49816b` — `refactor(play): un solo buscador, un solo chip y una sola card`
+- `3d7e64f` — `chore(play): borrar los restos del contador de jugadores`
+- `1a752f0` — `refactor(lobby): sacar el selector de orden`
+- `f4e7727` — `feat(banner): swipe on mobile, arrows on desktop`
+
+### Estado al cerrar
+
+- **Fase actual**: Gregmorn integrado, comisiones con fee por proveedor
+  verificado en prod, interfaz del jugador unificada y accesible.
+- **Próximo paso lógico**: esperar la respuesta del proveedor sobre las rondas
+  que no cierran.
+- **Bloqueos**: ninguno técnico.
+- Último deploy (`f4e7727`) `done` en 160s y **verificado en producción**
+  (miamihub.vip): flechas, arrastre en las dos direcciones, umbral de 44px,
+  gesto vertical ignorado, swipe que no navega y toque que sí, y flechas
+  ocultas en 375px.
+
+### Notas para próximo agente
+
+- ⚠️ **NO liquidar el período 2026-08 todavía.** Siguen faltando **4.172,05** de
+  NetWin (las rondas trabadas de Gregmorn), ~1.877 de comisión al 50% del socio.
+  Liquidar quema fichas de la Casa de forma irreversible sobre un número que
+  sabemos incompleto.
+- ⚠️ **Al migrar a la Prod del proveedor**: sumar `3.78.156.229` a la allowlist
+  de Cloudflare. Hoy sólo está `18.184.217.6` (Stage).
+- ⚠️ **El rollback del proveedor nunca se ejerció.** La primera vez que corra va
+  a ser con plata real. Uriel pidió no insistirles: queda pendiente, no olvidado.
+- La tabla `bank_accounts` **quedó huérfana en prod** después del revert. Es
+  inofensiva, pero sacarla necesita una migración.
+- `pnpm test` quedó en 14 suites en rojo (venía de 62). No es regresión; los
+  restos son depósitos y notificaciones.
+- **`apps/web` no tiene runner de tests.** Toda verificación de front es a mano
+  con el navegador. Y ojo: el entorno local rebota a `/login` cuando la API
+  devuelve 500, así que a veces es más rápido verificar contra producción
+  después de deployar que pelearse con el local.
+- El banner depende de que Next llame al `onClick` del usuario **antes** de
+  navegar y corte si el evento quedó prevenido
+  (`next/dist/client/app-dir/link.js:302-313`). Si un upgrade de Next invierte
+  ese orden, el arrastre empieza a navegar. Está anotado en el DEVLOG.
