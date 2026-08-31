@@ -6,8 +6,20 @@
  * Reemplaza al HeroCarousel con tarjeta: ahora es un bloque full-bleed que
  * arranca al tope del área de contenido (detrás del header translúcido). El
  * copy va SOBRE la foto (viñeta lateral en desktop, vertical en mobile), sin
- * CTA. Autorota los slides; el bloque entero es clickeable al `href` del slide,
- * salvo los indicadores (que saltan de slide sin navegar).
+ * CTA. Autorota los slides y el bloque entero es clickeable al `href` del
+ * slide.
+ *
+ * Cómo se pasa de un slide a otro:
+ *   - **Mobile: arrastrando.** Antes las únicas manijas eran los indicadores,
+ *     cuatro barras de 3px en un rincón: para ver la segunda promo había que
+ *     acertarle a eso o esperar seis segundos a que rotara sola.
+ *   - **Desktop: con las flechas** de abajo. El arrastre también funciona con
+ *     el mouse, pero nadie lo va a descubrir sin un control a la vista.
+ *   - Los indicadores siguen estando, ahora como referencia de dónde estás.
+ *
+ * Las tres vías pasan por `goTo`, que además frena la rotación automática un
+ * rato: mover el banner y que se te vaya solo a los segundos es peor que no
+ * poder moverlo.
  *
  * Cero back nuevo: consume el mismo array `slides` que armaba el HeroCarousel
  * (design.slides / fallback), con su art, kicker, título y bajada.
@@ -15,12 +27,32 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Crown } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, Crown } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { HeroSlide } from '@/components/player/hero-carousel';
 import { cn } from '@/lib/cn';
 
 const INTERVAL_MS = 6000;
+
+/**
+ * Cuánto hay que arrastrar para que cuente como cambio de slide.
+ *
+ * 44px: lo bastante para no dispararse con el temblor de un dedo apoyado, lo
+ * bastante poco para no exigir un gesto largo. Por debajo, el gesto se trata
+ * como un toque y el banner navega a su link, que es lo que el jugador quiso.
+ */
+const SWIPE_THRESHOLD_PX = 44;
+
+/**
+ * Cuánto se frena la rotación automática después de que el jugador se movió
+ * por su cuenta.
+ *
+ * Sin esto el carrusel le saca el slide a los segundos de haberlo elegido:
+ * uno arrastra para ver una promo y la promo se va sola. Diez segundos
+ * alcanzan para leerla sin dejar el banner congelado para siempre.
+ */
+const PAUSE_AFTER_INTERACTION_MS = 10_000;
 
 /** Viñeta lateral de desktop: el copy ocupa la mitad del ancho. */
 const STOPS_DESKTOP =
@@ -44,19 +76,64 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
   const [index, setIndex] = useState(0);
   const total = slides.length;
 
+  /** Hasta cuándo NO autorotar, porque el jugador acaba de moverse solo. */
+  const pausedUntil = useRef(0);
+
+  /** Único camino para cambiar de slide a mano: envuelve el índice y pausa. */
+  const goTo = useCallback(
+    (next: number) => {
+      if (total === 0) return;
+      pausedUntil.current = Date.now() + PAUSE_AFTER_INTERACTION_MS;
+      setIndex(((next % total) + total) % total);
+    },
+    [total],
+  );
+
   useEffect(() => {
     if (total <= 1) return;
-    const paused = { current: document.hidden };
-    const onVis = () => (paused.current = document.hidden);
+    const hidden = { current: document.hidden };
+    const onVis = () => (hidden.current = document.hidden);
     document.addEventListener('visibilitychange', onVis);
     const id = window.setInterval(() => {
-      if (!paused.current) setIndex((i) => (i + 1) % total);
+      // Ni con la pestaña de fondo, ni pisándole el slide al jugador.
+      if (hidden.current || Date.now() < pausedUntil.current) return;
+      setIndex((i) => (i + 1) % total);
     }, INTERVAL_MS);
     return () => {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [total]);
+
+  // ── Arrastre ────────────────────────────────────────────────────────
+  //
+  // El banner entero es un link, así que arrastrar NO tiene que navegar. Se
+  // mide cuánto se movió el dedo entre que apoya y suelta; si pasó el umbral,
+  // se marca el click que el navegador dispara igual al soltar para comérselo.
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const swallowClick = useRef(false);
+
+  function onPointerDown(e: ReactPointerEvent) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Se limpia acá y no al soltar: si el slide anterior no tenía href no hubo
+    // link que consumiera la marca, y quedaba viva para comerse el toque
+    // siguiente. Cada gesto arranca de cero.
+    swallowClick.current = false;
+    dragStart.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function onPointerUp(e: ReactPointerEvent) {
+    const start = dragStart.current;
+    dragStart.current = null;
+    if (!start || total <= 1) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    // Sólo horizontal: si predomina el eje vertical el jugador estaba
+    // scrolleando la página, y el banner no tiene por qué reaccionar.
+    if (Math.abs(dx) < SWIPE_THRESHOLD_PX || Math.abs(dx) <= Math.abs(dy)) return;
+    swallowClick.current = true;
+    goTo(dx < 0 ? index + 1 : index - 1);
+  }
 
   if (total === 0) return null;
   const active = slides[Math.min(index, total - 1)]!;
@@ -69,8 +146,14 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
     <section
       aria-roledescription="carousel"
       aria-label="Promociones destacadas"
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => (dragStart.current = null)}
       className="relative h-[372px] w-full overflow-hidden lg:h-[552px]"
-      style={{ background: '#150518' }}
+      // `pan-y`: el navegador se queda con el scroll vertical de la página y
+      // nos deja el horizontal, que es el que mueve el banner. Sin esto, un
+      // arrastre de costado puede terminar en `pointercancel` a mitad de gesto.
+      style={{ background: '#150518', touchAction: 'pan-y' }}
     >
       {/* Capa 1 — art del slide a sangre (crossfade). Vía next/image: se sirve
           redimensionado al viewport + WebP/AVIF (los banners de tenant venían
@@ -173,8 +256,33 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
         <Link
           href={active.href}
           aria-label={active.title}
+          // Sin esto, arrastrar con el mouse en desktop levanta el fantasma de
+          // arrastrar-un-link del navegador en lugar de pasar de slide.
+          draggable={false}
+          onClick={(e) => {
+            // Soltar después de arrastrar dispara un click igual. Si el gesto
+            // fue un swipe se lo come acá: el jugador quiso cambiar de slide,
+            // no entrar a la promo.
+            if (swallowClick.current) e.preventDefault();
+          }}
           className="absolute inset-0 z-10"
         />
+      )}
+
+      {/* Flechas — sólo desktop: en mobile se pasa arrastrando y dos botones
+          más sobre la foto serían ruido en una pantalla chica.
+          Van abajo y del lado OPUESTO al copy. Centradas a los costados, que
+          es lo habitual, la de la izquierda cae justo sobre el título. */}
+      {total > 1 && (
+        <div
+          className={cn(
+            'absolute bottom-8 z-30 hidden gap-2 lg:flex',
+            alignRight ? 'left-11' : 'right-11',
+          )}
+        >
+          <BannerArrow hacia="anterior" onClick={() => goTo(index - 1)} />
+          <BannerArrow hacia="siguiente" onClick={() => goTo(index + 1)} />
+        </div>
       )}
 
       {/* Copy — sobre la foto, sin caja. pointer-events-none para que el click
@@ -245,7 +353,7 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
                 type="button"
                 aria-label={`Ir al slide ${i + 1}`}
                 aria-current={i === index}
-                onClick={() => setIndex(i)}
+                onClick={() => goTo(i)}
                 className="relative h-[3px] w-[34px] rounded-[2px] transition-colors after:absolute after:-inset-x-[5px] after:-inset-y-[20.5px] after:content-['']"
                 style={{
                   background:
@@ -257,5 +365,42 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Flecha de navegación del banner.
+ *
+ * Vidrio esmerilado en vez de un botón sólido: el banner es una foto a sangre
+ * y un círculo opaco encima se lee como un parche pegado. Con `backdrop-blur`
+ * la flecha se apoya sobre la imagen sin taparla, y el borde tenue le da
+ * contorno también sobre las fotos claras.
+ *
+ * 44px es el mínimo táctil, y acá además importa para el mouse: el jugador
+ * grande no apunta fino.
+ */
+function BannerArrow({
+  hacia,
+  onClick,
+}: {
+  hacia: 'anterior' | 'siguiente';
+  onClick: () => void;
+}) {
+  const Icono = hacia === 'anterior' ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Ver la promoción ${hacia}`}
+      className={cn(
+        'inline-flex size-11 items-center justify-center rounded-full',
+        'border border-white/15 bg-black/35 text-white/70 backdrop-blur-sm',
+        'transition-colors duration-200',
+        'hover:border-[var(--color-accent-border)] hover:bg-black/60 hover:text-[var(--color-fg)]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]',
+      )}
+    >
+      <Icono aria-hidden className="size-5" />
+    </button>
   );
 }

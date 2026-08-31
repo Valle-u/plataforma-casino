@@ -8960,3 +8960,50 @@ mayores— cada control arriba es una decisión más entre ellos y los juegos, y
 orden por defecto ya pone adelante lo que conviene.
 
 El header queda con título y subtítulo nomás.
+
+---
+
+## 2026-08-31 — Banner del jugador: arrastre en mobile, flechas en desktop
+
+**Contexto**: el banner del home autorotaba cada 6s y las únicas manijas para
+moverlo eran los indicadores: cuatro barras de **3px de alto** en un rincón. Para
+ver la segunda promo había que acertarle a eso o esperar. Buena parte de los
+jugadores son personas mayores, así que en la práctica el banner era de sólo
+lectura.
+
+**Opciones consideradas**:
+- A) Agrandar los indicadores hasta que sean un target táctil real.
+- B) Flechas clásicas centradas a los costados, en todos los breakpoints.
+- C) Arrastre en mobile + flechas en desktop, indicadores como referencia.
+
+**Decisión**: **C**.
+
+**Razón**: (A) arruina el diseño — el banner es una foto a sangre y cuatro
+botones gordos encima son un parche; además arrastrar es el gesto que la gente ya
+espera de un carrusel en el teléfono. (B) choca con el copy: en desktop el texto
+ocupa la mitad del ancho y una flecha centrada a la izquierda cae justo sobre el
+título. Por eso las flechas van **abajo y del lado opuesto al copy** (siguen el
+`align` del slide), a la misma altura que los indicadores.
+
+**Implicaciones**: todo en `apps/web/components/player/lobby/lobby-banner.tsx`.
+Tres detalles que no son obvios y conviene no "simplificar" después:
+
+1. **El banner entero es un `<Link>` que lo cubre**, así que soltar después de
+   arrastrar dispara un click y navegaría a la promo. Se marca el gesto como
+   swipe y el `onClick` del Link hace `preventDefault()`. Funciona porque Next
+   llama al `onClick` del usuario y **corta antes de navegar si el evento quedó
+   prevenido** (`next/dist/client/app-dir/link.js:302-313`, Next 15.5.18). Si
+   algún día Next invierte ese orden, el swipe empieza a navegar.
+2. **La marca se limpia al apoyar el dedo, no al soltar.** Si el slide activo no
+   tiene `href` no hay Link que la consuma, y quedaba viva para comerse el toque
+   siguiente.
+3. **`touch-action: pan-y`** en la sección: el navegador se queda con el scroll
+   vertical de la página y nos deja el horizontal. Sin eso, un arrastre de
+   costado puede terminar en `pointercancel` a mitad de gesto.
+
+Además, las tres vías (arrastre, flechas, indicadores) pasan por `goTo`, que
+frena la autorotación 10s: mover el banner y que se te vaya solo a los pocos
+segundos es peor que no poder moverlo.
+
+**Alternativa abierta**: sí. El umbral (44px), la pausa (10s) y la posición de
+las flechas son constantes al tope del archivo.
