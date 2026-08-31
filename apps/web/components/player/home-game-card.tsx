@@ -1,8 +1,12 @@
 /**
- * HomeGameCard — card de juego para el dashboard simplificado de /play.
+ * HomeGameCard — LA card de juego del jugador: la usan la home (/play) y el
  *
- * Sprint 54: home rediseñada para gente grande. Diferencias deliberadas
- * con el GameCard del /play/lobby:
+ * lobby (/play/lobby).
+ *
+ * Nació en el Sprint 54 solo para la home, rediseñada para gente grande. El
+ * lobby tenía la suya, más "casino premium". Tener dos hacía que pasar de una
+ * sección a la otra se sintiera como cambiar de sitio, así que se unificó — y
+ * se unificó hacia ESTA, que es la accesible:
  *
  *   - SIN hover tilt 3D, SIN shimmer, SIN slide-up con descripción.
  *     Esos efectos están bien en el lobby (vibe "casino premium") pero
@@ -13,14 +17,16 @@
  *   - Pill de categoría más grande (12px vs 9px) y sin uppercase
  *     condensado.
  *   - Tap target todo el card es ≥120px alto incluyendo nombre.
- *   - Sin overlay "Próximamente" pesado: los no-playables simplemente
- *     no se muestran en home (el lobby sí los lista).
+ *   - Los no jugables se marcan "Próximamente" con el MISMO criterio: texto
+ *     legible sobre la imagen atenuada, sin el overlay pesado que tenía el
+ *     lobby. La home no los lista; el lobby sí, por eso el estado existe.
  *
  * Props:
- *   game — PlayerGame del backend.
+ *   game        — PlayerGame del backend.
+ *   unavailable — el juego no se puede abrir todavía ("Próximamente").
  *
- * No expone variants. Si la home necesita una versión distinta en el
- * futuro, crear otra card en vez de meter complejidad acá.
+ * Sigue sin exponer variantes de ESTILO a propósito: si una sección necesita
+ * verse distinta, la pregunta es por qué debería verse distinta.
  */
 
 'use client';
@@ -46,8 +52,14 @@ export function HomeGameCard({
   game,
   onPlay,
   isDesktop,
+  unavailable = false,
 }: {
   game: PlayerGame;
+  /**
+   * El juego no se puede abrir todavía. El lobby lista juegos que el
+   * proveedor todavía no habilitó; la home directamente no los muestra.
+   */
+  unavailable?: boolean;
   /** Handler de click (desktop → abre el modal, igual que el lobby). Si no se
    *  pasa, el card cae al Link directo al iframe (comportamiento previo). */
   onPlay?: (code: string) => void;
@@ -74,7 +86,10 @@ export function HomeGameCard({
     'group flex flex-col gap-2',
     'rounded-[var(--radius-lg)]',
     'transition-all duration-300',
-    'hover:-translate-y-1.5 hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
+    // Un juego que no se puede abrir no se levanta ni brilla al pasar por
+    // encima: prometer interacción y no cumplirla confunde más que informar.
+    !unavailable &&
+      'hover:-translate-y-1.5 hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
   );
   const style = {
@@ -125,12 +140,26 @@ export function HomeGameCard({
           </span>
         )}
 
-        {/* Play overlay on hover */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
-          <div className="size-12 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 scale-75 group-hover:scale-100 shadow-lg">
-            <Play className="size-6 text-black ml-0.5" fill="currentColor" />
+        {unavailable ? (
+          /*
+            "Próximamente" con el mismo criterio que el resto de la card:
+            texto grande y legible sobre la imagen atenuada, no un candado
+            chiquito. El jugador tiene que entender de un vistazo por qué no
+            puede entrar, sin forzar la vista.
+          */
+          <div className="absolute inset-0 flex items-center justify-center bg-[rgba(4,6,14,.72)] px-2">
+            <span className="text-center text-[13px] font-medium leading-tight text-[var(--color-fg)]">
+              Próximamente
+            </span>
           </div>
-        </div>
+        ) : (
+          /* Overlay de play al pasar por encima (solo si se puede jugar). */
+          <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
+            <div className="size-12 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 scale-75 group-hover:scale-100 shadow-lg">
+              <Play className="size-6 text-black ml-0.5" fill="currentColor" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Nombre + estudio */}
@@ -149,6 +178,18 @@ export function HomeGameCard({
 
   // Desktop con handler → botón que abre el modal (misma experiencia que el
   // lobby). Mobile o sin handler → Link directo al iframe (como antes).
+  // No jugable: ni botón ni link. Un card que no lleva a ningún lado no debe
+  // ser clickeable -- tocarlo y que no pase nada se lee como que la página
+  // está rota, sobre todo para alguien que no da por sentado que "no anda"
+  // significa "todavía no está".
+  if (unavailable) {
+    return (
+      <div className={className} style={style} aria-label={`${game.name} — próximamente`}>
+        {inner}
+      </div>
+    );
+  }
+
   if (isDesktop && onPlay) {
     return (
       <button

@@ -28,6 +28,7 @@ import { useMemo, useState } from 'react';
 import { ActionSheet } from '@/components/ui/action-sheet';
 import { Modal } from '@/components/ui/modal';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
+import { FilterChip } from '@/components/player/filter-chip';
 import { cn } from '@/lib/cn';
 
 export interface StudioOption {
@@ -153,13 +154,13 @@ export function StudioFilter({
           bloque no salta al cambiar de categoría. El margen negativo deja que
           el scroll llegue al borde de la pantalla en celular. */}
       <div className="-mx-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:thin]">
-        <StudioChip
+        <FilterChip
           label="Todos"
           active={value === 'all'}
           onClick={() => onChange('all')}
         />
         {chips.map((s) => (
-          <StudioChip
+          <FilterChip
             key={s.id}
             label={s.name}
             count={s.count}
@@ -171,7 +172,7 @@ export function StudioFilter({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex h-8 shrink-0 snap-start items-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border)] px-3 text-[12px] whitespace-nowrap text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+            className="inline-flex h-11 shrink-0 snap-start items-center gap-1.5 rounded-full border border-dashed border-[var(--color-border)] px-4 text-[14px] whitespace-nowrap text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           >
             <Search className="size-3.5" />
             +{hiddenCount} más
@@ -203,43 +204,6 @@ export function StudioFilter({
   );
 }
 
-function StudioChip({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count?: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex h-8 shrink-0 snap-start items-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-[12px] whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]',
-        active
-          ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
-          : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
-      )}
-    >
-      {label}
-      {count !== undefined && (
-        <span
-          className={cn(
-            'text-[10px] tabular-nums',
-            active ? 'opacity-70' : 'text-[var(--color-fg-subtle)]',
-          )}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
 
 function StudioOptionRow({
   label,

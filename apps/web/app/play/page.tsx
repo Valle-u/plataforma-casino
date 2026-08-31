@@ -2,7 +2,9 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useMemo, useState } from 'react';
-import { Crown, Gamepad2, Gift, Search, Users, X } from 'lucide-react';
+import { Crown, Gamepad2, Gift, Users } from 'lucide-react';
+import { FilterChip } from '@/components/player/filter-chip';
+import { GameSearch } from '@/components/player/game-search';
 import { HomeGameCard } from '@/components/player/home-game-card';
 import { StudioRows } from '@/components/player/home/studio-rows';
 import { LobbyBanner } from '@/components/player/lobby/lobby-banner';
@@ -18,7 +20,6 @@ import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { normalizeStorageUrl } from '@/lib/storage-url';
-import { cn } from '@/lib/cn';
 
 // Lazy load: el bundle del modal solo se descarga en desktop (igual que el
 // lobby). Mobile nunca carga este chunk.
@@ -186,46 +187,16 @@ export default function PlayLobbyPage() {
               </span>
             </div>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-medium text-[var(--color-fg-muted)]">
-                Buscar un juego
-              </span>
-              <span className="relative block">
-                <Search
-                  aria-hidden
-                  className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-[var(--color-fg-subtle)]"
-                />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Escribí el nombre del juego"
-                  autoComplete="off"
-                  // h-14 y 16px de texto: objetivo grande y sin zoom en iOS
-                  // (Safari hace zoom cuando el input mide menos de 16px).
-                  className="h-14 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] pl-12 pr-12 text-[16px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-glow)]"
-                />
-                {search !== '' && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    aria-label="Borrar la búsqueda"
-                    className="absolute right-2 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]"
-                  >
-                    <X className="size-5" />
-                  </button>
-                )}
-              </span>
-            </label>
+            <GameSearch value={search} onChange={setSearch} />
 
             <div className="-mx-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:thin]">
-              <CategoryChip
+              <FilterChip
                 label="Todos"
                 active={activeCat === 'all'}
                 onClick={() => setActiveCat('all')}
               />
               {presentCats.map((c) => (
-                <CategoryChip
+                <FilterChip
                   key={c}
                   label={CATEGORY_LABEL[c]}
                   active={activeCat === c}
@@ -285,33 +256,6 @@ export default function PlayLobbyPage() {
   );
 }
 
-function CategoryChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        // h-11 (44px) es el mínimo táctil recomendado. Antes eran 30px: para
-        // un jugador mayor, o con el pulgar en el celular, ese chip se erra.
-        'inline-flex h-11 shrink-0 snap-start items-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors',
-        active
-          ? 'text-[var(--color-accent-fg)]'
-          : 'border border-[color:color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
-      )}
-      style={active ? { background: 'var(--color-accent)' } : undefined}
-    >
-      {label}
-    </button>
-  );
-}
 
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '');

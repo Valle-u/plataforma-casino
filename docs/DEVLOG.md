@@ -8882,3 +8882,56 @@ buscador habría heredado y empeorado.
 
 **Pendiente**: no se pudo verificar renderizado (el panel pide login y no
 ingreso credenciales). Verificado: typecheck, lint y build de Next limpios.
+
+---
+
+## 2026-08-31 — Unificar buscador, filtros y cards entre /play y el lobby
+
+**Contexto**: al agregar el buscador a la home quedó distinto del que ya tenía el
+lobby. Uriel lo marcó: pasar de una sección a la otra rompía la sensación de una
+página sola.
+
+**Cuánto divergían**:
+
+| | lobby | home |
+|---|---|---|
+| buscador | 44px, 14px, sin etiqueta | 56px, 16px, con etiqueta |
+| chips | 36px, 13px | 44px, 14px |
+| chips de estudio | 32px, 12px | — |
+| card | `GameCard` (local) | `HomeGameCard` |
+
+Tres tamaños distintos para el mismo control.
+
+**Decisión: unificar hacia la versión ACCESIBLE**, no hacia un promedio.
+
+**Razón**: la card de la home no era "la simple", era la **pensada para gente
+grande** — su propia doc lo decía desde el Sprint 54: sin tilt 3D ni shimmer que
+distraen, nombre en 16px debajo de la imagen en vez de encima de un degradado,
+pill de categoría más grande, área táctil de 120px. Si los jugadores mayores
+entran por la home, también entran al lobby: no hay motivo para que el lobby sea
+menos legible.
+
+**Componentes nuevos**, usados por las dos pantallas:
+
+- `player/game-search.tsx` — 56px, 16px de texto (los 16px además evitan el zoom
+  de Safari al enfocar), etiqueta escrita y botón de borrar de 40px.
+- `player/filter-chip.tsx` — 44px, el mínimo táctil recomendado. Reemplaza a
+  `CategoryChip` (home), `CategoryTab` (lobby) y `StudioChip` (filtro de
+  estudio).
+- `HomeGameCard` pasa a ser **la** card del jugador. Se le agregó `unavailable`
+  para el estado "Próximamente", que el lobby necesita porque lista juegos que el
+  proveedor todavía no habilitó (la home no los muestra). Se resolvió con el
+  mismo criterio que el resto de la card: texto legible sobre la imagen atenuada,
+  no el overlay pesado que tenía el lobby. Y un card no jugable **deja de ser
+  clickeable**: tocarlo y que no pase nada se lee como que la página está rota.
+
+**Lo que se perdió, a propósito**: el contador de "N jugando" del lobby. Era
+`playersFor(i) = 120 + ((i * 173) % 820)` — **un número inventado** derivado de
+la posición en la lista, no de datos reales. Mostrar "437 jugando" cuando nadie
+lo está es peor que no mostrar nada. Si se quiere social proof, que salga de
+`game_rounds`.
+
+**Verificado**: typecheck, lint y compilación de Next limpios; las 58 páginas
+generan. El `EPERM: symlink` del final es la limitación conocida de Windows con
+`output: 'standalone'` — en Docker compila (ver la entrada del 2026-08-31 sobre
+los builds).

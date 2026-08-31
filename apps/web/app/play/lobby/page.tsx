@@ -27,10 +27,7 @@
 
 'use client';
 
-import { Lock, Play, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -44,8 +41,10 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { cn } from '@/lib/cn';
+import { FilterChip } from '@/components/player/filter-chip';
+import { GameSearch } from '@/components/player/game-search';
+import { HomeGameCard } from '@/components/player/home-game-card';
 import { StudioFilter } from '@/components/player/studio-filter';
-import { providerLabel } from '@/lib/provider-label';
 
 // Lazy load: solo se descarga el bundle del modal en desktop.
 // Mobile nunca carga este chunk.
@@ -123,9 +122,6 @@ function isPlayable(game: PlayerGame): boolean {
 
 /** Conteo decorativo de "jugando" — determinístico por índice (no hay
  *  feed real de jugadores online; el handoff lo trata como dato de feed). */
-function playersFor(i: number): number {
-  return 120 + ((i * 173) % 820);
-}
 
 function GameLobbyContent() {
   const [tab, setTab] = useState<LobbyTab>('all');
@@ -350,7 +346,7 @@ function GameLobbyContent() {
 
       {/* 2) Tabs de categoría */}
       <div className="flex flex-wrap items-center gap-2">
-        <CategoryTab
+        <FilterChip
           label="Todos"
           count={total}
           active={tab === 'all'}
@@ -359,7 +355,7 @@ function GameLobbyContent() {
         {/* Destacados: solo si hay alguno marcado. Una pestaña que lleva a una
             grilla vacía es peor que no tenerla. */}
         {(globalFacets.data?.featured ?? 0) > 0 && (
-          <CategoryTab
+          <FilterChip
             label="Destacados"
             count={globalFacets.data?.featured}
             active={tab === 'featured'}
@@ -367,7 +363,7 @@ function GameLobbyContent() {
           />
         )}
         {availableCategories.map((c) => (
-          <CategoryTab
+          <FilterChip
             key={c}
             label={CATEGORY_META[c].label}
             count={catCounts.get(c)}
@@ -388,7 +384,13 @@ function GameLobbyContent() {
       />
 
       {/* 4) Buscador (preserva la función del catálogo) */}
-      <SearchBar value={search} onChange={handleSearchChange} />
+      <GameSearch
+        value={search}
+        onChange={handleSearchChange}
+        // Acá la búsqueda también mira el estudio (games.studio), así que el
+        // texto lo dice: si no, nadie prueba escribir "Pragmatic".
+        placeholder="Escribí el nombre del juego o del estudio"
+      />
 
       {/* 5) Grid */}
       {query.isLoading ? (
@@ -414,9 +416,14 @@ function GameLobbyContent() {
       ) : (
         <>
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {filtered.map((g, i) => (
+            {filtered.map((g) => (
               <li key={g.id}>
-                <GameCard game={g} players={playersFor(offset + i)} onPlay={handleGameClick} isDesktop={isDesktop} />
+                <HomeGameCard
+                  game={g}
+                  unavailable={!isPlayable(g)}
+                  onPlay={handleGameClick}
+                  isDesktop={isDesktop}
+                />
               </li>
             ))}
           </ul>
@@ -478,234 +485,13 @@ export default function PlayGamesPage() {
 // Controles
 // ──────────────────────────────────────────────────────────────────────
 
-function CategoryTab({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count?: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
-        active
-          ? 'text-[var(--color-accent-fg)]'
-          : 'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)]',
-      )}
-      style={active ? { background: 'var(--gradient-accent)' } : undefined}
-    >
-      {label}
-      {count !== undefined && (
-        <span
-          className={cn(
-            'text-[11px] tabular-nums',
-            active ? 'opacity-80' : 'text-[var(--color-fg-subtle)]',
-          )}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
 
 
-function SearchBar({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <label className="flex h-11 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3.5 transition-colors focus-within:border-[var(--color-accent-border)] focus-within:ring-2 focus-within:ring-[var(--color-accent)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--color-bg)]">
-      <Search className="size-4 shrink-0 text-[var(--color-fg-subtle)]" />
-      <input
-        type="search"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Buscar juegos, proveedores…"
-        aria-label="Buscar juegos"
-        className="w-full min-w-0 bg-transparent text-[14px] text-[var(--color-fg)] outline-none placeholder:text-[var(--color-fg-subtle)] [&::-webkit-search-cancel-button]:hidden"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange('')}
-          aria-label="Limpiar búsqueda"
-          className="grid size-7 shrink-0 place-items-center rounded-full text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
-        >
-          <X className="size-3.5" />
-        </button>
-      )}
-    </label>
-  );
-}
 
 // ──────────────────────────────────────────────────────────────────────
 // Game card (estilo Neón) — preserva playable + link real + thumbnail
 // ──────────────────────────────────────────────────────────────────────
 
-function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; players: number; onPlay?: (code: string) => void; isDesktop?: boolean }) {
-  const playable = isPlayable(game);
-  const meta = CATEGORY_META[game.category] ?? { label: game.category, accent: 'var(--color-fg-muted)' };
-  const catColor = game.category === 'slots' ? '#FFD700' : game.category === 'crash' ? '#FF6B35' : game.category === 'live' ? '#C53030' : '#888';
-
-  const art = (
-    <div
-      className={cn(
-        'relative aspect-[4/3] w-full overflow-hidden rounded-[var(--radius-lg)]',
-        'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] transition-all duration-300',
-        playable &&
-          'group-hover:-translate-y-1.5 group-hover:border-[var(--card-accent)] group-hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
-      )}
-    >
-      {/* Arte: thumbnail real o gradiente neón por categoría. Fondo oscuro +
-          object-contain: todas las thumbs (aspectos distintos por proveedor)
-          se ven completas y con el mismo encuadre, sin recortes. */}
-      {game.thumbnailUrl ? (
-        <Image
-          src={game.thumbnailUrl}
-          alt={game.name}
-          fill
-          sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 16vw"
-          className={cn(
-            'object-contain transition-transform duration-300',
-            playable ? 'group-hover:scale-105' : 'opacity-50 grayscale-[60%]',
-          )}
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      ) : (
-        <div
-          className="h-full w-full"
-          style={{
-            background: `linear-gradient(150deg, color-mix(in srgb, ${catColor} 55%, #0a0008) 0%, #12061a 70%)`,
-          }}
-        />
-      )}
-
-      {/* Badge de categoría estilo home */}
-      <span
-        className="absolute left-2 top-2 px-2.5 h-7 inline-flex items-center text-[12px] font-medium rounded-full"
-        style={{
-          background: `${catColor}e6`,
-          color: '#fff',
-        }}
-      >
-        {meta.label}
-      </span>
-
-      {/* Badge HOT (arriba-derecha) para destacados jugables */}
-      {game.featured && playable && (
-        <span
-          className="absolute right-2 top-2 inline-flex h-5 items-center rounded-[var(--radius-sm)] px-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white"
-          style={{ background: 'var(--color-magenta)' }}
-        >
-          Hot
-        </span>
-      )}
-
-      {/* Badge "Próximamente" para no jugables */}
-      {!playable && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[rgba(4,6,14,.65)] backdrop-blur-[1px]">
-          <Lock className="size-4 text-[var(--color-fg-muted)]" />
-          <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg)]">
-            Próximamente
-          </span>
-        </div>
-      )}
-
-      {/* Play overlay on hover (solo jugables) */}
-      {playable && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
-          <div className="size-12 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 scale-75 group-hover:scale-100 shadow-lg">
-            <Play className="size-6 text-black ml-0.5" fill="currentColor" />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const caption = (
-    <div className="flex flex-col gap-0.5 px-0.5">
-      <h3 className="font-display truncate text-[14px] leading-tight text-[var(--color-fg)]">
-        {game.name}
-      </h3>
-      <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-fg-subtle)]">
-        <span className="truncate">{providerLabel(game.providerCode)}</span>
-        {playable && (
-          <>
-            <span
-              className="size-1.5 shrink-0 rounded-full"
-              style={{
-                background: 'var(--color-success)',
-                boxShadow: '0 0 6px var(--color-success)',
-              }}
-            />
-            <span className="tabular-nums">{players} jugando</span>
-          </>
-        )}
-      </div>
-    </div>
-  );
-
-  if (!playable) {
-    return (
-      <div
-        aria-disabled="true"
-        aria-label={`${game.name} — próximamente`}
-        className="flex cursor-not-allowed select-none flex-col gap-2"
-      >
-        {art}
-        {caption}
-      </div>
-    );
-  }
-
-  // Desktop: open modal on click. Mobile: navigate via Link.
-  if (isDesktop) {
-    return (
-      <button
-        type="button"
-        onClick={() => onPlay?.(game.code)}
-        className="group flex w-full flex-col gap-2 rounded-[var(--radius-lg)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
-        aria-label={`Jugar ${game.name} — ${meta.label}`}
-        style={{
-          '--card-accent': catColor,
-          '--card-glow': `${catColor}80`,
-        } as React.CSSProperties}
-      >
-        {art}
-        {caption}
-      </button>
-    );
-  }
-
-  return (
-    <Link
-      href={`/play/games/${game.code}/play/iframe`}
-      className="group flex flex-col gap-2 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
-      aria-label={`Jugar ${game.name} — ${meta.label}`}
-      style={{
-        '--card-accent': catColor,
-        '--card-glow': `${catColor}80`,
-      } as React.CSSProperties}
-    >
-      {art}
-      {caption}
-    </Link>
-  );
-}
 
 function LoadingGrid() {
   return (
