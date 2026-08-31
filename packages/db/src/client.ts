@@ -57,7 +57,23 @@ export function createTenantDb(
   options: postgres.Options<Record<string, never>> = {},
 ): ReturnType<typeof drizzle> {
   const sql = postgres(connectionUrl, {
-    max: 10,
+    // 2026-08-31: 10 → 20.
+    //
+    // Este es el pool que usan LOS JUGADORES (el de control lo usa el panel),
+    // y era el más ajustado de los dos: la suba a 30 del Sprint 53.5 se hizo
+    // sólo del lado de control y este quedó en el default viejo.
+    //
+    // La cuenta, que es lo que limita el número: Postgres viene con
+    // `max_connections = 100` por defecto. Con 20 acá el total es
+    // 30 (control) + 20 × N tenants. Con 1 tenant son 50 y sobra; con los 3
+    // del target de MVP son 90, que todavía entra. Pasar de ahí — más tenants
+    // o un número más alto — exige subir `max_connections` en Postgres ANTES,
+    // o los connects empiezan a fallar con "too many clients".
+    //
+    // ⚠️ No se pudo verificar el `max_connections` real de producción desde
+    //    el repo. 20 es conservador a propósito: es seguro incluso si el
+    //    server está en el default.
+    max: Number(process.env.DB_POOL_MAX_TENANT ?? '20'),
     idle_timeout: 600, // 10 min — keep connections alive for Palace callbacks
     connect_timeout: 10,
     ...options,

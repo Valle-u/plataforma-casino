@@ -7,6 +7,7 @@ import { GameProviderLogsModule } from './game-provider-logs.module';
 import { GameSessionsService } from './game-sessions.service';
 import { GamesController } from './games.controller';
 import { GamesService } from './games.service';
+import { GamesCatalogCache } from './games-catalog-cache.service';
 import { GameProvidersController } from './game-providers.controller';
 import { GameProvidersService } from './game-providers.service';
 import { GameProviderPingCron } from './game-provider-ping.cron';
@@ -42,6 +43,7 @@ import { GregmornModule } from './providers/gregmorn/gregmorn.module';
   ],
   controllers: [GamesController, GameProvidersController],
   providers: [
+    GamesCatalogCache,
     GamesService,
     GameSessionsService,
     GameProviderRegistry,

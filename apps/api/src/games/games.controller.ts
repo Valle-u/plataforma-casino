@@ -79,6 +79,7 @@ import {
 import { GamesService } from './games.service';
 import { GameProvidersService } from './game-providers.service';
 import { GameProviderLogsService } from './game-provider-logs.service';
+import { GamesCatalogCache } from './games-catalog-cache.service';
 
 @Controller('tenant/games')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -90,6 +91,7 @@ export class GamesController {
     private readonly sessions: GameSessionsService,
     private readonly providers: GameProvidersService,
     private readonly providerLogs: GameProviderLogsService,
+    private readonly catalogCache: GamesCatalogCache,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────
@@ -111,7 +113,7 @@ export class GamesController {
     @Query('offset') offset?: string,
   ) {
     const db = req.tenantContext!.db;
-    return this.service.listActiveForPlayer(db, {
+    const filters = {
       category: category as Game['category'] | undefined,
       studio: studio || undefined,
       studioNone: studioNone === 'true',
@@ -120,7 +122,30 @@ export class GamesController {
       search: search || undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
-    });
+    };
+
+    // Con término de búsqueda NO se cachea: el texto es libre, así que cada
+    // tecleo sería una clave nueva en Redis y el caché se convertiría en un
+    // basurero que nadie vuelve a leer. Lo que se cachea es lo que repiten
+    // todos: entrar a la home y tocar los filtros.
+    if (filters.search) {
+      return this.service.listActiveForPlayer(db, filters);
+    }
+
+    return this.catalogCache.getOrLoad(
+      req.tenantContext!.tenant.id,
+      [
+        'active',
+        filters.category,
+        filters.studio,
+        filters.studioNone,
+        filters.providerCode,
+        filters.featuredOnly,
+        filters.limit,
+        filters.offset,
+      ],
+      () => this.service.listActiveForPlayer(db, filters),
+    );
   }
 
   /** Player: mapa provider_id → display name para el filtro de proveedor. */
@@ -130,7 +155,11 @@ export class GamesController {
     @Req() req: RequestWithTenantContext,
   ) {
     const db = req.tenantContext!.db;
-    const map = await this.service.getProviderNames(db);
+    const map = await this.catalogCache.getOrLoad(
+      req.tenantContext!.tenant.id,
+      ['providers'],
+      () => this.service.getProviderNames(db),
+    );
     return { providers: map };
   }
 
@@ -146,9 +175,14 @@ export class GamesController {
     @Query('category') category?: string,
   ) {
     const db = req.tenantContext!.db;
-    return this.service.getFacetsForPlayer(db, {
-      category: category as Game['category'] | undefined,
-    });
+    return this.catalogCache.getOrLoad(
+      req.tenantContext!.tenant.id,
+      ['facets', category],
+      () =>
+        this.service.getFacetsForPlayer(db, {
+          category: category as Game['category'] | undefined,
+        }),
+    );
   }
 
   /**
@@ -403,11 +437,13 @@ export class GamesController {
     @Req() req: RequestWithTenantContext,
   ) {
     const db = req.tenantContext!.db;
-    return this.service.bulkSetFlags(db, dto.ids, {
+    const out = await this.service.bulkSetFlags(db, dto.ids, {
       isHidden: dto.isHidden,
       isDisabled: dto.isDisabled,
       featured: dto.featured,
     });
+    await this.catalogCache.invalidate(req.tenantContext!.tenant.id);
+    return out;
   }
 
   @Get(':id')
@@ -472,6 +508,9 @@ export class GamesController {
       metadata: { severity: 'medium' },
       ...extractRequestContext(req),
     });
+    // El operador acaba de tocar el catálogo: que lo vea ya, sin esperar
+    // el TTL.
+    await this.catalogCache.invalidate(req.tenantContext!.tenant.id);
     return created;
   }
 
@@ -519,6 +558,9 @@ export class GamesController {
       metadata: { severity: 'medium' },
       ...extractRequestContext(req),
     });
+    // El operador acaba de tocar el catálogo: que lo vea ya, sin esperar
+    // el TTL.
+    await this.catalogCache.invalidate(req.tenantContext!.tenant.id);
     return updated;
   }
 
@@ -557,6 +599,9 @@ export class GamesController {
         ...extractRequestContext(req),
       });
     }
+    // El operador acaba de tocar el catálogo: que lo vea ya, sin esperar
+    // el TTL.
+    await this.catalogCache.invalidate(req.tenantContext!.tenant.id);
     return updated;
   }
 
