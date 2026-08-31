@@ -38,7 +38,6 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { AchievementsModule } from './achievements/achievements.module';
-import { BankAccountsModule } from './bank-accounts/bank-accounts.module';
 import { BankTransactionsModule } from './bank-transactions/bank-transactions.module';
 import { BranchesModule } from './branches/branches.module';
 import { CommonModule } from './common/common.module';
@@ -165,7 +164,6 @@ import { CRM_ENABLED } from './chat/chat.flag';
     // Bank transactions (Sprint 50): separación de funciones. Empleado
     // sube transferencias entrantes; cajero matchea con deposits antes
     // de aprobar.
-    BankAccountsModule,
     BankTransactionsModule,
 
     // Branches (Sprint 51): modo "sucursal independiente" para socios.

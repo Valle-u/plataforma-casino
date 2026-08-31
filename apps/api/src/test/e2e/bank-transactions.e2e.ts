@@ -70,11 +70,7 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
         amount: '1000.00',
         currency: 'ARS',
         direction: 'incoming',
-        // Cuenta PROPIA: es lo que exige el alta para entrantes. Antes el
-        // helper mandaba solo  (el tercero) y ninguna de las dos
-        // cosas que pedia la validacion, asi que la suite venia en rojo.
-        bankName: 'Banco Test',
-        accountHolder: 'Casino Test',
+        senderName: 'Remitente Original',
         reference: ref,
         receivedAt: new Date().toISOString(),
         ...overrides,
@@ -192,8 +188,6 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
           amount: '500.00',
           currency: 'ARS',
           direction: 'incoming',
-          bankName: 'Banco Test',
-          accountHolder: 'Casino Test',
           reference: 'IN-NO-RECEIPT',
           receivedAt: new Date().toISOString(),
         });
@@ -316,8 +310,6 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
           amount: '1000.00',
           currency: 'ARS',
           direction: 'incoming',
-          bankName: 'Banco Test',
-          accountHolder: 'Casino Test',
           receiptUrl: 'http://localhost/proofs/hash-a-copy.pdf',
           // key DISTINTO (como pasa con dos uploads del mismo archivo real),
           // pero MISMO contenido → el dedupe por hash lo frena.
@@ -349,17 +341,80 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
     });
   });
 
-  // El bloque "filtro cuentas de socios independientes" se removió acá.
-  //
-  // Probaba el aislamiento VIEJO, por `bankAccount`, que se reemplazó el
-  // 2026-08-25 ("fix crítico") por uno basado en `uploaded_by`: la cuenta es
-  // mutable y el que subió la transferencia no. El test subía la transferencia
-  // del "independiente" con el token del ADMIN, así que bajo el criterio nuevo
-  // esa transferencia es del admin y se ve — correctamente.
-  //
-  // El mecanismo actual SÍ está cubierto, en `branch-flip-preconditions.e2e.ts`:
-  // "Fix crítico: aislar por uploaded_by — un indep NO ve el extracto del admin
-  // aunque reclame su CBU".
+  /**
+   * Aislamiento sub-red independiente:
+   * el listado del admin NO debe incluir movimientos cuya bank_account coincida
+   * con el branch_bank_account de un socio marcado como independiente
+   * (esos movimientos son "de su propio banco", ajenos al tenant).
+   */
+  describe('GET /tenant/bank-transactions — filtro cuentas de socios independientes', () => {
+    const INDEP_ACCT = `CBU-INDEP-${Date.now().toString(36)}`;
+    const ADMIN_ACCT = `CBU-ADMIN-${Date.now().toString(36)}`;
+    let indepRef: string;
+    let adminRef: string;
+
+    beforeAll(async () => {
+      const suite = `btx-indep-${Date.now().toString(36)}`;
+      const socioIndep = await createTestUser(ctx.request, adminToken, {
+        suite,
+        label: 'socio-indep',
+        role: 'socio',
+      });
+      await ctx.tenantDb.execute(
+        sql`UPDATE users
+            SET is_independent_branch = true,
+                branch_bank_account = ${INDEP_ACCT}
+            WHERE id = ${socioIndep.id}`,
+      );
+
+      indepRef = `INDEP-REF-${Date.now()}`;
+      adminRef = `ADMIN-REF-${Date.now()}`;
+
+      const rIndep = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: INDEP_ACCT,
+          amount: '1000.00',
+          currency: 'ARS',
+          direction: 'incoming',
+          senderName: 'debería quedar oculto',
+          reference: indepRef,
+          receivedAt: new Date().toISOString(),
+        });
+      expect(rIndep.status).toBe(201);
+
+      const rAdmin = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: ADMIN_ACCT,
+          amount: '2000.00',
+          currency: 'ARS',
+          direction: 'incoming',
+          senderName: 'debería ser visible',
+          reference: adminRef,
+          receivedAt: new Date().toISOString(),
+        });
+      expect(rAdmin.status).toBe(201);
+    });
+
+    it('el listado del admin oculta la cuenta del socio independiente', async () => {
+      const r = await ctx.request
+        .get('/tenant/bank-transactions?limit=500')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(r.status).toBe(200);
+      const data = (r.body as { data: Array<{ bankAccount: string; reference: string | null }> }).data;
+      const refs = new Set(data.map((it) => it.reference));
+      expect(refs.has(adminRef)).toBe(true);
+      expect(refs.has(indepRef)).toBe(false);
+      const accounts = new Set(data.map((it) => it.bankAccount));
+      expect(accounts.has(INDEP_ACCT)).toBe(false);
+    });
+  });
 
   /**
    * D2-light — vigilancia sobre bank_tx.upload cuando el actor cuelga de
@@ -429,8 +484,6 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
           amount,
           currency: 'ARS',
           direction: 'incoming',
-          bankName: 'Banco Test',
-          accountHolder: 'Casino Test',
           senderName: 'auto-declarado',
           reference: ref,
           receivedAt: new Date().toISOString(),

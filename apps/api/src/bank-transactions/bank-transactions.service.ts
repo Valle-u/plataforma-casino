@@ -247,16 +247,10 @@ export class BankTransactionsService {
       throw new BankTransactionOutgoingReceiptRequiredError();
     }
 
-    // Trazabilidad: toda transferencia tiene que decir CON QUÉ CUENTA NUESTRA
-    // se operó (entrante: la que recibe; saliente: la que envía).
-    //
-    // Antes se exigía `senderName` -- el TERCERO -- junto con el banco. Se dio
-    // vuelta: los datos del tercero dejaron de guardarse (eran de un jugador y
-    // no aportaban a la conciliación), y lo que sí importa es cuál de nuestras
-    // cuentas movió la plata. Ahora se elige de `bank_accounts`, no se tipea.
+    // Trazabilidad (2026-08-14): entrantes requieren Banco + Titular que envía.
     if (
       direction === 'incoming' &&
-      (!dto.bankName?.trim() || !dto.accountHolder?.trim())
+      (!dto.bankName?.trim() || !dto.senderName?.trim())
     ) {
       throw new BankTransactionIncomingBankDataRequiredError();
     }
@@ -341,16 +335,7 @@ export class BankTransactionsService {
     if (filters.amount) conds.push(eq(bankTransactions.amount, filters.amount));
     if (filters.uploadedBy) conds.push(eq(bankTransactions.uploadedBy, filters.uploadedBy));
     if (filters.search && filters.search.trim() !== '') {
-      // Busca por NUESTRA cuenta (banco y titular). Antes buscaba por el
-      // nombre de la contraparte, que dejó de guardarse: la caja habría
-      // quedado muda. Ahora se busca por "con qué cuenta operé".
-      const term = `%${filters.search.trim()}%`;
-      conds.push(
-        or(
-          ilike(bankTransactions.bankName, term),
-          ilike(bankTransactions.accountHolder, term),
-        )!,
-      );
+      conds.push(ilike(bankTransactions.senderName, `%${filters.search.trim()}%`));
     }
     if (filters.dateFrom) conds.push(sql`${bankTransactions.receivedAt} >= ${filters.dateFrom}`);
     if (filters.dateTo) conds.push(sql`${bankTransactions.receivedAt} <= ${filters.dateTo}`);
