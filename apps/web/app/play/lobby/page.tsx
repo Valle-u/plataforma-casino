@@ -44,6 +44,7 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { cn } from '@/lib/cn';
+import { StudioFilter } from '@/components/player/studio-filter';
 import { providerLabel } from '@/lib/provider-label';
 
 // Lazy load: solo se descarga el bundle del modal en desktop.
@@ -344,29 +345,15 @@ function GameLobbyContent() {
         ))}
       </div>
 
-      {/* 3) Filtro por estudio — de los TRES proveedores. Solo aparece si hay
-             estudios en la categoría actual. */}
-      {studios.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
-            Estudio
-          </span>
-          <ProviderChip
-            label="Todos"
-            active={studio === 'all'}
-            onClick={() => handleStudioChange('all')}
-          />
-          {studios.map((p) => (
-            <ProviderChip
-              key={p.id}
-              label={p.name}
-              count={p.count}
-              active={studio === p.id}
-              onClick={() => handleStudioChange(p.id)}
-            />
-          ))}
-        </div>
-      )}
+      {/* 3) Filtro por estudio — de los TRES proveedores. Con 46 estudios la
+             fila de chips era una pared que empujaba el grid abajo del fold, y
+             en celular ocupaba media pantalla: el componente muestra los más
+             jugados y manda el resto a un buscador. Ver StudioFilter. */}
+      <StudioFilter
+        studios={studios}
+        value={studio}
+        onChange={handleStudioChange}
+      />
 
       {/* 4) Buscador (preserva la función del catálogo) */}
       <SearchBar value={search} onChange={handleSearchChange} />
@@ -498,43 +485,6 @@ function CategoryTab({
   );
 }
 
-function ProviderChip({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count?: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
-        active
-          ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
-          : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
-      )}
-    >
-      {label}
-      {count !== undefined && (
-        <span
-          className={cn(
-            'text-[10px] tabular-nums',
-            active ? 'opacity-70' : 'text-[var(--color-fg-subtle)]',
-          )}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
 
 function SearchBar({
   value,
