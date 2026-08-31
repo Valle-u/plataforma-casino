@@ -13868,3 +13868,117 @@ Todos en `main`, pusheados y deployados.
   cuenta que el `created_at` de la base quedó adelantado respecto del repo.
 - Sigue en pie todo lo de la entrada anterior: no liquidar 2026-08, el rollback
   del proveedor sin ejercer, y las respuestas que faltan del proveedor.
+
+---
+
+## 2026-08-31 20:30 AR — Claude (Opus 5) · addendum 2
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+Tanda de interfaz: headers del jugador y limpieza de KPIs.
+
+### 1. Los headers nunca fueron fijos — ni el de mobile ni el de desktop
+
+Los dos declaraban `sticky top-0` desde el rediseño, pero **su padre mide
+exactamente lo mismo que ellos** (`<div class="lg:hidden">` y
+`<div class="hidden lg:block">`), y un sticky solo se pega dentro de la caja de
+su padre. Medido: al scrollear 600px el header quedaba en `top: -600`. El
+`sticky` pasó a los wrappers de `app/play/layout.tsx`.
+
+Hacerlo efectivo destapó un problema de diseño: en el home los headers son
+**transparentes** para flotar sobre el banner a sangre. Eso funcionaba porque se
+iban con el scroll y nunca llegaban a taparse con nada. Al quedarse fijos, el
+contenido les pasa por debajo y se veía todo encimado — los chips de categoría
+aparecían cortados atrás del botón de menú.
+
+Se resolvió con `lib/hooks/use-scrolled.ts`, que usan los dos headers:
+transparente arriba de todo, sólido apenas scrolleás.
+
+### 2. Barra de mobile: dos saldos, y el logo que se fue y volvió
+
+Se agregaron los **dos saldos** (disponible + bono). El bono solo existía en el
+sidebar de desktop, que en celular no hay: un jugador con bono no tenía forma de
+enterarse sin abrir el menú. Mismas etiquetas que el sidebar para que no
+parezcan cosas distintas según la pantalla.
+
+El logo **se sacó y después se volvió a poner** a pedido de Uriel. Como con los
+dos saldos no entra un wordmark de 130px en 375px, ahora el logo es el único
+elemento elástico de la fila: todo lo demás es `shrink-0` y él se **escala** (no
+se recorta). Medido a 375px: 92px en modo invitado, y con sesión 74px con saldo
+típico, 63px con uno alto y 48px en el peor caso de siete cifras — siempre sin
+scroll horizontal. Los números no se achican nunca.
+
+Efecto secundario corregido: al volver el logo, las etiquetas "Entrar" y
+"Registrarse" quedaban escondidas por debajo de 420px y volvían a ser dos íconos
+sueltos. Como el logo ahora cede espacio, se dejaron siempre visibles.
+
+### 3. Fuera el total histórico de depósitos y retiros
+
+Las pantallas del jugador mostraban "Total acreditado" y "Total retirado": la
+plata movida en toda su historia. Decisión del dueño: esos dos números juntos
+invitan a hacer la resta, y esa resta es una razón para irse. Quedan dos stats
+por pantalla, las dos **operativas** (En revisión / Último depósito, y En hold /
+Último retiro).
+
+Se dejó "En hold" a propósito: es plata del jugador que no puede usar, y
+ocultarlo sería confuso, no protector.
+
+### Decisiones tomadas
+
+- **El `sticky` va en el wrapper, no en el header.** Y queda escrito en los dos
+  componentes por qué, porque "arreglarlo" moviéndolo de vuelta lo rompe.
+- **Umbral de scroll de 12px, no "el alto del banner".** Lo natural sería atarlo
+  al banner para que el header flote encima todo lo que dura, pero eso lo acopla
+  a otro componente y se rompe **en silencio** cuando no hay banner (un tenant
+  sin slides: `LobbyBanner` devuelve `null`).
+- **El logo cede espacio, la plata no.** Es lo que el jugador vino a mirar.
+- **No se filtró el bono por rol** (LEYES R8 lo hace exclusivo de
+  `usuario_final`). Atar la línea a un string de rol agrega una forma de fallar
+  —que el bono deje de verse para jugadores reales— peor que el "Bono $ 0,00"
+  raro que ve un operador.
+
+### Commits creados
+
+- `e40812a` — `feat(mobile): header fijo, sin logo y con los dos saldos`
+- `d67aca1` — `fix(shell): header de desktop fijo y vuelve el logo en mobile`
+- `3e2e715` — `feat(play): sacar el total historico de depositos y retiros`
+
+Todos en `main`, pusheados y deployados.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno.
+- Headers verificados **en producción con scroll real de rueda**, en desktop
+  (1280×720) y mobile (375×812): pegados en `top: 0`, transparentes arriba y con
+  fondo + borde al scrollear, sin scroll horizontal.
+
+### Notas para próximo agente
+
+- ⚠️ **No le pongas `transition-colors` al fondo que depende de `useScrolled`.**
+  Chrome no sabe interpolar de `transparent` al `color-mix()` que Tailwind genera
+  para `bg-[var(--color-bg)]/85` y se queda clavado en transparente: el header
+  termina **sin fondo**, que es justo lo que se quería arreglar. Pasó en esta
+  sesión y costó un rato encontrarlo (primero lo diagnostiqué mal como bug
+  preexistente de Tailwind; era la transición que yo mismo había agregado). El
+  aviso está escrito en `use-scrolled.ts`.
+- ⚠️ **No vuelvas a agregar un total histórico de plata movida** en depósitos o
+  retiros. El motivo está escrito en la cabecera de las dos pantallas.
+- **Interpretación a confirmar**: el pedido decía "el kpi de *cuándo* depositó o
+  retiró históricamente". Se sacaron los **totales** (cuánto), no las fechas de
+  "Último depósito / Último retiro", porque "históricamente" describe un
+  acumulado y el argumento de retención encaja ahí. Si Uriel quería las fechas,
+  es una línea más.
+- **Sin verificar visualmente** (no hay forma de loguearse desde acá): la barra
+  de mobile **con sesión** (los dos saldos se vieron inyectando el markup con el
+  CSS real, no con datos reales) y las pantallas de depósitos/retiros, que son
+  auth-gated. El cableado replica al del sidebar de desktop y pasa typecheck.
+- **El pane del navegador se desincroniza del DOM.** Varias veces la captura
+  mostró el contenido corrido ~265px, o `scrollY: 0` mientras la captura estaba
+  scrolleada. Cuando no cuadren, la medición del DOM es la buena — pero conviene
+  tomarla con el scroll ya asentado (esperar ~600ms), no durante el scroll suave.
+- **Los 4 warnings de `no-misused-promises`** en depósitos/retiros y el
+  `144:11` de `play/layout.tsx` son **preexistentes**, verificados con `git
+  stash`. No son de estos cambios.
+- Sigue en pie lo de Gregmorn: no liquidar 2026-08, el rollback sin ejercer, y
+  las respuestas que faltan del proveedor.
