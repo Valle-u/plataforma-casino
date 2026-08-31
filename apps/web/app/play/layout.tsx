@@ -203,7 +203,14 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
           <div className="hidden lg:block">
             <PlayerTopHeader />
           </div>
-          <div className="lg:hidden">
+          {/* El `sticky` va ACÁ y no en el header.
+
+              Un elemento sticky solo se pega dentro de la caja de su padre, y
+              este wrapper mide exactamente lo mismo que el header (56px): con
+              el sticky adentro, el header se iba con el scroll apenas
+              empezabas a bajar. Estuvo declarado `sticky` desde el rediseño y
+              nunca funcionó por eso. */}
+          <div className="sticky top-0 z-30 lg:hidden">
             <PlayerMobileAppBar onOpenSidebar={openSidebar} />
           </div>
           <main id="play-main" className="flex-1 pb-24 lg:pb-0">
