@@ -67,6 +67,7 @@ import {
   type WalletTransaction,
 } from '@/lib/hooks/use-wallet';
 import { cn } from '@/lib/cn';
+import { currencyLabel } from '@/lib/format-currency';
 
 const PAGE_SIZE = 25;
 
@@ -277,7 +278,7 @@ export default function WalletPage() {
                 Saldo disponible
               </span>
               <span className="text-[10.5px] font-mono text-[var(--color-fg-subtle)]">
-                · {wallet.data?.currency ?? 'FICHAS'}
+                · {currencyLabel(wallet.data?.currency) || 'fichas'}
               </span>
             </div>
 

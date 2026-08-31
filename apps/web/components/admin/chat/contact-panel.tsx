@@ -18,6 +18,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { currencyLabel } from '@/lib/format-currency';
 import type { ContactContext, CrmNote, CrmTag } from '@/lib/chat/types';
 import {
   addContactNote,
@@ -232,7 +233,7 @@ export function ContactPanel({
             <Wallet size={14} /> Saldo
           </div>
           <div style={{ fontWeight: 700, fontSize: 18 }}>
-            {ctx.wallet.balance} {ctx.wallet.currency}
+            {ctx.wallet.balance} {currencyLabel(ctx.wallet.currency)}
           </div>
           {Number(ctx.wallet.lockedBalance) > 0 && (
             <div style={mutedSm}>Retenido: {ctx.wallet.lockedBalance}</div>

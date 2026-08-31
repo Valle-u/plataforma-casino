@@ -67,6 +67,7 @@ import {
 } from '@/components/admin/load-unload-modal';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
+import { currencyLabel } from '@/lib/format-currency';
 import {
   useAuth,
   isAdminTenant,
@@ -552,7 +553,7 @@ export default function UserProfilePage() {
                     </span>
                     {walletQ.data && (
                       <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
-                        · {walletQ.data.currency}
+                        · {currencyLabel(walletQ.data.currency)}
                       </span>
                     )}
                   </div>

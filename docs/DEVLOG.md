@@ -8793,3 +8793,50 @@ aunque reclame su CBU").
 **Lección**: un test que falla al preparar el escenario no está probando nada, y
 se ve igual que uno que falla de verdad. Los 14 rojos tapaban un test que llevaba
 meses sin ejercitar su propia aserción.
+
+---
+
+## 2026-08-31 — El "CHIPS" que sí llegaba a la pantalla
+
+**Contexto**: tras fijar la regla de terminología, Uriel avisó que la sección de
+**Soporte** seguía mostrando "chips". Mi búsqueda anterior había concluido que
+no quedaba ninguno visible. Estaba mal.
+
+**Por qué no lo encontré**: no está en el código como texto. `wallets.currency`
+guarda **`'CHIPS'`** (default de la columna, las 13 wallets de prod lo tienen), y
+la interfaz lo imprime crudo:
+
+```tsx
+{ctx.wallet.balance} {ctx.wallet.currency}   →  "874.45 CHIPS"
+```
+
+Un grep por texto no lo ve: es un **dato**, no un literal. La lección es que
+buscar strings en el código no alcanza para auditar lo que ve el usuario — hay
+que mirar también qué valores se imprimen tal cual.
+
+**Aparecía en tres lugares**: el panel de contacto del chat de soporte, el perfil
+de usuario y la wallet del panel. Este último era el más delator:
+
+```tsx
+· {wallet.data?.currency ?? 'FICHAS'}
+```
+
+Mostraba "FICHAS" mientras cargaba y "CHIPS" cuando llegaban los datos. Alguien
+ya había intentado arreglarlo por el lado del fallback.
+
+**Decisión**: formatear en la vista (`lib/format-currency.ts`), no cambiar el
+dato.
+
+**Razón**: `'CHIPS'` no es solo un valor de base. `game-sessions.service.ts` se
+lo manda a los proveedores de juego al abrir una sesión, donde es un **código de
+moneda** que ellos esperan — como `'ARS'`. Cambiarlo romperia los launches.
+Adentro es un identificador técnico legítimo; el problema era imprimirlo.
+
+`currencyLabel()` mapea sólo los códigos internos que tienen nombre propio en
+castellano (hoy `CHIPS → fichas`) y devuelve el resto tal cual: para ARS o USDT
+el código **es** la forma correcta de mostrarlos.
+
+**Nota conceptual, porque surgió la duda**: ficha y chip son **la misma cosa** —
+"chip" es la palabra en inglés. La regla no dice que sean distintas: dice que en
+castellano se escribe "ficha". Lo único que sí es otro concepto son los botones
+tipo píldora de la UI, que vienen del diseño web y no del casino.
