@@ -13739,12 +13739,16 @@ de Uriel **no se insistió con el rollback**, queda pendiente.
   NetWin (las rondas trabadas de Gregmorn), ~1.877 de comisión al 50% del socio.
   Liquidar quema fichas de la Casa de forma irreversible sobre un número que
   sabemos incompleto.
-- ⚠️ **Al migrar a la Prod del proveedor**: sumar `3.78.156.229` a la allowlist
-  de Cloudflare. Hoy sólo está `18.184.217.6` (Stage).
+- ~~Al migrar a la Prod del proveedor: sumar `3.78.156.229` a la allowlist de
+  Cloudflare.~~ **Esta nota era FALSA y se corrigió el mismo día** leyendo la
+  config real con la API de Cloudflare: `3.78.156.229` ya está cargada, y la
+  regla que de verdad sostiene los callbacks exceptúa la RUTA desde cualquier
+  IP. No hay nada que hacer para migrar. Lo que sí queda es **borrar la regla
+  `Gregmorn diagnostico (temporal)`** cuando la integración esté estable.
 - ⚠️ **El rollback del proveedor nunca se ejerció.** La primera vez que corra va
   a ser con plata real. Uriel pidió no insistirles: queda pendiente, no olvidado.
-- La tabla `bank_accounts` **quedó huérfana en prod** después del revert. Es
-  inofensiva, pero sacarla necesita una migración.
+- ~~La tabla `bank_accounts` quedó huérfana en prod.~~ **Resuelto en el addendum
+  de abajo** — y resultó ser la mitad menos grave del problema.
 - `pnpm test` quedó en 14 suites en rojo (venía de 62). No es regresión; los
   restos son depósitos y notificaciones.
 - **`apps/web` no tiene runner de tests.** Toda verificación de front es a mano
@@ -13755,3 +13759,79 @@ de Uriel **no se insistió con el rollback**, queda pendiente.
   navegar y corte si el evento quedó prevenido
   (`next/dist/client/app-dir/link.js:302-313`). Si un upgrade de Next invierte
   ese orden, el arrastre empieza a navegar. Está anotado en el DEVLOG.
+
+---
+
+## 2026-08-31 19:30 AR — Claude (Opus 5) · addendum
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+Se retomaron los dos pendientes que habían quedado anotados al cerrar. Los dos
+resultaron ser distintos de como estaban descriptos.
+
+### 1. Cloudflare — la nota estaba mal, no había nada que hacer
+
+La nota decía "sumar `3.78.156.229`, hoy sólo está `18.184.217.6` (Stage)". Se
+leyó la config real con la API de Cloudflare (zona `miamihub.vip`) y es al
+revés:
+
+- `Gregmorn diagnostico (temporal)` → `ip.src eq 3.78.156.229`, **la de Prod**,
+  ya cargada y activa.
+- `Gregmorn callbacks` → exceptúa `api.miamihub.vip` +
+  `/api/v1/game-provider/gregmorn/callback*` **desde cualquier IP**. Por eso
+  Stage funciona sin figurar en ninguna allowlist.
+
+O sea: la migración a la Prod del proveedor **no necesita ningún cambio en
+Cloudflare**. De paso se verificó que el prefijo de la regla cubre las dos rutas
+reales del controller (`callback` y `callback/:token`), que el host coincide con
+el dominio real de la API, y que Bot Fight Mode sigue apagado
+(`fight_mode: false`) — que es lo que en su momento se comía los callbacks.
+
+Se corrigió la afirmación falsa en los cuatro lugares donde estaba:
+`00-intake.md` (dos), `98-pendientes-proveedor.md`, `99-integration-plan.md` y
+la nota de la entrada anterior de este log.
+
+**Queda pendiente de verdad**: borrar la regla `Gregmorn diagnostico (temporal)`
+cuando la integración esté estable. Es un `skip` de WAF y rate limiting para
+*cualquier* request de esa IP, a cualquier host y ruta — mucho más amplio de lo
+que hace falta, porque la regla por ruta ya cubre los callbacks. **No se tocó**:
+sacar una regla de seguridad no estaba en el pedido.
+
+### 2. bank_accounts — la tabla huérfana era la mitad menos grave
+
+Revertir el commit borró el archivo de migración del repo pero no deshizo lo que
+ya había corrido en producción. Además de la tabla, quedó una fila en
+`drizzle.__drizzle_migrations` con `created_at = 1789300900000`, y **eso era una
+trampa**: drizzle decide si aplicar comparando contra el `created_at` más alto
+de la base, así que la siguiente migración que alguien escribiera (que por la
+convención del repo habría tomado ese mismo número) se habría **saltado en
+silencio en producción** y aplicado normal en todos lados. Ver DEVLOG.
+
+Se agregó `0108_drop_bank_accounts.sql` con `when = 1789301000000`, que quema el
+hueco. La migración no borra a ciegas: si la tabla tiene filas la renombra y
+avisa, en vez de hacer `DROP`. Con `MIGRATE_ON_BOOT=1` una migración que explota
+impide que arranque la API, así que está escrita para no fallar nunca.
+
+Verificada contra un Postgres real en las tres ramas (tabla ausente / vacía /
+con filas) y corrida contra los tenants locales.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno.
+- Deployado. Al arrancar, la API de producción corre la migración en cada tenant.
+
+### Notas para próximo agente
+
+- ⚠️ **Revisar en los logs del primer arranque** si apareció el `WARNING` de
+  `bank_accounts tenia filas`. Si apareció, hay una tabla
+  `bank_accounts_huerfana_20260831` con datos que alguien cargó en la hora que
+  la pantalla estuvo viva: revisar y borrar a mano. Si no apareció, la tabla se
+  borró limpia y no queda nada.
+- ⚠️ **Hay un hueco deliberado en los `when` del journal de tenant**:
+  1789300900000 está quemado por la migración revertida. No "arreglarlo".
+- **Lección**: revertir el archivo de una migración no revierte la migración. Si
+  el commit llegó a producción, hace falta la migración inversa **y** tener en
+  cuenta que el `created_at` de la base quedó adelantado respecto del repo.
+- Sigue en pie todo lo de la entrada anterior: no liquidar 2026-08, el rollback
+  del proveedor sin ejercer, y las respuestas que faltan del proveedor.

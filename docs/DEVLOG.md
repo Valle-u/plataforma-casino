@@ -9007,3 +9007,74 @@ segundos es peor que no poder moverlo.
 
 **Alternativa abierta**: sí. El umbral (44px), la pausa (10s) y la posición de
 las flechas son constantes al tope del archivo.
+
+---
+
+## 2026-08-31 — Revertir una migración deja la producción adelantada (y muda)
+
+**Contexto**: al limpiar la tabla `bank_accounts`, que había quedado huérfana
+después del revert de las cuentas propias, apareció algo bastante peor que la
+tabla.
+
+Revertir el commit borró el archivo `0108_bank_accounts.sql` del repo, pero
+**no deshizo lo que ya había corrido**. El commit `707f86c` (que todavía incluía
+la migración) se deployó a producción a las 19:04 UTC y la API arranca con
+`MIGRATE_ON_BOOT=1`. Así que en cada DB de tenant de producción quedaron dos
+cosas: la tabla, y una fila en `drizzle.__drizzle_migrations` con
+`created_at = 1789300900000` apuntando a un archivo que ya no existe.
+
+**El problema real es la segunda.** El runner de drizzle
+(`drizzle-orm/pg-core/dialect.js`, método `migrate`) hace exactamente esto:
+
+```js
+// order by created_at desc limit 1
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { aplicar }
+```
+
+Un solo número: el `created_at` más alto de la DB. En producción ese máximo ya
+era 1789300900000. Y como en este repo los `when` del journal se asignan a mano
+de a 100000, **la siguiente migración que alguien escribiera habría tomado
+justo 1789300900000** — igual, no mayor — y drizzle la habría **saltado en
+silencio en producción** mientras se aplicaba normal en local y en cualquier
+tenant nuevo. Sin error, sin log: schema drift mudo, y sólo en la base que
+importa.
+
+**Opciones consideradas**:
+- A) Borrar la fila fantasma de `drizzle.__drizzle_migrations`.
+- B) Escribir la migración de limpieza con un `when` que salte el hueco.
+- C) Las dos.
+
+**Decisión**: **B**. La nueva `0108_drop_bank_accounts` usa
+`when = 1789301000000`.
+
+**Razón**: (A) no arregla nada por sí sola. Drizzle lee `lastDbMigration`
+**antes** de abrir la transacción, así que borrar la fila desde adentro de una
+migración no afecta la decisión de esa misma corrida; y una vez que la nueva
+migración inserta su propio registro, el máximo queda arriba igual. Meterse a
+editar la contabilidad interna del migrador para lograr algo que el `when` ya
+resuelve es la clase de astucia que se cobra después. El fantasma queda ahí,
+inofensivo, y a partir de esta migración la secuencia sigue normal.
+
+**Implicaciones**: hay un hueco deliberado en los `when` (1789300900000 está
+quemado). Está explicado en la cabecera de
+`packages/db/migrations/tenant/0108_drop_bank_accounts.sql`.
+
+La migración además **no borra a ciegas**: si la tabla tiene filas la renombra a
+`bank_accounts_huerfana_20260831` y avisa con un `RAISE WARNING`, en vez de
+hacer `DROP`. Dos motivos: no se puede saber desde el repo si alguien cargó una
+cuenta en la hora que la pantalla estuvo viva en producción, y con
+`MIGRATE_ON_BOOT=1` una migración que explota **impide que arranque la API** —
+cambiar una limpieza cosmética por una caída de producción sería un mal negocio.
+Por eso tampoco usa `RAISE EXCEPTION`.
+
+Verificado contra un Postgres real, las tres ramas: tabla ausente (no-op), tabla
+vacía (DROP), tabla con filas (RENAME conservando la fila).
+
+**Alternativa abierta**: sí. Si se confirma que `bank_accounts_huerfana_*` no
+existe en ningún tenant, no queda nada que hacer. Si existe, se revisa el
+contenido y se borra a mano.
+
+**Lección general**: revertir el archivo de una migración **no** revierte la
+migración. Si el commit llegó a producción, hay que escribir la migración
+inversa Y tener en cuenta que el `created_at` de la base quedó adelantado
+respecto del repo.

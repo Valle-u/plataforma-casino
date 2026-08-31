@@ -125,8 +125,22 @@ es `18.184.217.6`. Durante días sostuvieron que la primera era "la única",
 estando nosotros en Stage — de ahí venía el desfasaje que nos costó el
 diagnóstico del Bot Fight Mode.
 
-⚠️ **Al migrar a su Prod hay que sumar `3.78.156.229`** a la allowlist de
-Cloudflare. Hoy sólo está la de Stage.
+~~⚠️ Al migrar a su Prod hay que sumar `3.78.156.229` a la allowlist de
+Cloudflare. Hoy sólo está la de Stage.~~
+
+✅ **Corregido el 2026-08-31: era falso, no hay nada que hacer.** Se leyó la
+config real con la API de Cloudflare. Lo que hay es:
+
+- `Gregmorn callbacks` — exceptúa `api.miamihub.vip` +
+  `/api/v1/game-provider/gregmorn/callback*` **desde cualquier IP**. Por eso
+  Stage funciona sin que su IP figure en ningún lado.
+- `Gregmorn diagnostico (temporal)` — `ip.src eq 3.78.156.229`, o sea la de
+  **Prod**, ya cargada y activa.
+
+Así que la migración a su Prod no necesita ningún cambio en Cloudflare. Lo que
+sí sigue pendiente es **borrar la regla temporal** cuando la integración esté
+estable: es un `skip` de WAF y rate limiting para *cualquier* request de esa
+IP, a cualquier host y ruta, mucho más amplio de lo necesario.
 
 ---
 

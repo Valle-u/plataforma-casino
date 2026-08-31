@@ -32,8 +32,10 @@ Qué recibimos, qué falta y dónde va cada cosa. Se actualiza a medida que resp
   (**Prod**). ⚠️ Durante días dieron sólo la de Prod diciendo que era "la
   única", mientras estábamos en Stage — de ahí que los callbacks llegaran
   desde una IP que no coincidía con la declarada. Lo aclararon el 2026-08-29.
-  **Al pasar a Prod hay que sumar `3.78.156.229` a la allowlist de
-  Cloudflare**, o se rompe igual que antes.
+  ✅ **Verificado el 2026-08-31 contra la API de Cloudflare: no hay nada
+  pendiente.** La regla `Gregmorn callbacks` exceptúa la RUTA del callback
+  desde cualquier IP, así que las dos funcionan sin listarlas; y además
+  `3.78.156.229` ya tiene su propia regla. Ver `99-integration-plan.md`.
 - **`callbackUrl` por request** en `openGame`: confirmado. Nos evita depender de la
   configuración por moneda de su panel.
 - **Credenciales de Stage:** login, password y secret API key.
@@ -47,12 +49,13 @@ Qué recibimos, qué falta y dónde va cada cosa. Se actualiza a medida que resp
    al `accessToken`. El setting quedó como override por si algún día cambia.
 2. **Idempotencia del `rollback`** → **`cmd + transactionId` aprobado**. Es lo que
    ya asumía la implementación, así que no hubo que rehacer nada.
-3. **IP única** → sí, `3.78.156.229` es la única, y se comprometieron a avisar
-   antes de sumar servidores. Igual conviene tratar un callback desde otra IP como
+3. **IP única** → resultó que no: `3.78.156.229` es la de Prod y
+   `18.184.217.6` la de Stage. Se comprometieron a avisar antes de sumar
+   servidores. Igual conviene tratar un callback desde una IP desconocida como
    incidente, no como caso normal.
 
-Lo único pendiente es **de nuestro lado**: cargar esa IP en la allowlist de
-Cloudflare y pegar las credenciales de Stage en el panel.
+Del lado nuestro **tampoco queda nada de Cloudflare** (verificado 2026-08-31).
+Lo único es pegar las credenciales de Stage en el panel.
 
 ## Dónde van las credenciales
 
