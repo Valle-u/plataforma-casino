@@ -569,6 +569,31 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       expect(codes).toContain('e2e_featured_tab');
     });
 
+    it('el listado de admin filtra por ?providerCode', async () => {
+      // Con tres proveedores y 9462 juegos, poder acotar a uno es la diferencia
+      // entre curar el catálogo y scrollear.
+      await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_featured_tab',
+          name: 'Destacado Test',
+          category: 'slots',
+          providerCode: 'forever',
+        });
+
+      const res = await ctx.request
+        .get('/tenant/games?providerCode=forever&limit=100')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const data = (res.body as { data: Array<{ code: string; providerCode: string }> })
+        .data;
+      expect(data.some((g) => g.code === 'e2e_featured_tab')).toBe(true);
+      expect(data.every((g) => g.providerCode === 'forever')).toBe(true);
+    });
+
     it('el listado de admin filtra por ?featuredOnly=true', async () => {
       // Es lo que permite REVISAR la selección: sin esto se podía destacar un
       // juego pero no volver a encontrarlo entre miles del catálogo.

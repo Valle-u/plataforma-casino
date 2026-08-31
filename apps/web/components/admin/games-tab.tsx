@@ -5,6 +5,7 @@ import { Search, Eye, EyeOff, Ban, Star, StarOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isApiError } from '@/lib/api-client';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
+import { useGameProviders } from '@/lib/hooks/use-game-providers';
 import {
   useAdminGames,
   useUpdateGame,
@@ -44,17 +45,23 @@ export function GamesTab() {
   }, []);
   const [category, setCategory] = useState<GameCategory | ''>('');
   const [status, setStatus] = useState<GameStatus | ''>('');
+  const [providerCode, setProviderCode] = useState('');
   // Sin este filtro se podía destacar un juego pero no volver a encontrarlo:
   // con miles en el catálogo, revisar la selección actual era imposible.
   const [featuredOnly, setFeaturedOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // Los proveedores salen del panel, no de una lista fija: si mañana se suma
+  // uno, aparece solo en el filtro.
+  const providers = useGameProviders();
+
   const { data, isLoading, isFetching } = useAdminGames({
     search: debSearch,
     category: category || undefined,
     status: status || undefined,
     featuredOnly: featuredOnly || undefined,
+    providerCode: providerCode || undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
@@ -145,6 +152,22 @@ export function GamesTab() {
             className="w-full h-9 pl-9 pr-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[13px] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
+        <select
+          value={providerCode}
+          onChange={(e) => {
+            setProviderCode(e.target.value);
+            resetFilters();
+          }}
+          className={selectCls}
+          aria-label="Filtrar por proveedor"
+        >
+          <option value="">Todos los proveedores</option>
+          {(providers.data ?? []).map((p) => (
+            <option key={p.code} value={p.code}>
+              {p.displayName}
+            </option>
+          ))}
+        </select>
         <select
           value={category}
           onChange={(e) => {
