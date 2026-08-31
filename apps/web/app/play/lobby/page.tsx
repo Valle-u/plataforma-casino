@@ -120,9 +120,6 @@ function isPlayable(game: PlayerGame): boolean {
   return false;
 }
 
-/** Conteo decorativo de "jugando" — determinístico por índice (no hay
- *  feed real de jugadores online; el handoff lo trata como dato de feed). */
-
 function GameLobbyContent() {
   const [tab, setTab] = useState<LobbyTab>('all');
   const [studio, setStudio] = useState<string>('all');
