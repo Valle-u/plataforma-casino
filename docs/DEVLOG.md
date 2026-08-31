@@ -8537,3 +8537,50 @@ Los destacados elegidos a mano sobreviven a las sincronizaciones.
 **Tests**: 1 nuevo — que `GET /tenant/games?featuredOnly=true` devuelva el
 destacado y **nada** que no lo esté. Es cableado de controller, de lo que se
 rompe sin hacer ruido. 88 tests de las 6 suites de games en verde.
+
+---
+
+## 2026-08-31 — Destacados: prioridad en el ranking (matiza la entrada anterior)
+
+**Corrige parcialmente** la entrada de hoy "Destacados: de criterio de orden a
+pestaña propia", que decía que `featured` ya no pesa en el orden. Pesa, pero en
+otro lugar y por otro motivo.
+
+**Contexto**: Uriel pidió que los destacados tuvieran prioridad en la búsqueda y
+"que no queden abajo".
+
+**Por qué no es una vuelta atrás**: lo que se sacó fue que `featured` modificara
+un criterio que el jugador había elegido explícitamente. Lo que se agrega ahora
+es que pese en el **ranking base** — cuáles resultados vienen primero cuando
+nadie eligió nada.
+
+**El problema real**: 9.462 juegos y páginas de 30. El orden del backend era
+`category, sortOrder`, así que un destacado con `sortOrder` alto podía caer en la
+página 40. **Un juego que no entra en la primera página es un juego que nadie
+ve**, y la sección Destacados servía de poco si el juego no aparecía también al
+buscarlo.
+
+**Cambios**:
+
+- Backend (`listActiveForPlayer`, la misma query que usa la búsqueda):
+  `desc(featured), asc(category), asc(sortOrder)`. `category` queda como
+  desempate estable, no como agrupador — la grilla es plana.
+- Frontend, orden "Populares" (el **por defecto**): destacados primero y después
+  `sortOrder`. Espeja al backend; sin eso la página llegaba con los destacados
+  adelante y el sort del cliente los volvía a enterrar.
+
+**Lo que NO cambia**: "Nuevos" y "A-Z" siguen puros. Si el jugador pide orden
+alfabético, se le da orden alfabético — un destacado no se cuela al tope. Esa era
+la queja original y sigue resuelta.
+
+En una frase: **cuando el jugador no eligió, mandan los destacados; cuando
+eligió, manda él.**
+
+**No se tocó el listado del panel.** Ahí el admin tiene un filtro "Destacados"
+dedicado, que sirve mejor que reordenar el catálogo por default y no sorprende a
+quien está navegando.
+
+**Test**: dos juegos que matchean la misma búsqueda, con el `sortOrder` a la
+inversa del resultado esperado (el común en 1, el destacado en 999). Si el
+ranking dejara de mirar `featured`, el común saldría primero y el test falla. 90
+tests de las 6 suites de games en verde.

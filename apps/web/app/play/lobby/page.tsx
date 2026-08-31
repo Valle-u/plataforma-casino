@@ -248,12 +248,18 @@ function GameLobbyContent() {
     } else if (sort === 'new') {
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     } else {
-      // Populares: el orden curado del catálogo (`sortOrder`). Los destacados
-      // ya NO pesan acá — tienen su propia pestaña. Mezclarlos en el orden
-      // hacía que "Populares" significara dos cosas a la vez y que un juego
-      // destacado apareciera primero aunque el jugador hubiera pedido otro
-      // criterio.
-      list.sort((a, b) => a.sortOrder - b.sortOrder);
+      // Populares (el orden POR DEFECTO): destacados primero y después el
+      // orden curado del catálogo. Espeja lo que hace el backend, si no la
+      // página llegaba con los destacados adelante y este sort los volvía a
+      // enterrar.
+      //
+      // Que pesen acá y NO en "Nuevos" ni "A-Z" es a propósito: cuando el
+      // jugador elige un criterio explícito, se le respeta; cuando no eligió
+      // nada, mandan los destacados.
+      list.sort((a, b) => {
+        if (a.featured !== b.featured) return a.featured ? -1 : 1;
+        return a.sortOrder - b.sortOrder;
+      });
     }
     return list;
   }, [games, sort]);

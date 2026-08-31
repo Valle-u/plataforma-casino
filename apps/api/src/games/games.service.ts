@@ -315,7 +315,20 @@ export class GamesService {
         .select()
         .from(games)
         .where(where)
-        .orderBy(asc(games.category), asc(games.sortOrder))
+        // Destacados PRIMERO. Con 9.462 juegos y páginas de 30, un juego que
+        // no entra en la primera página es un juego que nadie ve: sin esto un
+        // destacado podía quedar en la página 40 y la sección "Destacados"
+        // servía de poco. Aplica también a la búsqueda, que usa esta misma
+        // query.
+        //
+        // `category` queda como desempate estable, no como agrupador: la
+        // grilla es plana, así que solo sirve para que el orden no baile
+        // entre requests.
+        .orderBy(
+          desc(games.featured),
+          asc(games.category),
+          asc(games.sortOrder),
+        )
         .limit(limit)
         .offset(offset),
       db
