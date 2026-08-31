@@ -6,7 +6,13 @@
  * Composición:
  *   - Header: kicker + título + "Solicitar depósito" + Refrescar.
  *   - Banner "¿Cómo funciona?".
- *   - 3 stats: Total acreditado · En revisión · Último depósito.
+ *   - 2 stats: En revisión · Último depósito.
+ * ⚠️ NO volver a agregar un total histórico de plata movida. Se sacó el
+ *    2026-08-31 por decisión del dueño: mostrarle al jugador cuánto lleva
+ *    depositado (o retirado) en toda su historia lo invita a hacer la resta,
+ *    y esa resta es una razón para irse. Las stats que quedan son
+ *    OPERATIVAS — responden "¿en qué estado está mi plata ahora?" — no un
+ *    balance de su vida en el casino.
  *   - Tabs por estado (Todas / Acreditadas / En revisión / Rechazadas).
  *   - Lista de solicitudes (icono por estado + #id + fecha·método + monto).
  *
@@ -101,11 +107,8 @@ export default function PlayDepositsPage() {
   );
 
   const stats = useMemo(() => {
-    const totalApproved = rows
-      .filter((d) => d.status === 'approved')
-      .reduce((sum, d) => sum + Number(d.amountChips), 0);
     const last = rows.length > 0 ? rows[0]?.createdAt : null;
-    return { totalApproved, inReview: counts.review, last };
+    return { inReview: counts.review, last };
   }, [rows, counts.review]);
 
   return (
@@ -150,14 +153,8 @@ export default function PlayDepositsPage() {
           pocos minutos en horario operativo.
         </div>
 
-        {/* 3 stats */}
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard
-            label="Total acreditado"
-            value={`$ ${arsFmt.format(stats.totalApproved)}`}
-            accent="var(--color-success)"
-            loading={isLoading}
-          />
+        {/* 2 stats, las dos operativas — ver el aviso de arriba. */}
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <StatCard
             label="En revisión"
             value={String(stats.inReview)}

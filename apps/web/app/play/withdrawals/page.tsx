@@ -6,7 +6,13 @@
  * Composición:
  *   - Header: kicker + título + "Solicitar retiro" (oro) + Refrescar.
  *   - Banner "¿Cómo funciona?".
- *   - 3 stats: Total retirado · En hold · Último retiro.
+ *   - 2 stats: En hold · Último retiro.
+ * ⚠️ NO volver a agregar un total histórico de plata movida. Se sacó el
+ *    2026-08-31 por decisión del dueño: mostrarle al jugador cuánto lleva
+ *    depositado (o retirado) en toda su historia lo invita a hacer la resta,
+ *    y esa resta es una razón para irse. Las stats que quedan son
+ *    OPERATIVAS — responden "¿en qué estado está mi plata ahora?" — no un
+ *    balance de su vida en el casino.
  *   - Tabs por estado (Todos / Pagados / En hold / En revisión / Rechazados).
  *   - Lista de solicitudes (icono por estado + #id + fecha·método + monto).
  *
@@ -123,14 +129,11 @@ export default function PlayWithdrawalsPage() {
   );
 
   const stats = useMemo(() => {
-    const totalPaid = rows
-      .filter((w) => w.status === 'paid')
-      .reduce((s, w) => s + Number(w.amountChips), 0);
     const held = rows
       .filter((w) => isHeld(w.status))
       .reduce((s, w) => s + Number(w.amountChips), 0);
     const last = rows.length > 0 ? rows[0]?.createdAt : null;
-    return { totalPaid, held, last };
+    return { held, last };
   }, [rows]);
 
   return (
@@ -181,14 +184,8 @@ export default function PlayWithdrawalsPage() {
           marca como pagado. Si rechaza, el hold se libera.
         </div>
 
-        {/* 3 stats */}
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard
-            label="Total retirado"
-            value={`$ ${arsFmt.format(stats.totalPaid)}`}
-            accent="var(--color-success)"
-            loading={isLoading}
-          />
+        {/* 2 stats, las dos operativas — ver el aviso de arriba. */}
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <StatCard
             label="En hold"
             value={`$ ${arsFmt.format(stats.held)}`}
