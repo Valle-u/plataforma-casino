@@ -132,7 +132,15 @@ export class GamesService {
       .select()
       .from(games)
       .where(where)
-      .orderBy(asc(games.category), asc(games.sortOrder), desc(games.createdAt))
+      // Destacados primero, igual que en el lobby. El admin tiene ademas el
+      // filtro "Destacados" para verlos solos; esto es para que al curar el
+      // catalogo la seleccion actual quede a la vista sin tener que filtrar.
+      .orderBy(
+        desc(games.featured),
+        asc(games.category),
+        asc(games.sortOrder),
+        desc(games.createdAt),
+      )
       .limit(limit)
       .offset(offset);
 

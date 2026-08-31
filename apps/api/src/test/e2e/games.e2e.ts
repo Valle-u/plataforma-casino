@@ -529,6 +529,45 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       );
     });
 
+    it('en el listado del panel también salen primero', async () => {
+      // Mismo criterio que el lobby: al curar el catálogo, la selección actual
+      // tiene que estar a la vista sin necesidad de filtrar.
+      await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_rank_comun',
+          name: 'Zafiro Comun',
+          category: 'slots',
+          sortOrder: 1,
+          featured: false,
+        });
+      await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_rank_destacado',
+          name: 'Zafiro Destacado',
+          category: 'slots',
+          sortOrder: 999,
+          featured: true,
+        });
+
+      const res = await ctx.request
+        .get('/tenant/games?search=zafiro&limit=50')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const codes = (res.body as { data: Array<{ code: string }> }).data.map(
+        (g) => g.code,
+      );
+      expect(codes.indexOf('e2e_rank_destacado')).toBeLessThan(
+        codes.indexOf('e2e_rank_comun'),
+      );
+    });
+
     it('en la búsqueda, el destacado aparece antes que uno común', async () => {
       // `sortOrder` a la inversa del resultado esperado: si el ranking no
       // mirara `featured`, el común saldría primero y el test fallaría.

@@ -8576,9 +8576,9 @@ la queja original y sigue resuelta.
 En una frase: **cuando el jugador no eligió, mandan los destacados; cuando
 eligió, manda él.**
 
-**No se tocó el listado del panel.** Ahí el admin tiene un filtro "Destacados"
-dedicado, que sirve mejor que reordenar el catálogo por default y no sorprende a
-quien está navegando.
+**El listado del panel también.** Se hizo en un segundo paso, a pedido: al curar
+el catálogo conviene tener la selección actual a la vista sin depender del
+filtro. El filtro "Destacados" sigue existiendo para verlos solos.
 
 **Test**: dos juegos que matchean la misma búsqueda, con el `sortOrder` a la
 inversa del resultado esperado (el común en 1, el destacado en 999). Si el
