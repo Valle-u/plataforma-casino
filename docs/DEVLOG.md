@@ -8656,3 +8656,44 @@ verificaba.
 (verificado corriéndola con y sin el cambio: 12 en ambos casos). Vienen del
 helper de transferencias, que devuelve `BANK_TX_INCOMING_BANK_DATA_REQUIRED`, y
 de `tenant_settings` truncado — los mismos de la entrada del aislamiento e2e.
+
+---
+
+## 2026-08-31 — La campana del panel se puede silenciar (no "leer")
+
+**Contexto**: tras el arreglo de la bandeja del jugador, Uriel pidió que la
+campana del **panel** también se pudiera limpiar.
+
+**El problema de diseño**: esa campana no es una bandeja. Muestra contadores en
+vivo de trabajo abierto — depósitos esperando, retiros por pagar, transferencias
+sin matchear, cuentas duplicadas. "Marcarlo como leído" en el sentido de una
+bandeja significaría **esconder trabajo que sigue pendiente**, que es justo lo
+que no querés de un panel de operación.
+
+**Decisión**: "Marcar como visto" **silencia el badge**, no oculta nada. El panel
+sigue listando todo lo pendiente al abrirlo.
+
+**La regla**: el badge vuelve cuando **algún contador SUBE** respecto de lo
+guardado. Que bajar no lo despierte es a propósito — si reaccionara a cualquier
+diferencia, aprobar un depósito volvería a encender la campana justo después de
+haberla atendido.
+
+Se guarda el estado **completo** al marcar, no solo lo que creció: si no, un
+contador que bajó quedaría con un techo viejo y no volvería a avisar hasta
+superarlo. (Ej: viste 5 retiros, quedan 2; sin guardar el 2 haría falta llegar a
+6 para que avise de nuevo.)
+
+**Límite conocido**: si se resuelven 3 depósitos y entran 3 nuevos, el contador
+queda igual y el badge no se despierta. Detectarlo pediría comparar identidades y
+no números, y la campana solo tiene contadores. Se aceptó: es supresión de
+insistencia, no un registro de auditoría, y el panel siempre muestra la realidad.
+
+**Dónde se guarda**: `localStorage`, por usuario, igual que el resto de las
+preferencias de UI del panel (sidebar colapsado, densidad de tablas, posiciones
+del mapa de red). Es **por dispositivo** — silenciarlo en la compu no lo silencia
+en el celular. Hacerlo compartido pedía una tabla nueva en el back, y no parece
+valer para esconder un puntito.
+
+**No confundir con** el arreglo de la misma jornada en la bandeja del jugador
+(`notifications.service.ts`): ahí sí había un bug real de datos. Acá no había
+bug — faltaba una función.

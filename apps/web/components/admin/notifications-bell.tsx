@@ -12,8 +12,17 @@
  *   Para que estés al tanto (informativos, solo admin):
  *     - Proveedores en mantenimiento / catálogo sincronizado
  *
- * El badge muestra la cantidad de avisos accionables. No hay "marcar
- * leídos" persistente (eso sí necesitaría back nuevo).
+ * El badge muestra los avisos accionables que NO viste todavía.
+ *
+ * "Marcar como visto" guarda los contadores actuales y silencia el badge.
+ * Vuelve solo cuando alguno SUBE — o sea, cuando entra trabajo nuevo. No
+ * esconde nada: el panel sigue listando todo lo pendiente al abrirlo.
+ *
+ * Se guarda en localStorage por usuario, igual que el resto de las
+ * preferencias de UI del panel (sidebar, densidad de tablas). Es POR
+ * DISPOSITIVO: silenciarlo en la compu no lo silencia en el celular. Para que
+ * fuera compartido habría que persistirlo en el back, y no parece valer una
+ * tabla nueva para esconder un puntito.
  */
 
 'use client';
@@ -31,7 +40,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { hasPermission, isAdminTenant, useAuth } from '@/lib/auth-context';
 import { useDeposits } from '@/lib/hooks/use-deposits';
 import { useWithdrawals } from '@/lib/hooks/use-withdrawals';
@@ -50,6 +59,34 @@ const TONE_ICON: Record<Tone, string> = {
   info: 'bg-[var(--color-info-bg)] text-[var(--color-info)]',
 };
 
+/** Contadores ya vistos, por usuario. Ver el comentario de arriba. */
+const SEEN_KEY = 'admin.bell.seen';
+
+type SeenCounts = Record<string, number>;
+
+function loadSeen(userId: string | undefined): SeenCounts {
+  if (typeof window === 'undefined' || !userId) return {};
+  try {
+    const raw = window.localStorage.getItem(SEEN_KEY + '.' + userId);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null
+      ? (parsed as SeenCounts)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSeen(userId: string | undefined, counts: SeenCounts): void {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    window.localStorage.setItem(SEEN_KEY + '.' + userId, JSON.stringify(counts));
+  } catch {
+    /* ignore (quota / storage deshabilitado) */
+  }
+}
+
 interface Notice {
   key: string;
   title: string;
@@ -67,6 +104,12 @@ function plural(n: number, one: string, many: string): string {
 export function NotificationsBell() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  // Se lee en efecto y no en el inicializador: localStorage no existe en SSR
+  // y leerlo directo rompe la hidratación.
+  const [seen, setSeen] = useState<SeenCounts>({});
+  useEffect(() => {
+    setSeen(loadSeen(user?.id));
+  }, [user?.id]);
 
   const canDeposits =
     hasPermission(user, 'deposits.view') ||
@@ -152,7 +195,28 @@ export function NotificationsBell() {
     });
   }
 
-  const badge = notices.length;
+  // Contadores actuales, con la misma clave que cada aviso.
+  const counts: Record<string, number> = {
+    deposits: depCount,
+    withdrawals: witCount,
+    'bank-tx': btCount,
+    fraud: fraudCount,
+  };
+
+  // El badge cuenta solo lo que CRECIÓ desde la última vez. Que resolver
+  // trabajo no lo despierte es a propósito: si contara cualquier diferencia,
+  // aprobar un depósito volvería a encender la campana.
+  const badge = notices.filter(
+    (n) => (counts[n.key] ?? 0) > (seen[n.key] ?? 0),
+  ).length;
+
+  // Lo que se guarda es el estado ACTUAL completo, no solo lo que crecio:
+  // si no, un contador que bajó quedaría con un techo viejo y no volvería a
+  // avisar hasta superarlo.
+  const markSeen = () => {
+    setSeen(counts);
+    saveSeen(user?.id, counts);
+  };
 
   return (
     <div className="relative">
@@ -203,6 +267,17 @@ export function NotificationsBell() {
                 <span className="ml-auto text-[12px] text-[var(--color-fg-subtle)]">
                   Al día
                 </span>
+              )}
+              {badge > 0 && (
+                <button
+                  type="button"
+                  onClick={markSeen}
+                  title="Silencia el aviso hasta que entre algo nuevo. No cierra nada."
+                  className="ml-auto inline-flex items-center gap-1 text-[11px] tracking-tight text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+                >
+                  <CheckCheck className="size-3" />
+                  Marcar como visto
+                </button>
               )}
             </div>
 
