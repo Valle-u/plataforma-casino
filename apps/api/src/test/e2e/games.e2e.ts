@@ -519,4 +519,76 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       expect(res.body.error).toBe('GAME_INVALID_CONFIG');
     });
   });
+  describe('facets: conteo de destacados', () => {
+    // El lobby decide con este número si muestra la pestaña "Destacados".
+    // Si devolviera 0 con destacados existentes, la sección sería inalcanzable;
+    // si devolviera >0 sin ninguno, la pestaña llevaría a una grilla vacía.
+    let gameId: string | undefined;
+
+    afterEach(async () => {
+      await ctx.tenantDb.execute(
+        sql`DELETE FROM games WHERE code = 'e2e_featured_tab'`,
+      );
+      gameId = undefined;
+    });
+
+    it('cuenta los destacados y los expone en ?featuredOnly=true', async () => {
+      const antes = await ctx.request
+        .get('/tenant/games/facets')
+        .set('Host', TEST_TENANT.host);
+      expect(antes.status).toBe(200);
+      const base = (antes.body as { featured: number }).featured;
+
+      const create = await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_featured_tab',
+          name: 'Destacado Test',
+          category: 'slots',
+          featured: true,
+        });
+      expect(create.status).toBe(201);
+      gameId = (create.body as { id: string }).id;
+      expect(gameId).toBeDefined();
+
+      const despues = await ctx.request
+        .get('/tenant/games/facets')
+        .set('Host', TEST_TENANT.host);
+      expect((despues.body as { featured: number }).featured).toBe(base + 1);
+
+      // Y la pestaña tiene que poder listarlo.
+      const lista = await ctx.request
+        .get('/tenant/games/active?featuredOnly=true')
+        .set('Host', TEST_TENANT.host);
+      expect(lista.status).toBe(200);
+      const codes = (lista.body as { data: Array<{ code: string }> }).data.map(
+        (g) => g.code,
+      );
+      expect(codes).toContain('e2e_featured_tab');
+    });
+
+    it('el conteo NO se acota por categoría — la pestaña vive al lado de ellas', async () => {
+      await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'e2e_featured_tab',
+          name: 'Destacado Test',
+          category: 'slots',
+          featured: true,
+        });
+
+      // Pidiendo las facetas de OTRA categoría, el conteo de destacados tiene
+      // que seguir viéndolo: si se acotara, la pestaña desaparecería al entrar
+      // a una categoría sin destacados.
+      const otra = await ctx.request
+        .get('/tenant/games/facets?category=live')
+        .set('Host', TEST_TENANT.host);
+      expect(otra.status).toBe(200);
+      expect((otra.body as { featured: number }).featured).toBeGreaterThan(0);
+    });
+  });
 });

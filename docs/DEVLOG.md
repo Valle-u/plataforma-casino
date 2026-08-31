@@ -8439,3 +8439,57 @@ error que sí importa — que es justamente lo que pasó con la 0082.
 
 **Producción no estaba afectada**: corre las migraciones al arrancar con
 `MIGRATE_ON_BOOT=1` y fail-fast, y la 0107 se aplicó ahí sin problemas.
+
+---
+
+## 2026-08-31 — Destacados: de criterio de orden a pestaña propia
+
+**Contexto**: Uriel pidió que los destacados fueran una sección al lado de
+"Todos / Slots / En vivo", y que salieran del selector de orden.
+
+**Lo que había**: `featured` no tenía sección. Solo hacía dos cosas — poner un
+badge HOT en la tarjeta, y pesar dentro del orden "Populares":
+
+```ts
+if (a.featured !== b.featured) return a.featured ? -1 : 1;
+return a.sortOrder - b.sortOrder;
+```
+
+El strip de Destacados había sido removido en un rediseño anterior, así que
+`featured` quedó como una propiedad sin superficie propia.
+
+**Decisión**: pestaña hermana de las categorías + sacarlo del orden.
+
+**Razón**: "Populares" significaba dos cosas a la vez. Un juego destacado subía
+al tope aunque el jugador hubiera elegido otro criterio, y no había forma de
+pedir "mostrame solo los destacados". Separarlo deja cada control con un solo
+significado: la pestaña **filtra**, el selector **ordena**.
+
+`featured` no es una categoría del backend —es un filtro— pero para el jugador
+es una sección más. Por eso `LobbyTab = 'all' | 'featured' | GameCategory`: la
+UI lo trata como hermano de las categorías y la query lo traduce a
+`featuredOnly`.
+
+**La pestaña solo aparece si hay destacados.** Se agregó `featured` al endpoint
+de facetas para eso. Hoy hay **0 en 9.462 juegos**, así que no se ve — y está
+bien: una pestaña que lleva a una grilla vacía es peor que no tenerla. Va a
+aparecer sola cuando se marque el primero.
+
+**Detalle que importa**: ese conteo va SIN el filtro de categoría, al revés que
+los estudios. Si se acotara, la pestaña desaparecería al entrar a una categoría
+sin destacados — justo cuando el jugador querría usarla para salir de ahí. Hay
+un test que lo fija.
+
+**Pendiente del pedido original**: falta el selector manual en el panel. La API
+ya lo soporta entero (`featured` es creable, actualizable y filtrable); lo que
+no existe es la pantalla — hoy `(admin)/games` es de proveedores, sin lista de
+juegos.
+
+⚠️ **A verificar cuando se haga**: el sync **pisa los overrides manuales**
+(`isHidden`/`isDisabled` se resetean en cada sincronización, decisión explícita
+documentada en `runSync`). Hay que confirmar que `featured` NO entre en ese
+reseteo, o los destacados elegidos a mano se borrarían en cada sync.
+
+**Tests**: 2 nuevos en `games.e2e.ts` — que el conteo suba al marcar un
+destacado y que `?featuredOnly=true` lo liste, y que el conteo no se acote por
+categoría. 87 tests de las 6 suites de games en verde.

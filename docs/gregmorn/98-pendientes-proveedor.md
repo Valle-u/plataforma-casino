@@ -3,11 +3,15 @@
 > Cosas que necesitan respuesta de ellos (`GH_Support_Dave`). Se escribe en
 > **inglés**, sin saludo: la conversación ya está abierta.
 >
-> Última actualización: 2026-08-29 (tras su respuesta de las 03:54).
+> Última actualización: 2026-08-31 (respondieron 2 y 3; la 1 sigue abierta).
 
 ---
 
 ## 1. Rondas que nunca se cierran (ABIERTO — el más importante)
+
+> **2026-08-31:** pidieron más tiempo para investigarlo bien. Es la respuesta
+> que destraba el punto 2: sin saber cómo cierran una ronda abandonada, no se
+> puede pasar al modelo de acumulación.
 
 **Qué pasa.** Mandan `round_finished: false` en todos los callbacks de una ronda
 y, en algunas, **nunca llega el `true`**. La ronda queda abierta para siempre.
@@ -42,7 +46,7 @@ automático arriesga contar la ronda dos veces.
 
 ---
 
-## 2. Semántica del `roundId` (ABIERTO — confirmar contrato)
+## 2. Semántica del `roundId` (RESPONDIDO — y nos deja mal parados)
 
 Mandan **dos** identificadores distintos y el de arriba no sirve para agrupar:
 
@@ -51,21 +55,53 @@ Mandan **dos** identificadores distintos y el de arriba no sirve para agrupar:
 | `roundId` (nivel superior) | `c271dc8d-ed2e-…` | **UUID distinto en CADA callback** |
 | `roundId` (dentro de `info`) | `1787962756` | **estable** en toda la ronda lógica |
 
-Nuestro código ahora agrupa por el de `info` (ver `resolveRoundExternalId`).
-**Preguntar si ese es el contrato previsto**, porque hoy nos apoyamos en un campo
-que su spec no documenta como identificador de ronda. Si mañana cambian el
-formato de `info`, se nos parte el agrupamiento en silencio.
+Nuestro código agrupa hoy por el de `info` (ver `resolveRoundExternalId`).
 
-También conviene confirmar la lista de valores de `action`: hasta ahora vimos
-`spin`, `reSpin`, `pick`, `freeSpin`, `freeReSpin`.
+**Su respuesta (2026-08-31) desautoriza justamente eso:**
+
+- El `roundId` de nivel superior es **opcional** y depende del proveedor.
+- El de adentro de `info` **no es parte de su contrato**: formato y estabilidad
+  dependen del proveedor y **pueden cambiar sin aviso**.
+- Recomiendan agrupar por `transactionId` + el flag `round_finished`.
+- Los valores de `action` son del proveedor: **no garantizan la lista**.
+
+### El problema con su recomendación, y la lectura que sí funciona
+
+Agrupar por `transactionId` **no agrupa una ronda**: cada acción trae el suyo.
+En la compra de tiradas gratis que les reportamos:
+
+```
+MX1_69929384_14_001916   spin, bet 5000
+MX1_69929384_15_001939   pick
+MX1_69929384_16_001948   freeSpin      (+28 más)
+```
+
+Leído literal, daría una ronda por callback — el bug que veníamos de arreglar.
+
+La lectura que **sí** cierra con todos los datos: *acumular transacciones hasta
+recibir `round_finished: true`*, y tratar todo lo que va desde el cierre
+anterior como una ronda. Funciona con el formato viejo (`_0` false, `_1` true)
+y con la compra (30 callbacks, ninguno true). Se les pidió que lo confirmen.
+
+**Ventaja si confirman**: usa solo campos documentados. Se dejaría de depender
+de `info`, tanto para agrupar como para detectar la compra (`byBonus`).
+
+**Por qué NO se cambió todavía**: con ese modelo, una ronda que nunca cierra se
+traga todo lo que el jugador juegue después. Sin la respuesta al punto 1, el
+cambio sería peor que lo actual — que al menos degrada solo (si `info` cambia,
+`resolveRoundExternalId` cae al campo documentado).
 
 ---
 
-## 3. Rollback en Stage (ABIERTO — desde 2026-08-28)
+## 3. Rollback en Stage (CERRADO — no se puede)
 
-Es **la única parte del camino de la plata nunca ejercitada** contra su sistema
-real. Está implementado y testeado de nuestro lado, pero nunca lo vimos llegar.
-Pedirles que fuercen uno en Stage.
+**Su respuesta (2026-08-31):** no pueden iniciar un rollback de su lado. Solo se
+puede probar en producción, apostando y después anulando.
+
+Se decidió **no insistir**. Consecuencia a tener presente: ese handler se va a
+estrenar con plata real. Cuando llegue el momento, conviene que la primera
+anulación en producción sea una hecha a propósito y mirándola, no una que
+aparezca sola.
 
 ---
 

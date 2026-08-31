@@ -85,6 +85,16 @@ const CATEGORY_DISPLAY_ORDER: GameCategory[] = [
 ];
 const KNOWN_CATEGORIES = new Set<string>(CATEGORY_DISPLAY_ORDER);
 
+/**
+ * Las pestañas del lobby: "Todos", "Destacados" y las categorías reales.
+ *
+ * `featured` no es una categoría del backend — es un filtro — pero vive al
+ * lado de las categorías porque para el jugador es una sección más, no una
+ * forma de ordenar. Antes pesaba dentro del orden "Populares", que terminaba
+ * significando dos cosas a la vez.
+ */
+type LobbyTab = 'all' | 'featured' | GameCategory;
+
 /** Sentinela del chip "Otros" (agrupa los juegos cuyo proveedor no informa
  *  oficial). Nunca choca con ids reales de Palace (positivos). */
 const OTHERS_STUDIO = '__otros__';
@@ -118,7 +128,7 @@ function playersFor(i: number): number {
 }
 
 function GameLobbyContent() {
-  const [tab, setTab] = useState<'all' | GameCategory>('all');
+  const [tab, setTab] = useState<LobbyTab>('all');
   const [studio, setStudio] = useState<string>('all');
   const [sort, setSort] = useState<SortKey>('pop');
   const [search, setSearch] = useState('');
@@ -137,7 +147,9 @@ function GameLobbyContent() {
   // Se valida contra KNOWN_CATEGORIES; valores desconocidos caen a "Todos". Si
   // la categoría no tiene juegos, su tab no aparece y el grid queda vacío.
   useEffect(() => {
-    if (categoryParam && KNOWN_CATEGORIES.has(categoryParam)) {
+    if (categoryParam === 'featured') {
+      setTab('featured');
+    } else if (categoryParam && KNOWN_CATEGORIES.has(categoryParam)) {
       setTab(categoryParam as GameCategory);
     } else {
       setTab('all');
@@ -173,7 +185,9 @@ function GameLobbyContent() {
   //  - global → cuántos juegos tiene cada categoría (para los tabs).
   //  - acotado a la categoría elegida → estudios presentes en esa categoría.
   const globalFacets = useGameFacets();
-  const studioFacets = useGameFacets(tab !== 'all' ? tab : undefined);
+  const studioFacets = useGameFacets(
+    tab !== 'all' && tab !== 'featured' ? tab : undefined,
+  );
 
   // Categorías a mostrar: solo las que tienen juegos, en el orden de display.
   const catCounts = useMemo(() => {
@@ -212,7 +226,8 @@ function GameLobbyContent() {
     studio === OTHERS_STUDIO && studios.some((p) => p.id === OTHERS_STUDIO);
 
   const query = useActiveGames({
-    category: tab !== 'all' ? tab : undefined,
+    category: tab !== 'all' && tab !== 'featured' ? tab : undefined,
+    featuredOnly: tab === 'featured' ? true : undefined,
     studio: studio !== 'all' && !isOthers ? studio : undefined,
     studioNone: isOthers ? true : undefined,
     search: searchDebounced || undefined,
@@ -233,11 +248,12 @@ function GameLobbyContent() {
     } else if (sort === 'new') {
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     } else {
-      // Populares: destacados primero, luego por sortOrder.
-      list.sort((a, b) => {
-        if (a.featured !== b.featured) return a.featured ? -1 : 1;
-        return a.sortOrder - b.sortOrder;
-      });
+      // Populares: el orden curado del catálogo (`sortOrder`). Los destacados
+      // ya NO pesan acá — tienen su propia pestaña. Mezclarlos en el orden
+      // hacía que "Populares" significara dos cosas a la vez y que un juego
+      // destacado apareciera primero aunque el jugador hubiera pedido otro
+      // criterio.
+      list.sort((a, b) => a.sortOrder - b.sortOrder);
     }
     return list;
   }, [games, sort]);
@@ -252,7 +268,7 @@ function GameLobbyContent() {
   }, [query.isLoading, query.isError, total, offset, searchDebounced]);
 
   // Resetear página al cambiar filtros.
-  const handleTabChange = (newTab: 'all' | GameCategory) => {
+  const handleTabChange = (newTab: LobbyTab) => {
     setTab(newTab);
     setPage(0);
     setStudio('all');
@@ -334,6 +350,16 @@ function GameLobbyContent() {
           active={tab === 'all'}
           onClick={() => handleTabChange('all')}
         />
+        {/* Destacados: solo si hay alguno marcado. Una pestaña que lleva a una
+            grilla vacía es peor que no tenerla. */}
+        {(globalFacets.data?.featured ?? 0) > 0 && (
+          <CategoryTab
+            label="Destacados"
+            count={globalFacets.data?.featured}
+            active={tab === 'featured'}
+            onClick={() => handleTabChange('featured')}
+          />
+        )}
         {availableCategories.map((c) => (
           <CategoryTab
             key={c}

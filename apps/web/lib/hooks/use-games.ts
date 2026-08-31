@@ -152,6 +152,8 @@ export interface GameFacets {
   categories: { category: GameCategory; count: number }[];
   /** Estudio ya canonizado. `null` = el proveedor no lo informa (chip "Otros"). */
   studios: { studio: string | null; count: number }[];
+  /** Cuántos destacados hay. 0 → el lobby no muestra la pestaña. */
+  featured: number;
 }
 
 /**

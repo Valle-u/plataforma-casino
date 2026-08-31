@@ -353,6 +353,17 @@ export class GamesService {
     total: number;
     categories: { category: Game['category']; count: number }[];
     studios: { studio: string | null; count: number }[];
+    /**
+     * Cuántos destacados hay en el catálogo.
+     *
+     * El lobby lo usa para decidir si muestra la pestaña "Destacados": si
+     * nadie marcó ninguno, una pestaña que lleva a una grilla vacía es peor
+     * que no tenerla.
+     *
+     * Va SIN el filtro de categoría, igual que `categories`: la pestaña es
+     * hermana de las categorías, no hija de una.
+     */
+    featured: number;
   }> {
     const conditions = [
       eq(games.isActive, true),
@@ -366,10 +377,14 @@ export class GamesService {
     // Los conteos de estudio se acotan a la categoría elegida (así un estudio de
     // slots no aparece con games=0 cuando el jugador está en "Crash"). El
     // conteo por categoría global lo pide el front SIN este filtro.
+    // Snapshot ANTES de acotar por categoría: los destacados se cuentan sobre
+    // el catálogo entero porque su pestaña vive al lado de las categorías.
+    const baseConditions = [...conditions];
     if (opts.category) conditions.push(eq(games.category, opts.category));
     const where = and(...conditions);
+    const featuredWhere = and(...baseConditions, eq(games.featured, true));
 
-    const [cats, studios, totalResult] = await Promise.all([
+    const [cats, studios, totalResult, featuredResult] = await Promise.all([
       db
         .select({
           category: games.category,
@@ -390,12 +405,17 @@ export class GamesService {
         .select({ total: sql<number>`count(*)::int` })
         .from(games)
         .where(where),
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(games)
+        .where(featuredWhere),
     ]);
 
     return {
       total: totalResult[0]?.total ?? 0,
       categories: cats.sort((a, b) => b.count - a.count),
       studios: studios.sort((a, b) => b.count - a.count),
+      featured: featuredResult[0]?.total ?? 0,
     };
   }
 
