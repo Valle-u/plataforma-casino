@@ -14658,15 +14658,31 @@ verificado que todos los caminos que usan cache degraden sin romper.
 
 ### Commits creados
 
-- `<pendiente>` — `fix(health): devolver 503 cuando la API esta degradada`
+- `beb7013` — `fix(health): devolver 503 cuando la API esta degradada`
 
 En `main`, pusheado y deployado.
+
+### Cómo se verificó
+
+No alcanza con que las alertas estén configuradas: hace falta que el mail
+salga. Se probó la cadena entera prendiendo `SENTRY_BOOT_PING`, que hizo
+reaparecer un issue ya resuelto — el workflow **"API — issue nuevo o
+regresión" marcó `lastTriggered`**, o sea que disparó de verdad. Después se
+apagó el flag y se resolvió el issue.
+
+El monitor de uptime ya venía chequeando: **11 chequeos, 0 fallidos**.
+
+⚠️ **Dato**: el chequeo tarda ~986ms de promedio. No es problema (el timeout
+es 10s) pero es alto para un endpoint que hace un `SELECT 1` y dos ops de
+Redis. Puede ser la distancia del checker de Sentry al VPS, o latencia real.
+Si alguna vez hay que investigar performance, ahí hay una medición gratis y
+continua.
 
 ### Estado al cerrar
 
 - **Bloqueos**: ninguno.
-- Alertas activas y verificadas por API. 0 issues sin resolver en ambos
-  proyectos.
+- Alertas activas y verificadas de punta a punta. 0 issues sin resolver en
+  ambos proyectos.
 
 ### Notas para próximo agente
 
