@@ -14356,3 +14356,92 @@ En `main`, pusheados y deployados.
   viejo. Chequear también que el título coincida con el commit.
 - Sigue en pie para producción: credenciales de Prod del proveedor, sin
   monitoreo, backups nunca restaurados de prueba.
+
+---
+
+## 2026-09-01 15:40 AR — Claude (Opus 5) · addendum 7
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+Se hizo el modelo de acumulación, que era lo que quedaba destrabado tras la
+respuesta del proveedor.
+
+### Qué hicimos
+
+Hasta ahora la ronda se identificaba por el `roundId` que viaja **dentro de
+`info`**, un query-string con el estado del juego. Funcionaba, pero el proveedor
+avisó que ese campo **no es parte de su contrato**.
+
+Ahora se busca la **ronda abierta de la sesión** y se acumula ahí; si no hay, se
+abre una nueva con `round_external_id` = el `transactionId` de ese callback
+(documentado y único). Todo hasta el `round_finished: true`.
+
+### Tres cosas que el cambio traía y no estaban en el plan
+
+Ninguna estaba anotada en el doc; aparecieron al mirar el código de cerca, y
+cada una habría sido un bug si se implementaba el modelo "a secas".
+
+1. **Una ronda cancelada no manda `round_finished: true`, manda un rollback.**
+   Sin marcarla, quedaba abierta y el próximo callback del jugador se acumulaba
+   encima. `markRoundRolledBack` ahora busca por `transactionId`, que calza solo:
+   el rollback repite el del bet y el bet es el primer callback de la ronda. Si
+   no matchea **avisa en vez de inventar un fallback** — marcar la ronda
+   equivocada como anulada la sacaría de las comisiones siendo válida, que es
+   peor que no marcar ninguna.
+2. **Se perdió el índice único como protección.** `(session_id,
+   round_external_id)` impedía que dos callbacks simultáneos crearan dos rondas.
+   Con acumulación ya no aplica, y **no había ningún lock** en ese camino. Se
+   agregó una transacción con la sesión bloqueada (`FOR UPDATE`).
+3. **Corte de 24h** (la opción B que eligió Uriel). Si el proveedor deja una
+   ronda abierta sin mandar ni el `true` ni el rollback, sin corte se tragaría
+   TODO lo que el jugador juegue después. Simplificación sobre lo propuesto: **no
+   hizo falta la columna nueva** que se había planteado — un tope sobre
+   `placed_at` cubre el mismo caso, porque una ronda ACTIVA nunca dura un día.
+
+### Decisiones tomadas
+
+- **El id de la ronda pasa a ser el `transactionId` del primer callback.** Es el
+  único identificador documentado, único, y disponible en el momento de crear la
+  ronda.
+- **`byBonus` se queda en `info`.** El doc decía que este cambio nos sacaba de
+  `info` "tanto para agrupar como para detectar la compra". Es cierto sólo para
+  agrupar: **no hay campo documentado que distinga una compra de tiradas de un
+  giro común**. Degrada solo, como ya estaba anotado.
+- **Se borraron `normalizeRoundId` y `resolveRoundExternalId`**, que quedaron
+  muertas, dejando una nota histórica en su lugar: su doc argumentaba a favor
+  del modelo que acabábamos de abandonar y habría confundido al próximo.
+
+### Commits creados
+
+- `4ba5d0b` — `feat(gregmorn): agrupar las rondas por acumulacion, sin depender de "info"`
+- `4e7eb30` — `docs(gregmorn): modelo de acumulacion hecho + borrador de respuesta`
+
+En `main`, pusheados y deployados.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno técnico.
+- Verificado contra Postgres real reproduciendo la **secuencia REAL documentada**
+  (la compra de tiradas de `maggie`): 30 callbacks, ninguno final hasta el
+  último → **UNA ronda**, bet 5000, win 260, `settled`, `bonus_buy`. Más: dos
+  giros sueltos dan dos rondas, el formato viejo da una, el corte de 24h abre una
+  nueva, y el rollback marca la ronda y libera la sesión. 5 de 5.
+- Las tres preguntas al proveedor quedaron cerradas en
+  `docs/gregmorn/98-pendientes-proveedor.md`, con el borrador de la respuesta.
+
+### Notas para próximo agente
+
+- ⚠️ **El corte de 24h y el umbral de 10 días de la reconciliación son piezas del
+  MISMO diseño.** El de 24h decide cuándo se deja de acumular; el de 10 días,
+  cuándo se cierra una ronda que el proveedor nunca resolvió. Tocar uno sin
+  entender el otro rompe el conjunto.
+- ⚠️ **El lock de sesión no es decorativo.** Sin él, dos callbacks simultáneos
+  crean dos rondas — el índice único ya no protege.
+- **`byBonus` sigue dependiendo de un campo no documentado.** Si el proveedor lo
+  cambia, las compras se clasifican como `free_spins`. Es degradar, no romper, y
+  no hay alternativa documentada.
+- **Falta enviar el mensaje** al proveedor (borrador listo en el doc). No lleva
+  preguntas nuevas.
+- Sigue en pie para producción: credenciales de Prod del proveedor, sin
+  monitoreo, backups nunca restaurados de prueba, y deployar corta sesiones.
