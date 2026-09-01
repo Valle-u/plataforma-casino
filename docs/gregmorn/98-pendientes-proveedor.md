@@ -316,3 +316,122 @@ nuestra parte.
 Un deploy deja la API en 502 unos segundos y no hay monitoreo para descartarlo
 en la ventana de esas capturas. Si el problema persiste en su Prod, ese es el
 primer lugar donde mirar antes de volver a escribirles.
+
+---
+
+## Borrador del mensaje (2026-09-01, segundo envío — evidencia medida)
+
+> Va como **continuación** del mensaje anterior, no lo reemplaza. La diferencia
+> es que ahora todo está medido contra producción: horas, ids y montos. Las
+> cuatro preguntas de antes siguen en pie; esto les agrega los datos.
+>
+> Se pasó a registrar cada `getBalance` (tabla `gregmorn_balance_checks`)
+> justamente para poder responder el punto 1. Media hora después ya había prueba.
+
+```
+Follow-up to our last message. We instrumented our side and now have measured
+data on the four points, so here it is rather than more description.
+
+1. The balance our players see is not the balance we return.
+
+   A player opened 6 Jokers (greece:700:30163) twice tonight. You called
+   getBalance both times and we answered 2066.01 ARS with a success result:
+
+     23:09:16 UTC  getBalance  login usertest_1  ->  2066.01  ok
+     23:09:36 UTC  getBalance  login usertest_1  ->  2066.01  ok
+
+   The player's real wallet balance was 2066.01. The game displayed
+   "CREDITO 0,00 ARS". Screenshot attached.
+
+   So the balance is lost between our response and what the game renders. We
+   log every getBalance now, with the session id, so we can give you exact
+   timestamps for any case you want to look at.
+
+   Two related notes: your getBalance callback does not include gameId, only
+   the session id — is that intended? And with an empty balance the game's own
+   engine then throws:
+
+     Uncaught TypeError: Cannot read properties of undefined (reading 'length')
+       at VS_Reel.GetReelScreenSymbols
+       at VS_Reel.GetNextSymbol
+       at VS_Reel.SymbolLeftTheReel
+     (build.1757704797000.js)
+
+   The reels render empty before it crashes.
+
+2. The ip we send is not the one in your token.
+
+   You asked us to send the player IP and we do. For that same 23:09 launch we
+   sent:
+
+     ip = 2803:9800:9013:4d8a:4857:220b:1d3d:8611   (real player, LACNIC)
+
+   and the mgckey you returned for it contains:
+
+     "UserIp": "157.180.34.113"
+
+   That is the same fixed address we see for every player, on every launch,
+   before and after we started sending the field. Is the ip parameter applied
+   at all? And if it is: we send IPv6, since that is what our players actually
+   have. Does your side accept it?
+
+3. Launch token lifetime — confirmed, and there are two formats.
+
+   Every greece:* launch returns the mgckey as a JWT with exp = iat + 100.
+   Fresh samples tonight at 21:45:00, 21:45:56, 21:46:35 and 22:54:02 UTC: all
+   exactly 100 seconds.
+
+   But black:* launches return a different shape entirely —
+   mgckey=70120106_ff1e9ee6b941cc437e58f5b192520bef — with no visible expiry.
+   Both fail for us. What is the actual lifetime of each?
+
+4. The same game accepts bets and then stops, with nothing changing on our side.
+
+   Sweet Bonanza (black:pragmatic:658), same player, same day:
+
+     21:41 UTC   21 callbacks, 11 rounds played, no errors
+     22:21 UTC   two launches, zero callbacks
+
+   6 Jokers (greece:700:30163) has 254 callbacks in its history and produced
+   zero tonight at 22:54 and 23:09.
+
+   In every failing case our openGame returned 200 with a URL, and we received
+   no callback of any kind. Our error tracking recorded nothing on our side in
+   the whole window.
+
+5. Three games have never accepted a single bet.
+
+   Across our whole catalog history, these were opened repeatedly and never
+   produced one callback:
+
+     black:igt:275   Cleopatra MegaJackpots   7 launches, 0 bets
+     black:igt:273   Masques Of San Marco     3 launches, 0 bets
+     black:igt:271   LilLady                  2 launches, 0 bets
+
+   That is every IGT title we have: 12 launches, zero bets, ever. Others in the
+   same situation are greece:700:30022 (Shining Hot 100, 5 launches),
+   greece:700:30250 (Jokers Jewels Cash, 3) and black:microgaming:327
+   (Sweet Harvest, 3).
+
+   Is IGT enabled for our hall? Should these titles be in getUserGames at all?
+
+We are not blocked on any of this to keep testing, but we cannot go to
+production while a player can open a game and see zero balance. Happy to run
+any specific test you want on our side — we can now answer with timestamps
+instead of impressions.
+```
+
+**Por qué así**: cada punto abre con el dato y después la pregunta, no al revés.
+Los puntos 2, 3 y 4 son los mismos que ya se les preguntaron — lo que cambia es
+que ahora traen la medición, así que no se puede contestar "no lo vemos". El
+punto 1 es nuevo y es el más fuerte: es la única forma de que un jugador vea
+saldo cero teniendo plata.
+
+**Lo que NO se les dice**: sigue sin decirse que parte de la inestabilidad podría
+ser nuestra. Ahora hay bastante más respaldo para no decirlo —Sentry en cero,
+saldo correcto registrado, IP correcta, cero rondas trabadas— pero el argumento
+honesto sigue siendo el mismo: nuestro `openGame` devuelve 200 y no llega ningún
+callback.
+
+**Si Telegram lo corta**: mandar los puntos 1 y 2 primero (son los decisivos) y
+el resto en un segundo mensaje.
