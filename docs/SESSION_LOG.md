@@ -14751,7 +14751,9 @@ Quedó dicho en la conversación y vale anotarlo:
 
 ### Commits creados
 
-- `<pendiente>` — `feat(monitoring): avisar a Sentry cuando el cron cierra rondas`
+- `db99856` — `feat(monitoring): avisar a Sentry cuando el cron cierra rondas`
+
+En `main`, pusheado y deployado.
 
 ### Notas para próximo agente
 
