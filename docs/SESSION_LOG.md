@@ -14765,3 +14765,88 @@ En `main`, pusheado y deployado.
 - **Sigue sin verificarse el arreglo de la IP del jugador** (addendum 8). El
   monitoreo no lo verifica: hay que abrir un juego y decodificar el JWT del log
   de `openGame`.
+
+---
+
+## 2026-09-01 19:15 AR — Claude (Opus 5) · addendum 12 · **cierre de sesión**
+
+Consolidación de los addenda 9, 10 y 11, que son narrativos y cada uno cubre
+sólo su pedazo. Esto es el estado real al cerrar.
+
+### Qué se hizo hoy, en una línea
+
+Se prendió el monitoreo y se lo verificó de punta a punta. En el camino
+aparecieron tres cosas rotas que nadie había notado, y una de ellas habría hecho
+inútil todo lo demás.
+
+### Estado del monitoreo
+
+| | Estado |
+|---|---|
+| Errores de API (`casino-api`) | ✅ llegando, verificado |
+| Errores de web (`casino-web`) | ✅ llegando, verificado |
+| Traces (HTTP, queries, Redis) | ✅ funcionando — **estaban rotos y no se sabía** |
+| Alertas por mail | ✅ 4 activas, **disparo verificado** |
+| Monitor de uptime de la API | ✅ cada 60s desde afuera del VPS |
+| Uptime de la web | ❌ el plan gratis incluye 1 monitor y lo usa la API |
+| CPU/memoria del host | ❌ sigue sin existir |
+
+### Lo que estaba roto y no se notaba
+
+1. **Sentry arrancaba tarde**: los traces no existían, pero como los errores sí
+   llegaban, el panel parecía sano. Ver DEVLOG.
+2. **`/health` devolvía 200 con la base caída**: configurar el monitor sin
+   arreglar esto habría dado cobertura falsa. Ver DEVLOG.
+3. **`logger.warn` no llega a Sentry**: el cron podía cerrar rondas en masa —
+   plata que entra a la base de comisión — sin que nadie se enterara. Ver DEVLOG.
+
+### Commits de la sesión (todos en `main`, pusheados y deployados)
+
+| Commit | Qué |
+|---|---|
+| `814a3b7` | `fix(monitoring)` — iniciar Sentry antes de cargar lo que instrumenta |
+| `7b754e6` | `docs(monitoring)` — §18 de escalabilidad + addendum 9 |
+| `ac20eef` | `docs(deploy)` — avisar que autoDeploy rebuildea hasta con docs |
+| `beb7013` | `fix(health)` — devolver 503 cuando la API está degradada |
+| `4a597e3` | `docs(session-log)` — addendum 10 |
+| `db99856` | `feat(monitoring)` — avisar a Sentry cuando el cron cierra rondas |
+| `d816193` | `docs(session-log)` — addendum 11 |
+
+### Qué viene — pendientes para abrir a producción
+
+Por orden de riesgo:
+
+1. ⚠️ **Credenciales de Prod del proveedor.** Seguimos contra Stage. Es el único
+   bloqueante duro para abrir.
+2. ⚠️ **Verificar el arreglo de la IP del jugador** (addendum 8). Se deployó pero
+   **nunca se comprobó**: hay que abrir un juego y decodificar el JWT del log de
+   `openGame` — el `UserIp` tiene que ser la IP del jugador, no
+   `157.180.34.113`. El monitoreo no lo verifica por vos.
+3. ⚠️ **Probar una restauración de backup.** Hay dos backups diarios a R2 (06:00,
+   se guardan 14) pero **nunca se restauró ninguno**. Un backup no probado no es
+   un backup.
+4. ⚠️ **El plan de Sentry es gratis: 5.000 errores/mes.** Para un casino en
+   producción es poco. Un loop no sólo rompe: consume la cuota y deja ciego el
+   resto del mes.
+5. **Sacar los builds del VPS de producción**, o al menos no deployar en horario
+   pico. `autoDeploy: true` en las dos apps: cualquier push a `main` las
+   rebuildea, incluso uno que toque sólo `docs/`.
+6. **Las alertas llegan sólo al mail de Uriel** (`maxMembers: 1` en el plan). No
+   hay Telegram ni Slack conectados.
+
+### Para el próximo agente
+
+- **Empezá por el addendum 8** si el tema es el proveedor: ahí está el
+  diagnóstico de los fallos intermitentes y qué se les preguntó.
+- **Lo que el monitoreo NO resuelve del proveedor**: el juego corre en un iframe
+  de su dominio. Nuestro Sentry del browser no puede ver adentro — es otro
+  origen. El frame en blanco y sus carteles de error siguen invisibles. La falla
+  de ellos vive justo donde nuestro monitoreo no llega. Lo que sí ganamos es
+  medir cuánto tardan (spans `http.client`) y poder descartar que sea nuestro.
+- ⚠️ **La API vieja de reglas de Sentry murió en el medio de esta sesión**
+  (`410 "This API no longer exists"`). Lo vigente es
+  `/organizations/{org}/workflows/`, atado a **detectores**, no a proyectos.
+  Documentado en §18.7 de escalabilidad.
+- **Cómo verificar el monitoreo sin adivinar**: §18.3 de escalabilidad tiene los
+  tres chequeos (boot ping para la API, consola del browser para la web, query
+  de spans para los traces).

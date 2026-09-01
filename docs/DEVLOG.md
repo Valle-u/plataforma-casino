@@ -9078,3 +9078,107 @@ contenido y se borra a mano.
 migración. Si el commit llegó a producción, hay que escribir la migración
 inversa Y tener en cuenta que el `created_at` de la base quedó adelantado
 respecto del repo.
+
+## 2026-09-01 — Sentry arrancaba tarde y fallaba a medias, en silencio
+
+El código de Sentry estaba commiteado y el panel mostraba errores. Parecía sano.
+No lo estaba: faltaba la mitad y no había forma de notarlo mirando.
+
+El `Sentry.init()` vivía en el cuerpo de `main.ts`. **El cuerpo de un módulo
+corre después de que se evaluaron todos sus `import`** — así funciona ESM, los
+imports se hoistean. Para cuando Sentry arrancaba, Express, `pg` e `ioredis` ya
+estaban cargados. La auto-instrumentación de OpenTelemetry parchea los módulos
+**en el momento en que se los requiere**: llegando después, no parcheaba nada.
+
+Lo insidioso es cómo falla. La captura de errores **sí andaba**, porque el
+filtro global llama `Sentry.captureException` a mano y eso no depende de ningún
+parcheo. Lo que no existía era todo lo automático: traces de HTTP, de queries,
+de Redis. O sea que el panel se llenaba de errores y daba la impresión de estar
+funcionando, mientras la mitad del producto no reportaba nada.
+
+**Arreglo**: el init se mudó a `apps/api/src/instrument.ts` y se importa primero
+de todo en `main.ts`. Es lo que documenta Sentry para NestJS y ahora se entiende
+por qué insisten tanto. Faltaba además `SentryModule.forRoot()` en el
+`AppModule`.
+
+**Cómo se confirmó**: no alcanzaba con leer el código. Se generó tráfico y se
+consultó la API de Sentry por spans — aparecieron transacciones con nombre de
+ruta (`GET /tenant/wallet/me`, etc.), que es justo lo que antes no llegaba.
+
+**Implicaciones**: se sumó `SENTRY_BOOT_PING`, apagado por default. Prendido, el
+arranque manda un mensaje de prueba. Existe porque un sistema de alertas falla
+en silencio: si el DSN quedó mal o el contenedor no tiene salida a internet, no
+te enterás hasta el día que pasa algo y no llega nada.
+
+**Lección general**: "el monitoreo está configurado" y "el monitoreo funciona"
+son dos afirmaciones distintas, y la primera no implica la segunda. Verificar
+que un evento llega de punta a punta cuesta cinco minutos y es la única prueba
+que vale.
+
+---
+
+## 2026-09-01 — El health check mentía, y eso hacía inútil al monitor de uptime
+
+Al configurar el monitor de uptime apareció que `/health` devolvía **HTTP 200
+aunque el estado fuera `degraded`**. La base de datos caída sólo se veía en el
+body, como `"db":"error"`.
+
+Un monitor externo mira el status code. Habría reportado "todo bien" con la base
+en llamas — **cobertura falsa, que es peor que no tener monitor**: con nada, al
+menos sabés que no sabés.
+
+**Decisión**: `/health` ahora devuelve 503 cuando el estado es `degraded`. El
+endpoint ya calculaba ese estado; lo único que faltaba era que el código HTTP lo
+reflejara.
+
+**Se verificó antes de tocarlo** que nada dependa del status code actual:
+`healthCheckSwarm` es `null` en Dokploy, no hay `HEALTHCHECK` en el Dockerfile
+de la API, y el `railway.json` con `healthcheckPath` es legacy de una migración
+anterior. Si hubiera existido un healthcheck de contenedor, un blip de la DB
+habría pasado de "aviso" a "Docker mata el contenedor" — bastante peor.
+
+**Alternativa considerada y descartada**: devolver 503 sólo cuando cae la DB, y
+dejar Redis en 200. El argumento a favor es que Redis es cache y la app sigue
+sirviendo. Se descartó porque **no está verificado que todos los caminos que
+usan cache degraden sin romper** — el cache de catálogo sí atrapa los errores,
+pero no se auditó el resto. Preferimos que avise de más a enterarnos por un
+jugador. Queda anotado en el comentario de `app.controller.ts` por si algún día
+se audita y se quiere afinar.
+
+**Lección general**: antes de configurar una alerta, preguntarse qué mira
+exactamente. Una alerta que no puede fallar tampoco puede avisar.
+
+---
+
+## 2026-09-01 — Loguear no es avisar (y por qué el mensaje va fijo)
+
+A Sentry sólo llegan **los 5xx** (vía el filtro global) y **lo que se captura a
+mano**. `logger.warn` y `logger.error` no llegan a ningún lado más que a los
+logs del contenedor — no hay integración de logs conectada.
+
+Eso dejaba dos cosas de plata invisibles:
+
+1. **El cron de reconciliación cerrando rondas.** Se loguea como WARNING, y con
+   razón: cerrar una ronda significa que el proveedor no la resolvió en diez
+   días, ni cerrándola ni reembolsándola. Cada ronda cerrada entra a la base de
+   comisión. Podía pasar en masa y nadie se enteraba.
+2. **La reconciliación fallando para un tenant.** El `catch` del cron existe
+   para que un tenant roto no frene a los demás — decisión correcta — pero se
+   tragaba el error. Un job de plata que falla en silencio es peor que uno que
+   se cae: las rondas nunca se reconcilian y todo parece normal.
+
+Los dos se capturan ahora explícitamente, con tag de tenant.
+
+**Decisión no obvia: el mensaje de `captureMessage` es fijo.** La tentación es
+escribir `"Se cerraron 7 rondas por $1.234"`, porque se lee mejor. Pero Sentry
+agrupa por mensaje: cada corrida crearía un issue nuevo. Eso rompe el
+agrupamiento, repite la alerta por lo mismo una y otra vez, y con **5.000
+eventos/mes** del plan gratis abre un agujero de cuota — y quedarse sin cuota
+significa quedarse ciego el resto del mes. Los números van en `setContext`, que
+es donde se pueden mirar sin ensuciar nada.
+
+**Implicaciones**: `runForTenant` de la reconciliación recibe ahora el
+`tenantSlug`, siguiendo lo que ya hacía el dispatcher de notificaciones.
+
+**Lección general**: si agregás un job que toca plata, loguearlo no alcanza.
+Y cuando lo captures, pensá primero cómo va a agrupar.
