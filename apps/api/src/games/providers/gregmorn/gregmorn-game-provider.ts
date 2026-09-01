@@ -113,6 +113,9 @@ export class GregmornGameProvider implements IGameProvider {
       exitUrl,
       ...(callbackUrl ? { callbackUrl } : {}),
       language,
+      // Su API acepta `ip` y algunos estudios la exigen. Sin esto ellos
+      // completaban `UserIp` con una IP de datacenter, igual para todos.
+      ...(params.playerIp ? { ip: params.playerIp } : {}),
       // Juego real. El modo demo (`demo: '1'`) no dispara callbacks y se usa
       // solo para validar auth/firma/launch en Stage (Fase 7); el lifecycle de
       // sesión de la plataforma no lo expone.

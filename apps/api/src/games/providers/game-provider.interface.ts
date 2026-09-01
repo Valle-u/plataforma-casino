@@ -23,6 +23,18 @@ export interface LaunchParams {
   userId: string;
   /** Currency de la sesión (MVP: 'CHIPS'). */
   currency: string;
+  /**
+   * IP real del jugador, para los proveedores que la piden.
+   *
+   * Sale de `x-forwarded-for` (primer valor), o sea la IP del cliente
+   * detrás de Cloudflare y Traefik. `null` si no se pudo resolver.
+   *
+   * Sin esto, Gregmorn completaba `UserIp` con una IP de datacenter — la
+   * MISMA para todos los jugadores. Un estudio que haga control geográfico
+   * o antifraude sobre ese campo ve a todo el casino saliendo del mismo
+   * lugar.
+   */
+  playerIp?: string | null;
 }
 
 export interface LaunchResult {

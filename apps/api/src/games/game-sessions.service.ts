@@ -79,6 +79,9 @@ export class GameSessionsService {
         game: params.game,
         userId: params.userId,
         currency: 'CHIPS',
+        // Ya la teníamos (se guarda en `opened_from_ip`) pero no llegaba al
+        // proveedor. Ver `LaunchParams.playerIp`.
+        playerIp: params.ip ?? null,
       },
       db,
     );
