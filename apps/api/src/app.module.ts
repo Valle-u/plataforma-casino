@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { ScheduleModule } from '@nestjs/schedule';
 import { validateEnv } from './config/env.validation';
 import { AppController } from './app.controller';
@@ -58,6 +59,11 @@ import { CRM_ENABLED } from './chat/chat.flag';
 
 @Module({
   imports: [
+    // Engancha Sentry al ciclo de vida de Nest (spans por request, contexto
+    // del controller en los errores). El `Sentry.init()` en sí ya corrió en
+    // instrument.ts; sin DSN esto queda en no-op.
+    SentryModule.forRoot(),
+
     // ConfigModule lee variables de entorno desde .env.local y .env.
     // 'isGlobal: true' = está disponible en cualquier módulo sin reimportar.
     ConfigModule.forRoot({
