@@ -68,9 +68,15 @@ ventana no quedan ni logs ni eventos — Sentry se prendió 14 horas después.
   procesaron perfecto, así que la API estaba viva y respondiendo.
 - **En contra**: `getBalance` es otro camino de código y podría fallar solo.
 
-⚠️ **Es el agujero que hay que tapar.** Registrar el `getBalance` —aunque sea un
-contador— convierte el `CRÉDITO 0,00` en una pregunta con respuesta. Hoy es la
-palabra de ellos contra la nuestra.
+✅ **TAPADO** (2026-09-01, después del tercer reporte). Cada `getBalance` deja
+una fila en `gregmorn_balance_checks` con el saldo que contestamos. De ahora en
+más el `CRÉDITO 0,00` es una pregunta con respuesta: o consta que devolvimos el
+saldo correcto, o consta que fallamos.
+
+⚠️ Y había una hipótesis concreta de bug propio que ahora se puede verificar:
+`handleGetBalance` devuelve `UNKNOWN_PLAYER` si no resuelve al jugador por su
+`login`, y en ese caso el juego se queda sin saldo — **exactamente el síntoma**
+**reportado**. Ese caso ahora además se loguea como WARNING.
 
 ## 5. Hallazgos nuestros que salieron de paso
 
@@ -121,8 +127,7 @@ mensaje al proveedor: las dos líneas del catálogo no son sólo ids duplicados,
 
 ## 6. Lo que queda pendiente
 
-- ⚠️ **Registrar el `getBalance`** (§4). Es lo único que falta para poder
-  responder el `CRÉDITO 0,00` con datos.
+- ✅ ~~Registrar el `getBalance`~~ — hecho, ver §4.
 - ⚠️ **Palace tiene el mismo problema de sesiones** que se arregló en Gregmorn
   (§5.2): su callback también arma `palace:<account>:<game_code>` y el launch
   guarda `account`. Tiene 727 callbacks, así que no es teórico. No se tocó acá

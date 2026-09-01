@@ -2,7 +2,8 @@
  * GregmornCallbackService — procesa los callbacks seamless de Gregmorn Hub.
  *
  * Tres comandos (`cmd`):
- *   - getBalance → devuelve el saldo jugable. Solo lectura.
+ *   - getBalance → devuelve el saldo jugable. Solo lectura, pero **se deja
+ *     registro** en `gregmorn_balance_checks` (ver `handleGetBalance`).
  *   - writeBet   → aplica bet (burn) y/o win (mint, con tope E7). Puede traer
  *                  las dos cosas en el MISMO callback.
  *   - rollback   → devuelve la apuesta de una ronda anulada. Una sola vez.
@@ -30,6 +31,7 @@ import {
   gameRounds,
   gameSessions,
   games,
+  gregmornBalanceChecks,
   gregmornTransactions,
   users,
   wallets,
@@ -130,10 +132,61 @@ export class GregmornCallbackService {
   ): Promise<GregmornCallbackResult> {
     const login = body.login ?? '';
     const ctx = await this.resolveContext(db, login);
+
     // Sin jugador NO se devuelve 0: eso sería inventar un saldo. Fail → ellos
     // no arrancan el spin.
-    if (!ctx) return fail(login, currency, 'UNKNOWN_PLAYER');
-    return ok(login, currency, Number(this.jugable(ctx.wallet)));
+    if (!ctx) {
+      await this.registrarBalance(db, body, login, null, null, 'unknown_player');
+      // WARNING: el juego se queda sin saldo y el jugador ve `CRÉDITO 0,00`.
+      // Si esto aparece, el problema es NUESTRO.
+      this.logger.warn(
+        `Gregmorn getBalance: no se pudo resolver el jugador \`${login}\` ` +
+          `(game=${body.gameId ?? '?'}). Le contestamos UNKNOWN_PLAYER.`,
+      );
+      return fail(login, currency, 'UNKNOWN_PLAYER');
+    }
+
+    const saldo = Number(this.jugable(ctx.wallet));
+    await this.registrarBalance(db, body, login, ctx.userId, saldo, 'ok');
+    return ok(login, currency, saldo);
+  }
+
+  /**
+   * Deja constancia de qué saldo le contestamos al proveedor.
+   *
+   * Existe por un motivo concreto: los jugadores reportaron tres veces el
+   * 2026-09-01 que el juego abría con `CRÉDITO 0,00` teniendo saldo real, y
+   * las tres veces fue imposible saber si la culpa era nuestra. El
+   * `getBalance` no mueve plata, así que no iba a `gregmorn_transactions`, y
+   * los logs del contenedor se podan con cada deploy.
+   *
+   * **Nunca puede romper el callback.** Es un registro de diagnóstico: si el
+   * insert falla, se avisa y se sigue. Que se caiga una apuesta por no poder
+   * escribir una fila de debug sería un pésimo negocio.
+   */
+  private async registrarBalance(
+    db: TenantDb,
+    body: GregmornCallbackBody,
+    login: string,
+    userId: string | null,
+    balance: number | null,
+    result: 'ok' | 'unknown_player',
+  ): Promise<void> {
+    try {
+      await db.insert(gregmornBalanceChecks).values({
+        login,
+        userId,
+        sessionId: body.sessionid ?? null,
+        gameId: body.gameId ?? null,
+        balance: balance === null ? null : balance.toFixed(2),
+        result,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo registrar el getBalance de \`${login}\`: ` +
+          `${(err as Error).message}`,
+      );
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────
