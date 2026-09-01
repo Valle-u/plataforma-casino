@@ -14253,3 +14253,106 @@ En `main`, pusheado y deployado.
   auditoría de quién las cerró, aviso si el criterio fue agresivo, y freno de
   liquidación. **Nada de esto depende de que Gregmorn conteste** — pero sigue
   siendo un parche del síntoma, y su respuesta sigue pendiente.
+
+---
+
+## 2026-09-01 14:55 AR — Claude (Opus 5) · addendum 6
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+**Contestó el proveedor las tres preguntas, y la respuesta a la 1 invalidó lo
+que habíamos construido el día anterior.**
+
+### Lo que contestaron
+
+**1. Rondas que no cierran.** Una ronda abierta **no está rota: está
+esperando**. Si el jugador abandona a mitad de un bonus, **retienen la sesión de
+su lado hasta que vuelva** — **de un día a una semana**, sin timeout único
+(depende del proveedor del juego). Si se vence la retención sin que vuelva, **la
+ronda se cancela y se emite un reembolso**.
+
+Toda ronda se resuelve sola: o llega el `round_finished: true`, o llega un
+`rollback` que ya marcamos `rolled_back` y el motor de comisiones excluye.
+
+Confirmaron además que **no existe endpoint para consultar el estado de una
+ronda**. No era un hueco nuestro.
+
+**2. `roundId`.** Confirmaron que el modelo de acumulación (juntar hasta el
+`round_finished: true`) es la lectura correcta de su recomendación y que sólo
+usa campos documentados.
+
+**3. Rollback.** Entendido de su lado; se ejerce al pasar a Prod.
+
+### El problema que eso destapó
+
+La reconciliación del addendum 4 cerraba las rondas a las **2 horas**. Con la
+respuesta en la mano, eso estaba mal de dos formas:
+
+- **Podía hacer pagar comisión sobre plata reembolsada.** Cerrar una ronda la
+  mete en la base de comisión; si esa ronda terminaba reembolsada cinco días
+  después, ya se le había pagado al operador sobre plata que volvió al jugador.
+- **Dejaba inútil el freno del addendum 5.** El freno aborta la liquidación si
+  el período tiene rondas abiertas, pero nunca se disparaba: este job ya las
+  había cerrado — justo las que todavía podían revertirse. Los dos cambios que
+  hice el mismo día trabajaban uno contra el otro.
+
+### Qué se hizo
+
+**Nada se cierra antes de `MIN_AGE_DAYS` (10 días)**, por encima del máximo de
+una semana que declararon. Por debajo el sistema espera, que es lo correcto, y
+el freno de liquidación hace su trabajo. Cerrar una ronda pasó a ser **la
+excepción** — significa que no la resolvieron ni cerrándola ni reembolsándola en
+diez días — así que se loguea como **WARNING**, no como info.
+
+Las reglas se reordenaron **de evidencia más fuerte a más débil**, para que cada
+ronda quede marcada con la mejor razón que la explica: `later_settled_round`
+(dato de ELLOS) antes que `session_closed` / `session_expired` (datos nuestros,
+que no cancelan el bonus que ellos retienen). La de sola antigüedad quedó
+apagada por defecto.
+
+La expiración de sesiones se mantiene a 2h pero **sólo como higiene de datos**:
+ya no cierra rondas. Se verificó que es seguro — el callback busca la sesión sin
+filtrar por estado, así que si el jugador vuelve se reutiliza la misma y no se
+duplican rondas.
+
+El cron pasó de cada 10 minutos a **cada hora**: nada se cierra antes de 10 días.
+
+### Commits creados
+
+- `cc0dd58` — `fix(games): no cerrar rondas que el proveedor todavia puede reembolsar`
+- `1da4e4a` — `docs(gregmorn): las tres preguntas al proveedor, respondidas`
+
+En `main`, pusheados y deployados.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno técnico.
+- Verificado en producción: `schedule="0 * * * *" minAgeDays=10 idleHours=2
+  sinEvidencia=no`, migraciones al día, sin errores.
+- Verificado contra Postgres real: **una ronda de 3 días en sesión abandonada ya
+  no se toca** (la regresión que motivó el cambio), las de 15 días se cierran con
+  la razón correcta según la evidencia, la de sola antigüedad respeta el flag en
+  ambos estados, y es idempotente. 7 de 7.
+
+### Notas para próximo agente
+
+- ⚠️ **NO bajar `ROUNDS_RECON_MIN_AGE_DAYS`.** El motivo está escrito en el
+  encabezado de `RoundsReconciliationService` y en
+  `docs/gregmorn/98-pendientes-proveedor.md §1`: por debajo de la retención del
+  proveedor se cierran rondas que todavía pueden terminar reembolsadas, y eso
+  hace pagar comisión sobre plata devuelta.
+- **El próximo paso natural quedó destrabado**: pasar al modelo de acumulación
+  por `round_finished` (pregunta 2). Ya no depende de nada de ellos. No se hizo
+  en esta sesión porque es otro cambio en el camino de la plata.
+- ⚠️ **Deployar corta sesiones, con evidencia.** Dos deploys seguidos hicieron
+  que los contenedores se solaparan y la API devolvió **502** unos segundos.
+  Hasta ahora "deployar degrada el casino" era una inferencia sobre el CPU;
+  ahora hay un error visible para el jugador. No deployar en horario pico.
+- ⚠️ **Cuidado al esperar un deploy por la API de Dokploy.** El registro del
+  deploy nuevo tarda un par de segundos en crearse: un loop que sólo mira
+  `status !== 'running'` ve el `done` del deploy ANTERIOR y da por terminado algo
+  que ni empezó. Pasó en esta sesión y casi doy por verificado un contenedor
+  viejo. Chequear también que el título coincida con el commit.
+- Sigue en pie para producción: credenciales de Prod del proveedor, sin
+  monitoreo, backups nunca restaurados de prueba.
