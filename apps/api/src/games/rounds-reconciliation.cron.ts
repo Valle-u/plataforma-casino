@@ -1,21 +1,23 @@
 /**
- * RoundsReconciliationCron — corre el cierre de rondas huérfanas en todos los
+ * RoundsReconciliationCron — corre la red de seguridad de rondas en todos los
  * tenants activos.
  *
- * El "por qué" está en `RoundsReconciliationService`: Gregmorn deja rondas
- * abiertas para siempre y su API no permite consultarlas, así que hay que
- * cerrarlas por nuestra cuenta o la base de comisión queda corta.
+ * El "por qué" está en `RoundsReconciliationService`. En resumen: el proveedor
+ * resuelve sus rondas solo (el jugador vuelve, o se cancela con reembolso), y
+ * puede tardar hasta una semana. Este job **no** es el mecanismo normal: sólo
+ * levanta las que quedaron sin resolver mucho después de eso.
  *
  * Configuración:
- *   - `ROUNDS_RECON_CRON` — expresión cron. Default: cada 10
- *     minutos. Frecuente a propósito: no es un job pesado (toca sólo las
- *     rondas abiertas, que son pocas y tienen índice parcial) y cuanto antes
- *     cierre, menos tiempo pasa la contabilidad desactualizada.
+ *   - `ROUNDS_RECON_CRON` — expresión cron. Default: cada hora en punto. No
+ *     hace falta más seguido: nada se cierra antes de 10 días.
  *   - `ROUNDS_RECON_ENABLED=false` — lo apaga (tests, debug).
- *   - `ROUNDS_RECON_IDLE_HOURS` — inactividad para dar una sesión por muerta.
- *     Default 2.
- *   - `ROUNDS_RECON_STALE_HOURS` — último recurso: cerrar por puro paso del
- *     tiempo. **Sin definir = apagado**, que es el default deliberado.
+ *   - `ROUNDS_RECON_MIN_AGE_DAYS` — antigüedad mínima de la ronda para ser
+ *     candidata. Default 10. **Es la protección principal**: bajarlo arriesga
+ *     cerrar rondas que el proveedor todavía puede reembolsar.
+ *   - `ROUNDS_RECON_IDLE_HOURS` — inactividad para marcar NUESTRA sesión como
+ *     expirada. Default 2. Sólo higiene de datos; no cierra rondas por sí solo.
+ *   - `ROUNDS_RECON_CLOSE_WITHOUT_EVIDENCE=true` — cerrar por sola antigüedad,
+ *     sin ninguna otra señal. Apagado por defecto.
  *
  * Cada tenant es independiente: un fallo en uno no interrumpe los demás.
  * Usa `CronLockService` para no correr dos veces en simultáneo.
@@ -31,12 +33,14 @@ import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import { CronLockService } from '../cron-lock/cron-lock.service';
 import {
+  DEFAULT_MIN_AGE_DAYS,
   DEFAULT_SESSION_IDLE_HOURS,
   RoundsReconciliationService,
+  type ReconciliationOptions,
   type ReconciliationSummary,
 } from './rounds-reconciliation.service';
 
-const DEFAULT_CRON = '*/10 * * * *';
+const DEFAULT_CRON = '0 * * * *';
 
 @Injectable()
 export class RoundsReconciliationCron {
@@ -78,25 +82,29 @@ export class RoundsReconciliationCron {
     this.scheduler.addCronJob('rounds-reconciliation', job);
     job.start();
 
-    const stale = this.staleHours();
+    const o = this.opciones();
     this.logger.log(
       `RoundsReconciliationCron registrado schedule="${cronExpr}" ` +
-        `idleHours=${this.idleHours()} ` +
-        `staleHours=${stale === null ? 'apagado' : stale}.`,
+        `minAgeDays=${o.minAgeDays} idleHours=${o.sessionIdleHours} ` +
+        `sinEvidencia=${o.closeWithoutEvidence ? 'SÍ' : 'no'}.`,
     );
   }
 
-  private idleHours(): number {
-    const raw = Number(this.config.get<string>('ROUNDS_RECON_IDLE_HOURS'));
-    return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_SESSION_IDLE_HOURS;
+  private numero(clave: string, porDefecto: number): number {
+    const n = Number(this.config.get<string>(clave));
+    return Number.isFinite(n) && n > 0 ? n : porDefecto;
   }
 
-  /** `null` = regla de último recurso apagada. Es el default. */
-  private staleHours(): number | null {
-    const bruto = this.config.get<string>('ROUNDS_RECON_STALE_HOURS');
-    if (bruto === undefined || bruto === '') return null;
-    const n = Number(bruto);
-    return Number.isFinite(n) && n > 0 ? n : null;
+  private opciones(): ReconciliationOptions {
+    return {
+      minAgeDays: this.numero('ROUNDS_RECON_MIN_AGE_DAYS', DEFAULT_MIN_AGE_DAYS),
+      sessionIdleHours: this.numero(
+        'ROUNDS_RECON_IDLE_HOURS',
+        DEFAULT_SESSION_IDLE_HOURS,
+      ),
+      closeWithoutEvidence:
+        this.config.get<string>('ROUNDS_RECON_CLOSE_WITHOUT_EVIDENCE') === 'true',
+    };
   }
 
   async runForAllTenants(): Promise<
@@ -114,10 +122,7 @@ export class RoundsReconciliationCron {
         .from(tenants)
         .where(eq(tenants.status, 'active'));
 
-      const opts = {
-        sessionIdleHours: this.idleHours(),
-        staleHours: this.staleHours(),
-      };
+      const opts = this.opciones();
 
       for (const tenant of activos) {
         try {

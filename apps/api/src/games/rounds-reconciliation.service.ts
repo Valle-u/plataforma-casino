@@ -1,83 +1,75 @@
 /**
- * RoundsReconciliationService — cierra las rondas que el proveedor dejó
- * abiertas para siempre.
+ * RoundsReconciliationService — red de seguridad para rondas que el proveedor
+ * nunca resolvió.
  *
- * ## El problema
+ * ## Lo que el proveedor confirmó (2026-08-31)
  *
- * Gregmorn manda `round_finished: false` en cada callback de una ronda y, en
- * algunas, el `true` nunca llega: la ronda queda abierta indefinidamente. Caso
- * documentado (jugadora `maggie`, 2026-08-29): una compra de tiradas gratis con
- * 30 callbacks, ninguno final, seguía abierta 12 horas después.
+ * Una ronda abierta **no está rota**: está esperando. Si el jugador abandona a
+ * mitad de un bonus, Gregmorn **retiene la sesión de su lado hasta que vuelva**.
+ * Cuánto la retienen depende del proveedor del juego: **de un día a una semana**,
+ * sin un timeout único. Si se vence la retención sin que el jugador vuelva, la
+ * ronda **se cancela y se emite un reembolso**.
  *
- * Duele en la contabilidad, no en el jugador: la apuesta se cobró y el premio
- * se pagó, todo eso ya vive en `wallet_transactions`. Pero la base de comisión
- * sólo cuenta rondas cerradas (LEYES C1/C4b), así que esa NetWin no se le paga
- * al operador — 4.172,05 ARS en el limbo al 2026-08-31, y por eso no se puede
- * liquidar agosto.
+ * O sea que toda ronda termina resolviéndose sola, por una de dos vías:
  *
- * **No se puede resolver preguntándoles**: su API no tiene ningún endpoint para
- * consultar el estado de una ronda (ver `docs/gregmorn/01-api-spec.md`).
+ *   1. El jugador vuelve → llega el `round_finished: true` y se cierra normal.
+ *   2. No vuelve → llega un `rollback` y `GregmornCallbackService` la marca
+ *      `rolled_back`, que el motor de comisiones EXCLUYE. Correcto sin que
+ *      hagamos nada.
  *
- * ## Por qué esto es menos riesgoso de lo que parece
+ * También confirmaron que **no existe endpoint para consultar el estado de una
+ * ronda**: `round_finished` es el único marcador. No es un hueco nuestro.
  *
- * Cerrar una ronda **no mueve un peso**: sólo cambia `status` a `settled` y
- * pone `settled_at`, que es lo que la hace entrar en la base de comisión. Un
- * cierre equivocado se revierte cambiando el estado de vuelta, siempre que el
- * período no se haya liquidado todavía.
+ * ## Por qué este job casi no tiene que hacer nada
  *
- * Y si un callback llega tarde, el código de Gregmorn lo **acumula sobre la
- * ronda existente** y la vuelve a abrir. O sea: el sistema se autocorrige. Lo
- * único que hay que vigilar es liquidar un período que después cambie, y para
- * eso está `auto_settled_reason`: permite listar exactamente qué cerramos
- * nosotros antes de liquidar.
+ * La primera versión cerraba las rondas a las **2 horas** de inactividad, y eso
+ * estaba mal: cerraba rondas que todavía podían resolverse, y una ronda cerrada
+ * entra a la base de comisión. Si esa ronda terminaba REEMBOLSADA, se le pagaba
+ * comisión al operador sobre plata que se le devolvió al jugador.
  *
- * ## Las reglas, de más a menos confianza
+ * Peor: dejaba inútil el freno de `settlePeriods` (que aborta si el período
+ * tiene rondas abiertas). El freno nunca se disparaba porque este job ya las
+ * había cerrado — justo las que todavía podían revertirse.
  *
- * 1. **`session_closed`** — la sesión se cerró bien (el jugador salió del juego
- *    y el front llamó al endpoint de cierre). Si la sesión terminó, sus rondas
- *    terminaron. **Cero suposiciones.**
+ * Ahora **nada se cierra antes de `MIN_AGE_DAYS`** (10 días por defecto, por
+ * encima del máximo de una semana que declararon). Por debajo de eso el sistema
+ * espera, que es lo correcto, y el freno de liquidación hace su trabajo.
  *
- * 2. **`later_settled_round`** — hay una ronda POSTERIOR en la misma sesión que
- *    el proveedor ya confirmó cerrada. Una sesión de slot juega una ronda por
- *    vez: si una posterior ya cerró, la anterior terminó seguro y simplemente
- *    no nos avisaron. **Cero suposiciones sobre tiempos** — es ordenamiento.
+ * Cerrar una ronda pasa a ser **la excepción**: significa que el proveedor no la
+ * resolvió ni por la vía 1 ni por la vía 2 en diez días. Por eso cada cierre se
+ * loguea como WARNING, no como info.
  *
- * 3. **`session_expired`** — la sesión no tiene actividad hace más de N. Cubre
- *    el caso real: el jugador abandonó y no volvió. Acá sí hay un parámetro,
- *    pero es "cuánta inactividad para dar una sesión por muerta", que es mucho
- *    más natural que adivinar cuánto tarda el proveedor en avisar.
+ * ## Las reglas
  *
- * 4. **`stale_timeout`** — puro paso del tiempo, sin ninguna otra evidencia.
- *    **Apagada por defecto** (`ROUNDS_RECON_STALE_HOURS`). Es el último recurso
- *    que pidió el dueño: sirve para vaciar el limbo si las otras tres no
- *    alcanzan, pero es la única que puede cerrar una ronda que de verdad seguía
- *    viva.
+ * Todas exigen primero que la ronda supere `MIN_AGE_DAYS`. La regla sólo define
+ * QUÉ evidencia adicional hay y queda registrada en `auto_settled_reason`.
  *
- * Todas son idempotentes: sólo tocan `status = 'placed'`, así que correr el job
- * dos veces no hace nada la segunda.
+ * **Corren en este orden, de evidencia más fuerte a más débil**, para que una
+ * ronda quede marcada con la mejor razón que la explica:
+ *
+ * 1. **`later_settled_round`** — hay una ronda POSTERIOR en la misma sesión que
+ *    EL PROVEEDOR ya confirmó cerrada. Una sesión juega una ronda por vez, así
+ *    que ésta terminó seguro. Es la más fuerte porque se apoya en un dato de
+ *    ellos, no nuestro.
+ * 2. **`session_closed`** — nuestra sesión se cerró bien desde el front.
+ * 3. **`session_expired`** — nuestra sesión quedó sin actividad.
+ * 4. **`no_evidence`** — sólo la antigüedad. **Apagada por defecto**
+ *    (`ROUNDS_RECON_CLOSE_WITHOUT_EVIDENCE=true` para prenderla).
+ *
+ * Ojo con 2 y 3: que NUESTRA sesión termine no cancela el bonus que ELLOS
+ * retienen. Por eso ninguna de las dos alcanza sola — el que manda es el umbral
+ * de antigüedad.
+ *
+ * Todas son idempotentes: sólo tocan `status = 'placed'`.
  *
  * ## En qué período cae la ronda
  *
- * `settled_at` se pone en el **`placed_at` de la ronda**, no en `now()`.
- *
- * Importa porque el NetWin y la comisión atribuyen por `settled_at`
- * (`WalletStatsService.netwinFor`, `network-commissions`). Con `now()`, una
- * ronda jugada el 29 de agosto y cerrada por este job el 1 de septiembre
- * contaba para **septiembre**: agosto quedaba corto para siempre y septiembre
- * arrancaba inflado con plata que no se jugó ahí.
- *
- * Con `placed_at` cada ronda cae en el mes en que se jugó, que es donde se
- * generó la NetWin.
- *
- * Bonus: `settled_at` también ordena el ticker de ganadores
- * (`listRecentPublicWins`). Con `now()`, un premio de hace tres días saltaba
- * al tope como si fuera recién ganado.
- *
- * ⚠️ El costo: si un período YA se liquidó y después aparece una ronda vieja,
- *    entra a un período cerrado y esa liquidación queda desactualizada. Por eso
- *    el job avisa cuando cierra algo más viejo que `DIAS_PARA_AVISAR`, y por eso
- *    la regla operativa es **no liquidar un mes que todavía tenga rondas
- *    abiertas**.
+ * `settled_at` se pone en el **`placed_at` de la ronda**, no en `now()`, porque
+ * el NetWin y la comisión atribuyen por `settled_at`. Con `now()`, una ronda
+ * jugada en agosto y cerrada en septiembre contaba para septiembre: agosto
+ * quedaba corto para siempre. Además `settled_at` ordena el ticker de
+ * ganadores, así que con `now()` un premio viejo saltaba al tope como recién
+ * ganado.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -90,45 +82,44 @@ export interface ReconciliationSummary {
   bySessionClosed: number;
   byLaterSettledRound: number;
   bySessionExpired: number;
-  byStaleTimeout: number;
+  byNoEvidence: number;
   total: number;
   /**
-   * NetWin que ENTRA a la base de comisión por este cierre, por regla y en
-   * total. Es el dato que de verdad importa: la cantidad de rondas no dice
-   * nada sobre cuánto se le va a pagar al operador.
-   *
-   * Positivo = ganó el jugador; negativo = ganó la Casa. Es `net_amount`
-   * (win − bet), el mismo campo que usa el motor de comisiones.
+   * NetWin que ENTRA a la base de comisión por este cierre. Es el dato que
+   * importa: la cantidad de rondas no dice nada sobre cuánto se le va a pagar
+   * al operador. Es `net_amount` (win − bet), el mismo campo que usa el motor.
    */
   net: {
     bySessionClosed: number;
     byLaterSettledRound: number;
     bySessionExpired: number;
-    byStaleTimeout: number;
+    byNoEvidence: number;
     total: number;
   };
 }
 
 export interface ReconciliationOptions {
-  /** Inactividad para dar una sesión por muerta. Default 2h. */
-  sessionIdleHours: number;
   /**
-   * Horas para la regla de último recurso. `null` = apagada (el default).
-   * Sólo se cierra por puro paso del tiempo si el dueño lo pide explícitamente.
+   * Antigüedad mínima para que una ronda sea candidata. **Es la protección
+   * principal**: por debajo de esto el proveedor todavía puede resolverla.
    */
-  staleHours: number | null;
+  minAgeDays: number;
+  /** Inactividad para dar por muerta NUESTRA sesión. Sólo higiene de datos. */
+  sessionIdleHours: number;
+  /** Cerrar por sola antigüedad, sin ninguna otra evidencia. Default: no. */
+  closeWithoutEvidence: boolean;
 }
 
-export const DEFAULT_SESSION_IDLE_HOURS = 2;
-
 /**
- * A partir de cuántos días de antigüedad una ronda cerrada merece un aviso.
- *
- * Con el job corriendo cada 10 minutos, lo normal es cerrar rondas de hace un
- * par de horas. Algo de hace más de una semana significa que estuvo trabado
- * mucho tiempo — y que puede caer en un período ya liquidado.
+ * 10 días: por encima del máximo de UNA SEMANA que declaró el proveedor para la
+ * retención de una sesión abandonada. El margen es a propósito — dijeron que
+ * depende del proveedor del juego y que no hay un timeout único, así que el
+ * número no es exacto y conviene errar por esperar de más.
  */
-const DIAS_PARA_AVISAR = 7;
+export const DEFAULT_MIN_AGE_DAYS = 10;
+
+/** Sólo higiene: marcar `expired` nuestras sesiones abandonadas. */
+export const DEFAULT_SESSION_IDLE_HOURS = 2;
 
 @Injectable()
 export class RoundsReconciliationService {
@@ -138,28 +129,51 @@ export class RoundsReconciliationService {
     db: TenantDb,
     opts: ReconciliationOptions,
   ): Promise<ReconciliationSummary> {
-    const idle = `${horasValidas(opts.sessionIdleHours, DEFAULT_SESSION_IDLE_HOURS)} hours`;
+    const idle = intervalo(opts.sessionIdleHours, DEFAULT_SESSION_IDLE_HOURS, 'hours');
+    const minAge = intervalo(opts.minAgeDays, DEFAULT_MIN_AGE_DAYS, 'days');
 
-    // ── Paso 1: expirar sesiones muertas ────────────────────────────────
+    // ── Higiene: expirar NUESTRAS sesiones abandonadas ──────────────────
     //
-    // Hoy NADIE las expira: el estado `expired` existe en el modelo y no lo usa
-    // nadie, así que una sesión que el jugador abandonó cerrando la pestaña
-    // queda `active` para siempre. La actividad es el último `placed_at` de sus
-    // rondas, o el `started_at` si nunca jugó.
+    // Independiente del cierre de rondas: esto sólo ordena nuestros datos
+    // (nadie las expiraba, el estado `expired` existía sin usarse). NO implica
+    // que la ronda del proveedor haya terminado — ellos retienen la suya aparte.
+    //
+    // Seguro de hacer: el callback busca la sesión por (user, game, key) SIN
+    // filtrar por estado, así que si el jugador vuelve se reutiliza la misma.
     const expiradas = await db.execute(sql`
       UPDATE game_sessions s
-         SET status = 'expired',
-             ended_at = now()
+         SET status = 'expired', ended_at = now()
        WHERE s.status = 'active'
          AND GREATEST(
                s.started_at,
                COALESCE((SELECT max(r.placed_at) FROM game_rounds r
                           WHERE r.session_id = s.id), s.started_at)
-             ) < now() - ${sql.raw(`interval '${idle}'`)}
+             ) < now() - ${sql.raw(idle)}
       RETURNING s.id
     `);
 
-    // ── Paso 2: la sesión terminó (cerrada o expirada) ──────────────────
+    // ── Cierre: SIEMPRE con el filtro de antigüedad ─────────────────────
+    const viejaYAbierta = sql.raw(
+      `r.status = 'placed' AND r.placed_at < now() - ${minAge}`,
+    );
+
+    // Evidencia 2: hay una ronda posterior que el proveedor ya cerró.
+    const porPosterior = await db.execute(sql`
+      UPDATE game_rounds r
+         SET status = 'settled',
+             settled_at = r.placed_at,
+             auto_settled_reason = 'later_settled_round'
+       WHERE ${viejaYAbierta}
+         AND EXISTS (
+               SELECT 1 FROM game_rounds p
+                WHERE p.session_id = r.session_id
+                  AND p.status = 'settled'
+                  AND p.placed_at > r.placed_at
+             )
+      RETURNING r.id, r.net_amount AS neto
+    `);
+
+    // Evidencia 1 y 3: nuestra sesión terminó.
     const porSesion = await db.execute(sql`
       UPDATE game_rounds r
          SET status = 'settled',
@@ -170,46 +184,23 @@ export class RoundsReconciliationService {
              END
         FROM game_sessions s
        WHERE s.id = r.session_id
-         AND r.status = 'placed'
+         AND ${viejaYAbierta}
          AND s.status IN ('closed', 'expired')
-      RETURNING r.id, r.auto_settled_reason AS motivo, r.net_amount AS neto,
-                r.placed_at AS jugada
+      RETURNING r.id, r.auto_settled_reason AS motivo, r.net_amount AS neto
     `);
 
-    // ── Paso 3: hay una ronda posterior YA CERRADA en la misma sesión ───
-    //
-    // Una sesión de slot juega una ronda por vez. Si una posterior ya cerró,
-    // ésta terminó seguro. No se compara contra rondas abiertas a propósito:
-    // dos abiertas no prueban nada sobre cuál terminó.
-    const porPosterior = await db.execute(sql`
-      UPDATE game_rounds r
-         SET status = 'settled',
-             settled_at = r.placed_at,
-             auto_settled_reason = 'later_settled_round'
-       WHERE r.status = 'placed'
-         AND EXISTS (
-               SELECT 1 FROM game_rounds p
-                WHERE p.session_id = r.session_id
-                  AND p.status = 'settled'
-                  AND p.placed_at > r.placed_at
-             )
-      RETURNING r.id, r.net_amount AS neto, r.placed_at AS jugada
-    `);
-
-    // ── Paso 4: último recurso, sólo si el dueño lo prendió ─────────────
-    let porTimeout: Fila[] = [];
-    if (opts.staleHours !== null) {
-      const horas = `${horasValidas(opts.staleHours, 48)} hours`;
-      const r = await db.execute(sql`
-        UPDATE game_rounds
+    // Sin ninguna evidencia más que el tiempo. Apagado por defecto.
+    let sinEvidencia: Fila[] = [];
+    if (opts.closeWithoutEvidence) {
+      const res = await db.execute(sql`
+        UPDATE game_rounds r
            SET status = 'settled',
-               settled_at = placed_at,
-               auto_settled_reason = 'stale_timeout'
-         WHERE status = 'placed'
-           AND placed_at < now() - ${sql.raw(`interval '${horas}'`)}
-        RETURNING id, net_amount AS neto, placed_at AS jugada
+               settled_at = r.placed_at,
+               auto_settled_reason = 'no_evidence'
+         WHERE ${viejaYAbierta}
+        RETURNING r.id, r.net_amount AS neto
       `);
-      porTimeout = filasDe(r);
+      sinEvidencia = filasDe(res);
     }
 
     const motivos = filasDe(porSesion);
@@ -222,13 +213,13 @@ export class RoundsReconciliationService {
       bySessionClosed: cerradas.length,
       bySessionExpired: expiradasR.length,
       byLaterSettledRound: posteriores.length,
-      byStaleTimeout: porTimeout.length,
+      byNoEvidence: sinEvidencia.length,
       total: 0,
       net: {
         bySessionClosed: sumaNeto(cerradas),
         bySessionExpired: sumaNeto(expiradasR),
         byLaterSettledRound: sumaNeto(posteriores),
-        byStaleTimeout: sumaNeto(porTimeout),
+        byNoEvidence: sumaNeto(sinEvidencia),
         total: 0,
       },
     };
@@ -236,62 +227,40 @@ export class RoundsReconciliationService {
       resumen.bySessionClosed +
       resumen.bySessionExpired +
       resumen.byLaterSettledRound +
-      resumen.byStaleTimeout;
+      resumen.byNoEvidence;
     resumen.net.total = redondear(
       resumen.net.bySessionClosed +
         resumen.net.bySessionExpired +
         resumen.net.byLaterSettledRound +
-        resumen.net.byStaleTimeout,
+        resumen.net.byNoEvidence,
     );
 
-    // Una ronda vieja puede caer en un período que ya se liquidó. No se puede
-    // impedir desde acá (el job no sabe qué se liquidó), pero sí avisar.
-    const viejas = [...motivos, ...posteriores, ...porTimeout].filter((f) => {
-      if (!f.jugada) return false;
-      const cuando = new Date(f.jugada).getTime();
-      return Number.isFinite(cuando) && Date.now() - cuando > DIAS_PARA_AVISAR * 86_400_000;
-    });
-    if (viejas.length > 0) {
+    // WARNING y no LOG: con el umbral de antigüedad, cerrar una ronda significa
+    // que el proveedor no la resolvió NI cerrándola NI reembolsándola en
+    // `minAgeDays`. Eso es una anomalía de su lado, no rutina.
+    if (resumen.total > 0) {
       this.logger.warn(
-        `${viejas.length} de las rondas cerradas se jugaron hace más de ` +
-          `${DIAS_PARA_AVISAR} días. Se atribuyen al período en que se jugaron: ` +
-          `si ese período YA se liquidó, la liquidación quedó desactualizada.`,
+        `Se cerraron ${resumen.total} ronda(s) que el proveedor no resolvió en ` +
+          `${opts.minAgeDays} días (sesión cerrada ${resumen.bySessionClosed}, ` +
+          `sesión expirada ${resumen.bySessionExpired}, ronda posterior ` +
+          `${resumen.byLaterSettledRound}, sin evidencia ${resumen.byNoEvidence}). ` +
+          `NetWin que entra a la base de comisión: ${resumen.net.total}. ` +
+          `Revisar con el proveedor: deberían haberse cerrado o reembolsado solas.`,
       );
     }
-
-    if (resumen.total > 0) {
+    if (resumen.sessionsExpired > 0) {
       this.logger.log(
-        `Rondas cerradas por reconciliación: ${resumen.total} ` +
-          `(sesión cerrada ${resumen.bySessionClosed}, sesión expirada ` +
-          `${resumen.bySessionExpired}, ronda posterior ` +
-          `${resumen.byLaterSettledRound}, timeout ${resumen.byStaleTimeout}). ` +
-          `Sesiones expiradas: ${resumen.sessionsExpired}. ` +
-          `NetWin que entra a la base de comisión: ${resumen.net.total} ` +
-          `(sesión cerrada ${resumen.net.bySessionClosed}, sesión expirada ` +
-          `${resumen.net.bySessionExpired}, ronda posterior ` +
-          `${resumen.net.byLaterSettledRound}, timeout ` +
-          `${resumen.net.byStaleTimeout}).`,
+        `Sesiones propias marcadas como expiradas: ${resumen.sessionsExpired}.`,
       );
     }
     return resumen;
   }
 }
 
-/**
- * Las horas se interpolan crudas en el SQL (un `interval` no se puede
- * parametrizar), así que tienen que ser un entero sí o sí. Un `NaN` colado
- * generaría `interval 'NaN hours'` y reventaría la query.
- */
-function horasValidas(valor: number, porDefecto: number): number {
-  if (!Number.isFinite(valor)) return porDefecto;
-  return Math.max(1, Math.floor(valor));
-}
-
 /** Fila del RETURNING: el motivo (si la query lo trae) y el neto. */
 interface Fila {
   motivo?: string;
   neto?: string | number | null;
-  jugada?: string | Date | null;
 }
 
 /** postgres-js devuelve las filas del RETURNING como array. */
@@ -302,10 +271,18 @@ function filasDe(res: unknown): Fila[] {
 }
 
 /**
- * Suma los netos en CENTAVOS enteros y recién al final divide.
- *
- * Sumar los pesos como float acumula error: con 41 rondas ya se pueden ir
- * unos centavos, y este número se lee para decidir una liquidación.
+ * Los intervalos no se pueden parametrizar, así que se interpolan crudos: el
+ * valor tiene que ser un entero sí o sí. Un `NaN` colado generaría
+ * `interval 'NaN days'` y reventaría la query.
+ */
+function intervalo(valor: number, porDefecto: number, unidad: string): string {
+  const n = Number.isFinite(valor) && valor > 0 ? Math.floor(valor) : porDefecto;
+  return `interval '${n} ${unidad}'`;
+}
+
+/**
+ * Suma los netos en CENTAVOS enteros y recién al final divide. Sumar los pesos
+ * como float acumula error, y este número se lee para decidir una liquidación.
  * Postgres devuelve `numeric` como string, así que además hay que convertir.
  */
 function sumaNeto(filas: Fila[]): number {
