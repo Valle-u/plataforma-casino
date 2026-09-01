@@ -14189,3 +14189,67 @@ Todos en `main`, pusheados y deployados. Migración 0109 aplicada en producción
 - Sigue en pie para producción: credenciales de Prod del proveedor, sin
   monitoreo, backups nunca restaurados de prueba, y deployar en horario pico
   degrada el casino (los builds corren en el mismo VPS).
+
+---
+
+## 2026-08-31 22:35 AR — Claude (Opus 5) · addendum 5
+
+**Duración**: ~20min
+**Usuario**: Uriel
+
+Cierre del hilo de las rondas: el freno de liquidación que quedó fuera del
+addendum 4.
+
+### Qué hicimos
+
+**Frenar la liquidación si el período tiene rondas abiertas.** Era la pieza que
+faltaba: con `settled_at = placed_at` (addendum 4), una ronda que se cierre
+tarde cae en el mes en que se JUGÓ — y si ese mes ya se liquidó, la liquidación
+queda desactualizada. Ahora no se puede liquidar sobre un período incompleto sin
+enterarse.
+
+`settlePeriods` cuenta las rondas `placed` cuyo `placed_at` cae en el rango del
+período y aborta con `OpenRoundsInPeriodError`. El controller lo mapea a **409,
+no 400**: no está mal lo que se pidió, está mal el MOMENTO — el cron cierra las
+rondas solo y en un rato se puede.
+
+Salida de emergencia: `force: true` en el DTO, para cuando el proveedor dejó una
+ronda trabada para siempre. Queda en el audit log como `forced`, que después es
+la explicación de por qué ese número puede cambiar.
+
+### Decisiones tomadas
+
+- **El chequeo es por RANGO de período, no por fila.** Una ronda abierta afecta
+  a todos los operadores de ese período, no sólo al dueño del jugador.
+- **409 y no 400.** Un 400 diría "pediste mal"; acá el pedido está bien y lo que
+  falta es esperar. La diferencia importa para quien consuma la API.
+- **Se frena por defecto y se fuerza a propósito**, no al revés. Es plata: el
+  default tiene que ser el conservador.
+
+### Commits creados
+
+- `b32f1a8` — `feat(commissions): frenar la liquidacion si el periodo tiene rondas abiertas`
+
+En `main`, pusheado y deployado.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno técnico.
+- Verificado contra Postgres real, incluidos **los bordes del intervalo**, que
+  era lo delicado: el inicio del período está INCLUIDO y el fin EXCLUIDO, igual
+  que como el motor selecciona las filas (`>= inicio`, `< fin`). Si no
+  coincidieran, el freno se activaría en períodos equivocados. Los 7 checks OK.
+- Deploy verificado: migraciones al día, cron registrado, sin errores.
+
+### Notas para próximo agente
+
+- ⚠️ **No se probó el wiring completo de `settlePeriods`** — se probó el chequeo
+  directo (`assertNoOpenRounds`), porque `settlePeriods` arrastra medio módulo
+  de dependencias. Las 3 líneas del wiring pasan typecheck pero no se
+  ejercitaron con una liquidación real. **La prueba de verdad es intentar
+  liquidar desde el panel un período con una ronda abierta y ver que frene.**
+- El hilo completo de las rondas quedó cerrado en 4 commits (`859df16`,
+  `475ead1`, `d001aec`, `b32f1a8`): se cierran solas, en el mes correcto, con
+  auditoría de quién las cerró, aviso si el criterio fue agresivo, y freno de
+  liquidación. **Nada de esto depende de que Gregmorn conteste** — pero sigue
+  siendo un parche del síntoma, y su respuesta sigue pendiente.
