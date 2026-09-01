@@ -82,6 +82,7 @@ import { WalletService } from '../wallet/wallet.service';
 import {
   ConservationViolationError,
   InvertedMarkupError,
+  OpenRoundsInPeriodError,
 } from './commissions.errors';
 
 const OPERATOR_ROLES = new Set(['socio', 'distribuidor', 'cajero']);
@@ -1862,6 +1863,12 @@ export class NetworkCommissionsService {
       periodStart?: Date;
       reference?: string | null;
       actorUserId: string;
+      /**
+       * Liquidar aunque el período tenga rondas sin cerrar. Es la salida
+       * para cuando el proveedor dejó una ronda trabada para siempre y no
+       * se puede esperar más. Queda registrado en el audit log.
+       */
+      force?: boolean;
     },
   ): Promise<NetworkSettleResult> {
     const houseUser = await this.house.getHouseUser(db);
@@ -1885,9 +1892,19 @@ export class NetworkCommissionsService {
         operatorUserId: commissionNetworkPeriods.operatorUserId,
         payable: commissionNetworkPeriods.payable,
         finalCommission: commissionNetworkPeriods.finalCommission,
+        periodStart: commissionNetworkPeriods.periodStart,
+        periodEnd: commissionNetworkPeriods.periodEnd,
       })
       .from(commissionNetworkPeriods)
       .where(and(...conds));
+
+    // C1/C4b: la base sólo cuenta rondas cerradas. Si el período todavía
+    // tiene rondas abiertas, esa NetWin no entró todavía y liquidar ahora
+    // paga de menos — y cuando esas rondas cierren van a caer en un período
+    // ya liquidado. Se frena salvo que el operador insista con `force`.
+    if (!params.force && rows.length > 0) {
+      await this.assertNoOpenRounds(db, rows);
+    }
 
     let settled = 0;
     let failed = 0;
@@ -1980,6 +1997,50 @@ export class NetworkCommissionsService {
    * Lee resultados de período(s). Si `scopeUserIds` está, filtra a esos
    * operadores (downstream del actor). `periodStart` opcional filtra un mes.
    */
+  /**
+   * Frena la liquidación si el período tiene rondas sin cerrar.
+   *
+   * Se chequea por RANGO de período y no por fila: una ronda abierta afecta
+   * a todos los operadores de ese período, no sólo al dueño del jugador.
+   */
+  private async assertNoOpenRounds(
+    db: TenantDb,
+    rows: Array<{ periodStart: Date; periodEnd: Date }>,
+  ): Promise<void> {
+    // Rangos distintos (normalmente uno solo).
+    const rangos = new Map<string, { start: Date; end: Date }>();
+    for (const r of rows) {
+      const clave = `${r.periodStart.toISOString()}|${r.periodEnd.toISOString()}`;
+      if (!rangos.has(clave)) {
+        rangos.set(clave, { start: r.periodStart, end: r.periodEnd });
+      }
+    }
+
+    let abiertas = 0;
+    const etiquetas: string[] = [];
+    for (const { start, end } of rangos.values()) {
+      const [fila] = await db
+        .select({ n: sql<string>`count(*)::text` })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.status, 'placed'),
+            gte(gameRounds.placedAt, start),
+            lt(gameRounds.placedAt, end),
+          ),
+        );
+      const n = Number(fila?.n ?? 0);
+      if (n > 0) {
+        abiertas += n;
+        etiquetas.push(start.toISOString().slice(0, 10));
+      }
+    }
+
+    if (abiertas > 0) {
+      throw new OpenRoundsInPeriodError(abiertas, etiquetas);
+    }
+  }
+
   async listPeriods(
     db: TenantDb,
     filters: { periodStart?: Date; scopeUserIds?: string[] } = {},

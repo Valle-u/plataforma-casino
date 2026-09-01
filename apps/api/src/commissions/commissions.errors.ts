@@ -66,6 +66,34 @@ export class PeriodAlreadySettledError extends Error {
 }
 
 /**
+ * Se intentó liquidar un período que todavía tiene rondas SIN CERRAR.
+ *
+ * La base de comisión sólo cuenta rondas `settled` (C1/C4b). Una ronda
+ * abierta es NetWin que todavía no entró: liquidar así paga de menos, y
+ * cuando esa ronda cierre va a caer en un período ya liquidado.
+ *
+ * No es un error del sistema: es que falta esperar. `RoundsReconciliationCron`
+ * corre cada 10 minutos y las cierra solas. Si hay que liquidar igual —
+ * porque el proveedor dejó una ronda trabada para siempre y no se puede
+ * esperar — se manda `force: true` y queda en el audit log.
+ */
+export class OpenRoundsInPeriodError extends Error {
+  constructor(
+    public readonly openRounds: number,
+    public readonly periods: string[],
+  ) {
+    super(
+      `Hay ${openRounds} ronda(s) sin cerrar en el/los período(s) ` +
+        `${periods.join(
+)}. Esa NetWin todavía no entró a la base: ` +
+        `liquidar ahora paga de menos. Esperá a que el job de ` +
+        `reconciliación las cierre (corre cada 10 min) o mandá force=true.`,
+    );
+    this.name = 'OpenRoundsInPeriodError';
+  }
+}
+
+/**
  * Markup invertido detectado en el compute: algún operador tiene un hijo con
  * un % MAYOR al suyo (config inválida que generaría gross negativo espurio).
  * Aborta el cómputo del período hasta que se corrija la config.

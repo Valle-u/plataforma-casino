@@ -48,6 +48,7 @@ import {
   NetworkRateBelowChildrenError,
   NetworkRateExceedsParentError,
   NotDirectChildError,
+  OpenRoundsInPeriodError,
   PeriodAlreadySettledError,
 } from './commissions.errors';
 import { CommissionsService } from './commissions.service';
@@ -383,12 +384,28 @@ export class CommissionsController {
     // Liquidación SINCRÓNICA: acción manual y acotada, corre en el request y
     // devuelve el resultado al toque. No depende de Redis (prod no lo tiene).
     // settlePeriods es idempotente (FOR UPDATE + re-check de status por fila).
-    const result = await this.network.settlePeriods(db, {
-      rowIds: dto.rowIds,
-      periodStart,
-      reference: dto.reference ?? null,
-      actorUserId: actor.id,
-    });
+    let result;
+    try {
+      result = await this.network.settlePeriods(db, {
+        rowIds: dto.rowIds,
+        periodStart,
+        reference: dto.reference ?? null,
+        actorUserId: actor.id,
+        force: dto.force === true,
+      });
+    } catch (err) {
+      // 409 y no 400: no está mal lo que pidió, está mal el MOMENTO. El job
+      // de reconciliación cierra las rondas solo y en un rato se puede.
+      if (err instanceof OpenRoundsInPeriodError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'OPEN_ROUNDS_IN_PERIOD',
+          openRounds: err.openRounds,
+          periods: err.periods,
+        });
+      }
+      throw err;
+    }
 
     await this.audit.record(db, {
       actorUserId: actor.id,
@@ -397,6 +414,9 @@ export class CommissionsController {
       targetType: 'commission_network_period',
       targetId: dto.period ?? (dto.rowIds?.[0] ?? 'batch'),
       metadata: {
+        // Que quede escrito si se liquidó pisando el freno de rondas
+        // abiertas: es la explicación de por qué ese número puede cambiar.
+        forced: dto.force === true,
         settled: result.settled,
         failed: result.failed,
         totalPaid: result.totalPaid,
