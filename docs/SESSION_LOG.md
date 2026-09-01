@@ -14615,3 +14615,78 @@ En `main`, pusheado y deployado.
   commits y pushear fuera de horario.
 - Sigue en pie para producción: credenciales de Prod del proveedor, alertas,
   probar una restauración de backup, y no deployar en horario pico.
+
+---
+
+## 2026-09-01 18:00 AR — Claude (Opus 5) · addendum 10
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+"Configurá las alertas". Quedaron 4 workflows + 1 monitor de uptime. Cierra el
+pendiente que dejaba abierto el addendum 9.
+
+### Qué se configuró
+
+| Alerta | Dispara | Tope |
+|---|---|---|
+| API — se cayó (uptime) | el monitor externo no obtiene 2xx de `/health` | 1 mail / 30min |
+| API — issue nuevo o regresión | `first_seen` / `regression` / `reappeared` | 1 mail / 30min |
+| API — algo se está repitiendo | un issue pasa de 50 eventos en 1h | 1 mail / 60min |
+| Web — issue que se repite | un issue pasa de 10 eventos en 1h | 1 mail / 60min |
+
+En la web **no** se alerta por "issue nuevo": el browser reporta cosas que no
+son nuestras (extensiones, redes raras, browsers viejos) y una alerta ruidosa
+es una alerta que se ignora. En el server sí, ahí no hay ruido de terceros.
+
+Se borraron las dos reglas que Sentry crea sola ("high priority issues"), que
+son una heurística de ellos y se solapaban con éstas. Se crearon las nuevas
+**primero** y recién después se borraron las viejas.
+
+### El monitor de uptime no habría servido
+
+`/health` devolvía **HTTP 200 aunque el estado fuera `degraded`** — la DB caída
+sólo se veía en el body. Un monitor externo mira el status code: habría
+reportado "todo bien" con la base en llamas. **Configurar la alerta sin mirar
+esto habría dado una falsa sensación de cobertura**, que es peor que no tenerla.
+
+Ahora devuelve 503 cuando algo está caído. Se verificó antes que nada dependa de
+ese status code: `healthCheckSwarm` es `null` en Dokploy y no hay healthcheck de
+Docker contra la API (el `railway.json` con `healthcheckPath` es legacy). Redis
+caído también da 503 aunque la app siga sirviendo — deliberado, porque no está
+verificado que todos los caminos que usan cache degraden sin romper.
+
+### Commits creados
+
+- `<pendiente>` — `fix(health): devolver 503 cuando la API esta degradada`
+
+En `main`, pusheado y deployado.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno.
+- Alertas activas y verificadas por API. 0 issues sin resolver en ambos
+  proyectos.
+
+### Notas para próximo agente
+
+- ⚠️ **La API vieja de reglas de Sentry murió en el medio de la sesión.**
+  `/projects/{org}/{proj}/rules/` andaba a las 19:23 UTC y a las 20:10 devolvía
+  `410 "This API no longer exists"`. Lo vigente es
+  `/organizations/{org}/workflows/`, que se ata a **detectores**, no a
+  proyectos. Los esquemas se descubren con `available-actions/` y
+  `data-conditions/?group=workflow_trigger|action_filter`. Está documentado en
+  §18.7 de escalabilidad.
+- ⚠️ **El plan es Developer (gratis): 5.000 errores/mes.** Un loop de errores no
+  sólo rompe, consume la cuota y **deja ciego el resto del mes**. La alerta de
+  ">50 en 1h" es tanto aviso de incidente como de cuota.
+- ⚠️ **La web no tiene monitor de uptime**: el plan incluye exactamente 1 y lo usa
+  la API. El de la web quedó creado pero `disabled`, y el `PUT` para activarlo da
+  500. Una caída de host la ve igual el monitor de la API (mismo VPS, mismo
+  Traefik); lo que no se cubre es que se rompa **sólo** la web.
+- ⚠️ **`maxMembers: 1`**: las alertas llegan sólo al mail de Uriel. Si él no está
+  mirando, no las ve nadie. No hay integración de Telegram ni Slack conectada.
+- **Falta todavía** el histórico de CPU/memoria del host — eso Sentry no lo
+  resuelve y es lo que hacía falta para el diagnóstico de §17.
+- Sigue en pie para producción: credenciales de Prod del proveedor, probar una
+  restauración de backup, y no deployar en horario pico.

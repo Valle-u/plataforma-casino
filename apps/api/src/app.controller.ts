@@ -10,10 +10,11 @@
  *
  * Acá tenemos solo dos endpoints simples:
  *   GET /         → devuelve "Hola desde la plataforma de casino"
- *   GET /health   → devuelve { status: "ok" } para chequear que la API está viva
+ *   GET /health   → chequeo de vida; 503 si algo está caído (ver getHealth)
  */
 
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Inject, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { sql } from 'drizzle-orm';
 import { AppService } from './app.service';
 import { CONTROL_DB } from './database/database.module';
@@ -50,9 +51,23 @@ export class AppController {
    * Health check con chequeo de DB y Redis.
    * Redis es opcional: si no está configurado, reporta "disabled".
    * Intencionalmente NO expone versión de Postgres ni info sensible.
+   *
+   * **Devuelve 503 cuando el estado es `degraded`**, no 200. Suena a
+   * detalle pero es lo que hace útil al monitor de uptime: chequea el
+   * status code, no el body. Con 200 fijo, un monitor externo reportaba
+   * "todo bien" con la base de datos caída.
+   *
+   * Un Redis caído también da 503 aunque la app siga sirviendo. Es
+   * deliberado: el cache está en el camino de varios endpoints y no está
+   * verificado que TODOS degraden sin romper. Preferimos que avise de más
+   * a enterarnos por un jugador.
+   *
+   * `redis: 'disabled'` (no configurado) NO es degradado — es desarrollo.
    */
   @Get('health')
-  async getHealth(): Promise<HealthResponse> {
+  async getHealth(
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<HealthResponse> {
     let dbStatus: 'connected' | 'error' = 'connected';
     try {
       await this.db.execute(sql`SELECT 1`);
@@ -73,6 +88,8 @@ export class AppController {
 
     const overall: 'ok' | 'degraded' =
       dbStatus === 'connected' && redisStatus !== 'error' ? 'ok' : 'degraded';
+
+    res.status(overall === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE);
 
     return {
       status: overall,

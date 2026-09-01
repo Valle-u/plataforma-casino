@@ -722,15 +722,87 @@ GET /api/0/organizations/miami-hub/events/
 ya visibles en el proyecto**. No sirve para verificar; usar la lista de issues o
 la query de spans de arriba.
 
-### 18.4 Lo que Sentry NO cubre
+### 18.4 Alertas configuradas
 
-Sentry ve lo que pasa *adentro* de la aplicación. Sigue sin haber:
+**Único canal: email** a `urielalejandrovalle493@gmail.com`. La org no tiene
+ninguna integración conectada, y el plan permite **un solo miembro**, así que no
+hay a quién más notificar. Telegram o Slack requieren conectar una integración.
+
+| Alerta | Proyecto | Dispara | Tope de mails |
+|---|---|---|---|
+| **API — se cayó (uptime)** | `casino-api` | el monitor externo no obtiene 2xx de `/health` | 1 cada 30min |
+| **API — issue nuevo o regresión** | `casino-api` | `first_seen` / `regression` / `reappeared` | 1 cada 30min |
+| **API — algo se está repitiendo** | `casino-api` | un issue pasa de **50 eventos en 1h** | 1 cada 60min |
+| **Web — issue que se repite** | `casino-web` | un issue pasa de **10 eventos en 1h** | 1 cada 60min |
+
+**Por qué la web no alerta por "issue nuevo" y la API sí**: en el server no hay
+ruido de terceros, así que un error nuevo se mira siempre. El browser, en
+cambio, reporta cosas que no son nuestras — extensiones, redes raras, browsers
+viejos. Ahí no alcanza con que sea nuevo: tiene que repetirse para molestar a
+alguien.
+
+Se borraron las dos reglas que Sentry crea sola ("high priority issues"), que
+son una heurística de ellos y se solapaban con éstas.
+
+#### Monitor de uptime
+
+`https://api.miamihub.vip/health` cada **60s**, desde fuera del VPS. Es la única
+alerta que funciona si el server entero deja de responder: todo lo demás depende
+de que la app llegue a reportar algo.
+
+⚠️ **Para que sirviera hubo que arreglar `/health`**: devolvía **200 aunque el
+estado fuera `degraded`**, o sea que reportaba "todo bien" con la base de datos
+caída. Ahora devuelve **503** cuando algo está caído. Redis caído también da 503,
+aunque la app siga sirviendo — es deliberado, ver el comentario en
+`app.controller.ts`.
+
+⚠️ **La web no tiene monitor de uptime**: el plan Developer incluye
+**exactamente 1**, y lo usa la API (que además chequea la DB). El monitor de la
+web quedó creado pero **`disabled`**, y el `PUT` para activarlo da 500. Las dos
+apps viven en el mismo VPS detrás del mismo Traefik, así que una caída de host
+la ve igual el monitor de la API; lo que no se cubre es que se rompa **sólo** la
+web.
+
+### 18.5 Límites del plan (Developer, gratis)
+
+Estos números importan para producción:
+
+| | Incluido |
+|---|---|
+| Errores | **5.000/mes** |
+| Spans (traces) | 5.000.000/mes |
+| Session replays | 50/mes |
+| Monitores de uptime | **1** |
+| Miembros de la org | **1** |
+| Retención | 30 días |
+
+⚠️ **5.000 errores/mes es poco para un casino en producción.** Un loop de errores
+no sólo rompe: consume la cuota y **te deja ciego el resto del mes**. Por eso
+existe la alerta de ">50 en 1h" — es tanto un aviso de incidente como de cuota.
+
+### 18.6 Lo que sigue sin cubrirse
 
 - **Histórico de CPU/memoria del host.** `application.readAppMonitoring` de
   Dokploy sigue vacío. Es lo que hacía falta para el diagnóstico de §17 y no lo
   resuelve Sentry.
-- **Uptime desde afuera.** Si el VPS entero se cae, no hay nadie que avise:
-  Sentry solo se entera de errores que la app llega a reportar.
-- **Alertas configuradas.** Los proyectos reciben eventos, pero no hay ninguna
-  regla que notifique a nadie. Sin eso, el monitoreo es un panel que alguien
-  tiene que acordarse de mirar.
+- **Uptime de la web por separado** (ver arriba, límite del plan).
+- **Nadie más que Uriel recibe las alertas.** Con `maxMembers: 1`, si él no está
+  mirando el mail, no las ve nadie.
+
+### 18.7 Gotcha de la API de Sentry
+
+⚠️ **`/projects/{org}/{proj}/rules/` devuelve `410 "This API no longer exists"`.**
+Andaba a las 19:23 de esta misma sesión y a las 20:10 ya no. Sentry migró a su
+motor nuevo de automatizaciones. Lo vigente:
+
+| Antes | Ahora |
+|---|---|
+| `/projects/{org}/{proj}/rules/` | `/organizations/{org}/workflows/` |
+| `/organizations/{org}/combined-rules/` | idem |
+| — | `/organizations/{org}/detectors/` |
+
+Un *workflow* se ata a **detectores**, no a proyectos. Cada proyecto tiene su
+`error` y su `issue_stream`, y cada monitor de uptime **es** un detector. Los
+esquemas se descubren con `/organizations/{org}/available-actions/` y
+`/organizations/{org}/data-conditions/?group=workflow_trigger` (o
+`action_filter`).
