@@ -14893,7 +14893,7 @@ que guardamos al abrir (verificado: los 2124 matchean).
 
 ### Commits creados
 
-- `<hash>` — `fix(games): usar la sesion del launch y la IP real del jugador`
+- `128c424` — `fix(games): usar la sesion del launch y la IP real del jugador`
 
 ### Notas para próximo agente
 
