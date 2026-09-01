@@ -14082,3 +14082,110 @@ Todos en `main`, pusheados y deployados.
   los pools. La aritmética está en `client.ts` y en §17.6.
 - Sigue en pie lo de Gregmorn: no liquidar 2026-08, el rollback sin ejercer, y
   las respuestas que faltan del proveedor.
+
+---
+
+## 2026-08-31 22:15 AR — Claude (Opus 5) · addendum 4
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+Arrancó con "¿estamos bien para largar mañana?" y terminó resolviendo el
+problema de las rondas que no cierran, **sin depender del proveedor**.
+
+### Qué hicimos
+
+**1. Respuesta a "¿largamos mañana?": NO.** Y no por capacidad — eso estaba
+medido y bien (§17 del doc de escalabilidad). Por tres bloqueantes, uno de ellos
+encontrado en el momento:
+
+- ⛔ **Los 60 juegos del catálogo de producción son TODOS de Gregmorn, y de
+  Gregmorn sólo hay credenciales de Stage.** Jugadores reales apostando plata
+  real contra el ambiente de testing del proveedor. Uriel avisó que puede pasarlo
+  a Prod cuando quiera.
+- ⛔ El rollback nunca se ejerció. **Uriel decidió ir sin él**: significa que una
+  jugada a medias se corrige a mano.
+- ⛔ Las rondas que no cierran (resuelto en esta sesión, ver abajo).
+
+De paso se verificó que **sí hay backups**: dos diarios a las 06:00 a R2
+(`platform_control` + `tenant_miamihub`), 14 copias. Al leer la lista de
+servicios parecían no existir; el servicio completo los tenía. **Se afirmó que
+no había antes de verificar** — corregido en el momento.
+
+**2. Se explicó el problema de las rondas en criollo.** Está en el DEVLOG el
+detalle técnico; lo que importa acá es la conclusión: **al jugador no le pasa
+nada** (se le cobró la apuesta y se le pagó el premio, todo en
+`wallet_transactions`), lo que queda trabado es la contabilidad entre la Casa y
+el socio.
+
+**3. Se resolvió, sin el proveedor.** Ver `RoundsReconciliationService`. Cuatro
+reglas de cierre ordenadas por confianza, un cron cada 10 minutos, y la columna
+`auto_settled_reason` (migración 0109) para poder auditar y revertir.
+
+**4. Primera corrida en producción: cerró 41 rondas, no 3.** Los docs contaban
+sólo las 3 de una investigación puntual; el arrastre real era mucho mayor.
+También expiró **93 sesiones**.
+
+### Decisiones tomadas
+
+- **Cerrar por evidencia, no por tiempo.** Tres de las cuatro reglas no adivinan
+  nada: la sesión se cerró, o hay una ronda posterior que el proveedor ya
+  confirmó cerrada, o la sesión no tiene actividad hace 2h. La cuarta
+  (`stale_timeout`, puro paso del tiempo) es el "último recurso" que pidió Uriel
+  y quedó **apagada por defecto**.
+- **`settled_at = placed_at`, no `now()`.** Al principio se puso `now()` sin
+  pensar en la atribución por período, y eso hacía que una ronda jugada el 29 de
+  agosto contara para **septiembre**: agosto quedaba corto para siempre. Se
+  corrigió. Bonus: `settled_at` también ordena el ticker de ganadores, así que
+  con `now()` un premio de hace tres días saltaba al tope como recién ganado.
+- **Sumar los montos en centavos enteros.** Sumar pesos como float acumula
+  error, y ese número se lee para decidir cuánto se le paga al operador.
+- **No filtrar el bono por rol** — decisión de sesiones anteriores, se mantiene.
+
+### Commits creados
+
+- `859df16` — `feat(games): cerrar las rondas que el proveedor deja abiertas`
+- `475ead1` — `feat(games): loguear cuanta plata mueve cada reconciliacion`
+- `d001aec` — `fix(games): atribuir la ronda al periodo en que se jugo`
+
+Todos en `main`, pusheados y deployados. Migración 0109 aplicada en producción.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno técnico.
+- Verificado en producción: migración aplicada, cron registrado
+  (`schedule="*/10 * * * *" idleHours=2 staleHours=apagado`), primera corrida
+  cerró 41 rondas por `session_expired`, sin errores y sin avisos de reapertura.
+- Verificado contra Postgres real (base scratch con migraciones): las 4 reglas,
+  **el caso negativo** (una ronda que no debe tocarse queda intacta), la
+  idempotencia, las sumas de montos con decimales, y que `settled_at` quede
+  IGUAL a `placed_at` (diferencia 0 segundos).
+
+### Notas para próximo agente
+
+- ⚠️ **Uriel va a RESETEAR la base para producción.** Las 41 rondas cerradas con
+  fecha de septiembre no se corrigieron porque se van con el reset. La migración
+  0109 y el cron viajan solos: no hay nada manual que hacer.
+- ⚠️ **Esto parchea el síntoma, no la causa.** Gregmorn sigue sin mandar el
+  `round_finished: true`. Su respuesta sigue pendiente (pidieron más tiempo el
+  2026-08-31). Que hubiera 41 trabadas no es un dato del pasado: es una **tasa**,
+  y con 50-100 jugadores va a pasar seguido.
+- ⚠️ **No liquidar un mes que todavía tenga rondas abiertas.** Con
+  `settled_at = placed_at`, una ronda vieja que se cierre después entra a un
+  período que quizá ya se liquidó. El job no puede saber qué se liquidó, así que
+  **avisa** cuando cierra algo de hace más de 7 días. Si aparece ese warning,
+  revisar.
+- **Cómo auditar lo que cerramos nosotros**: `auto_settled_reason` es NULL
+  cuando cerró el proveedor y trae el criterio cuando cerramos nosotros.
+  `SELECT auto_settled_reason, count(*), sum(net_amount) FROM game_rounds WHERE
+  auto_settled_reason IS NOT NULL GROUP BY 1;`
+- **Si el criterio es muy agresivo, el sistema avisa**: cuando llega un callback
+  para una ronda que cerramos nosotros, `GregmornCallbackService` la reabre (ya
+  lo hacía) y ahora loguea un warning. Si pasa seguido, subir
+  `ROUNDS_RECON_IDLE_HOURS`.
+- **Bug lateral arreglado**: NADIE expiraba las sesiones de juego. El estado
+  `expired` existía en el modelo y no lo usaba nadie, así que una sesión
+  abandonada cerrando la pestaña quedaba `active` para siempre.
+- Sigue en pie para producción: credenciales de Prod del proveedor, sin
+  monitoreo, backups nunca restaurados de prueba, y deployar en horario pico
+  degrada el casino (los builds corren en el mismo VPS).
