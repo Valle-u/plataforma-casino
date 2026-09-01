@@ -7,8 +7,13 @@
  * cambio de filtro de cada jugador iba a Postgres. Con 100 jugadores eso es
  * carga constante sobre la base para devolver siempre lo mismo.
  *
- * **Qué se cachea.** Sólo lecturas del catálogo (listado, facetas, nombres de
- * proveedor). Nada de plata, nada de saldos, nada por usuario.
+ * **Qué se cachea.** Lecturas públicas de juegos: el catálogo (listado,
+ * facetas, nombres de proveedor) y el feed de ganadores del ticker. Nada de
+ * plata, nada de saldos, nada por usuario.
+ *
+ * El ticker comparte este espacio de claves a propósito: muestra nombres de
+ * juego, así que una edición del catálogo también debería refrescarlo, y
+ * `invalidate()` lo alcanza sin hacer nada extra.
  *
  * ⚠️ **La clave SIEMPRE lleva el `tenantId` primero.** Es lo único que impide
  * que un tenant vea el catálogo de otro. Por eso `tenantId` es el primer
@@ -44,7 +49,22 @@ type KeyPart = string | number | boolean | undefined | null;
  * semana es intrascendente, y para el operador que acaba de marcar un juego
  * como destacado la invalidación explícita ya lo resolvió al instante.
  */
-const TTL_SECONDS = 60;
+export const CATALOG_TTL_SECONDS = 60;
+
+/**
+ * Cuánto vive el feed de ganadores del ticker.
+ *
+ * Mucho más corto porque es dato vivo. El número sale de la medición: el
+ * ticker es el ÚNICO endpoint que cada jugador pide solo, cada 15s. Con 100
+ * jugadores eran ~7 consultas por segundo sobre `game_rounds`, la tabla que
+ * más crece. Con 10s de TTL pasan a ser ~0,1 por segundo **sin importar**
+ * cuántos jugadores haya: el primero que llega paga la consulta y el resto
+ * lee de Redis.
+ *
+ * El costo es que un premio puede tardar hasta 10s extra en aparecer, sobre
+ * un poll que ya era de 15. Aceptado explícitamente por el dueño.
+ */
+export const RECENT_WINS_TTL_SECONDS = 10;
 
 @Injectable()
 export class GamesCatalogCache {
@@ -70,6 +90,7 @@ export class GamesCatalogCache {
     tenantId: string,
     parts: readonly KeyPart[],
     load: () => Promise<T>,
+    ttlSeconds: number = CATALOG_TTL_SECONDS,
   ): Promise<T> {
     const key = this.key(tenantId, parts);
     try {
@@ -82,7 +103,7 @@ export class GamesCatalogCache {
     const fresh = await load();
 
     try {
-      await this.redis.set(key, fresh, TTL_SECONDS);
+      await this.redis.set(key, fresh, ttlSeconds);
     } catch (err) {
       this.logger.warn(`Escritura de caché falló (${key}): ${(err as Error).message}`);
     }

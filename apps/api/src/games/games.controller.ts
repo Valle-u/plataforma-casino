@@ -79,7 +79,10 @@ import {
 import { GamesService } from './games.service';
 import { GameProvidersService } from './game-providers.service';
 import { GameProviderLogsService } from './game-provider-logs.service';
-import { GamesCatalogCache } from './games-catalog-cache.service';
+import {
+  GamesCatalogCache,
+  RECENT_WINS_TTL_SECONDS,
+} from './games-catalog-cache.service';
 
 @Controller('tenant/games')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -201,7 +204,17 @@ export class GamesController {
   ) {
     const db = req.tenantContext!.db;
     const limit = limitRaw ? Math.max(1, Math.min(50, Number(limitRaw) || 10)) : 10;
-    const data = await this.service.listRecentPublicWins(db, limit);
+
+    // Este es el endpoint más pedido de todos: cada jugador lo consulta solo
+    // cada 15s. Con TTL corto, el costo en base deja de crecer con la
+    // cantidad de jugadores. `limit` ya viene acotado a 1..50, así que el
+    // número de claves posibles es chico y conocido.
+    const data = await this.catalogCache.getOrLoad(
+      req.tenantContext!.tenant.id,
+      ['recent-wins', limit],
+      () => this.service.listRecentPublicWins(db, limit),
+      RECENT_WINS_TTL_SECONDS,
+    );
     return { data };
   }
 
