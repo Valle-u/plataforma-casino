@@ -25,7 +25,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import {
   gameRounds,
   gameSessions,
@@ -345,9 +345,18 @@ export class GregmornCallbackService {
   /**
    * Pasa la ronda a `rolled_back` y le cuelga el wallet tx de la reversa.
    *
-   * Se busca por `(userId, roundExternalId)` en vez de reconstruir la sesión:
-   * el id de ronda normalizado ya es único dentro de un jugador, y el rollback
-   * puede llegar mucho después de que la sesión original se cerró.
+   * **Cierra el ciclo del modelo de acumulación.** Una ronda cancelada NO
+   * manda `round_finished: true`: manda este rollback. Sin marcarla, quedaría
+   * abierta y el próximo callback del jugador se acumularía encima.
+   *
+   * Se busca por `(userId, roundExternalId)` y eso ahora CALZA solo: el
+   * rollback repite el `transactionId` del bet, y el bet es el primer callback
+   * de la ronda — o sea, justo el `transactionId` con el que se creó. Se busca
+   * por usuario y no por sesión porque el rollback puede llegar días después.
+   *
+   * Si no matchea NADA no se inventa un fallback: marcar la ronda equivocada
+   * como anulada la sacaría de las comisiones siendo válida, que es peor que
+   * no marcar ninguna. Se avisa y listo.
    */
   private async markRoundRolledBack(
     db: TenantDb,
@@ -355,10 +364,10 @@ export class GregmornCallbackService {
     ctx: ResolvedContext,
     rollbackWalletTxId: string | null,
   ): Promise<void> {
-    const roundExternalId = resolveRoundExternalId(body);
+    const roundExternalId = (body.transactionId ?? '').trim();
     if (!roundExternalId) return;
 
-    await db
+    const marcadas = await db
       .update(gameRounds)
       .set({
         status: 'rolled_back',
@@ -370,7 +379,16 @@ export class GregmornCallbackService {
           eq(gameRounds.userId, ctx.userId),
           eq(gameRounds.roundExternalId, roundExternalId),
         ),
+      )
+      .returning({ id: gameRounds.id });
+
+    if (marcadas.length === 0) {
+      this.logger.warn(
+        `Rollback ${roundExternalId} sin ronda que matchee (user ` +
+          `${ctx.userId}). El reembolso YA se aplicó; lo que queda sin marcar ` +
+          `es la ronda, que va a seguir contando en la base de comisión.`,
       );
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -456,8 +474,11 @@ export class GregmornCallbackService {
     const providerGameId = body.gameId;
     if (!providerGameId) return; // sin gameId no se puede mapear el juego
 
-    const roundExternalId = resolveRoundExternalId(body);
-    if (!roundExternalId) return;
+    // Con el modelo de acumulación la ronda NO se identifica por un id que
+    // venga en el callback: se busca la ronda abierta de la sesión. El
+    // `transactionId` sólo se usa como identificador de la ronda NUEVA.
+    const transactionId = (body.transactionId ?? '').trim();
+    if (!transactionId) return;
 
     // El sync guarda el gameId crudo en games.config.gregmorn.gameId.
     const [game] = await db
@@ -492,26 +513,54 @@ export class GregmornCallbackService {
       session = { id };
     }
 
-    const [existing] = await db
-      .select({
-        id: gameRounds.id,
-        betAmount: gameRounds.betAmount,
-        winAmount: gameRounds.winAmount,
-        action: gameRounds.action,
-        autoSettledReason: gameRounds.autoSettledReason,
-      })
-      .from(gameRounds)
-      .where(
-        and(
-          eq(gameRounds.sessionId, session.id),
-          eq(gameRounds.roundExternalId, roundExternalId),
-        ),
-      )
-      .limit(1);
-
     const finished = body.round_finished === true;
 
-    // Segundo callback del mismo spin: se acumula sobre la ronda que ya existe.
+    // TODO el bloque va en UNA transacción con la sesión bloqueada.
+    //
+    // Antes la ronda se identificaba por un id sacado del callback, y el
+    // índice único `(session_id, round_external_id)` impedía que dos
+    // callbacks simultáneos crearan dos rondas. Con acumulación ese índice
+    // ya no protege: el lock lo reemplaza.
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT id FROM game_sessions WHERE id = ${session.id} FOR UPDATE`,
+      );
+
+      // La última ronda de la sesión, CUALQUIERA sea su estado: el estado es
+      // justamente lo que decide si se acumula o se abre una nueva.
+      //
+      // La ventana de 24h es el corte del modelo: una ronda ACTIVA no dura un
+      // día ni con el bonus más largo. Si el proveedor deja una abierta y no
+      // manda ni el `true` ni el rollback, sin este corte se tragaría todo lo
+      // que el jugador juegue después hasta que la reconciliación la cierre a
+      // los 10 días.
+      const desde = new Date(Date.now() - VENTANA_ACUMULACION_MS);
+      const [ultima] = await tx
+        .select({
+          id: gameRounds.id,
+          status: gameRounds.status,
+          betAmount: gameRounds.betAmount,
+          winAmount: gameRounds.winAmount,
+          action: gameRounds.action,
+          autoSettledReason: gameRounds.autoSettledReason,
+        })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            gt(gameRounds.placedAt, desde),
+          ),
+        )
+        .orderBy(desc(gameRounds.placedAt))
+        .limit(1);
+
+      // Se acumula si sigue abierta, o si la habíamos cerrado NOSOTROS y el
+      // proveedor mandó más actividad (ahí manda su palabra, no la nuestra).
+      const existing =
+        ultima && (ultima.status === 'placed' || ultima.autoSettledReason)
+          ? ultima
+          : null;
+
     if (existing) {
       const bet = Number(existing.betAmount) + p.bet;
       const win = Number(existing.winAmount) + p.win;
@@ -524,12 +573,12 @@ export class GregmornCallbackService {
       // liquidó, ese número quedó desactualizado.
       if (existing.autoSettledReason) {
         this.logger.warn(
-          `Ronda ${existing.id} (round ${roundExternalId}) la habíamos ` +
-            `cerrado por "${existing.autoSettledReason}" y el proveedor ` +
-            `mandó más actividad. Revisar el criterio de reconciliación.`,
+          `Ronda ${existing.id} la habíamos cerrado por ` +
+            `"${existing.autoSettledReason}" y el proveedor mandó más ` +
+            `actividad. Revisar el criterio de reconciliación.`,
         );
       }
-      await db
+      await tx
         .update(gameRounds)
         .set({
           betAmount: bet.toFixed(2),
@@ -546,24 +595,28 @@ export class GregmornCallbackService {
           ...(finished ? { settledAt: new Date() } : {}),
         })
         .where(eq(gameRounds.id, existing.id));
-      return;
-    }
+        return;
+      }
 
-    await db.insert(gameRounds).values({
-      sessionId: session.id,
-      userId: ctx.userId,
-      gameId: game.id,
-      roundExternalId,
-      betAmount: p.bet.toFixed(2),
-      winAmount: p.win.toFixed(2),
-      netAmount: (p.win - p.bet).toFixed(2),
-      status: finished ? 'settled' : 'placed',
-      action: resolveRoundKind(body, null),
-      betWalletTxId: p.betWalletTxId,
-      winWalletTxId: p.winWalletTxId,
-      payload: body,
-      placedAt: new Date(),
-      ...(finished ? { settledAt: new Date() } : {}),
+      // Ronda nueva. El id es el `transactionId` de ESTE callback, que es el
+      // primero de la ronda: campo documentado y único, a diferencia del
+      // `roundId` de adentro de `info` que usábamos antes.
+      await tx.insert(gameRounds).values({
+        sessionId: session.id,
+        userId: ctx.userId,
+        gameId: game.id,
+        roundExternalId: transactionId,
+        betAmount: p.bet.toFixed(2),
+        winAmount: p.win.toFixed(2),
+        netAmount: (p.win - p.bet).toFixed(2),
+        status: finished ? 'settled' : 'placed',
+        action: resolveRoundKind(body, null),
+        betWalletTxId: p.betWalletTxId,
+        winWalletTxId: p.winWalletTxId,
+        payload: body,
+        placedAt: new Date(),
+        ...(finished ? { settledAt: new Date() } : {}),
+      });
     });
   }
 
@@ -663,58 +716,30 @@ export class GregmornCallbackService {
  * no un cero implícito.
  */
 /**
- * Saca el sufijo `_N` del `roundId` del proveedor.
+ * NOTA HISTÓRICA — acá vivían `normalizeRoundId` y `resolveRoundExternalId`.
  *
- * Ellos parten un spin en dos callbacks: `1349484390_0` (apuesta) y
- * `1349484390_1` (cierre). El id real de la ronda es la parte de la izquierda.
+ * Derivaban el id de la ronda del `roundId` que viaja dentro de `info`, un
+ * query-string con el estado del juego. Funcionaba, pero el proveedor avisó
+ * (2026-08-31) que ese campo **no es parte de su contrato**: formato y
+ * estabilidad dependen del estudio y pueden cambiar sin aviso.
  *
- * ⚠️ Si algún estudio usara un `roundId` que legítimamente termina en `_<n>`,
- * esto colapsaría rondas distintas en una. No se vio en ningún estudio de los
- * probados (EGT, ELK, Pragmatic), pero es el supuesto sobre el que se apoya.
+ * Se reemplazó por el modelo de acumulación, que sólo usa campos documentados:
+ * se junta todo hasta el `round_finished: true`. Ver `syncGameRound`.
  */
-export function normalizeRoundId(raw: string): string {
-  return raw.replace(/_\d+$/, '');
-}
-
 /**
- * Id con el que se agrupan los callbacks de una MISMA ronda logica.
+ * Cuánto puede durar la acumulación de una ronda.
  *
- * El `roundId` de nivel superior NO sirve para agrupar en los juegos que
- * mandan varias acciones por ronda (compra de tiradas gratis, respins): ahi
- * llega un UUID DISTINTO en cada callback. El id real de la ronda viaja
- * dentro de `info`, que es un query-string con el estado del juego:
+ * Es el corte del modelo de acumulación. Una ronda ACTIVA no dura un día ni
+ * con el bonus más largo (la compra de tiradas que documentamos mandó 30
+ * callbacks en 4 minutos), así que 24h no parte ninguna ronda real.
  *
- *   &sessionId=69929384&gameId=1043&bet=5000&win=250
- *   &roundId=1787962756&action=spin
- *
- * Verificado en prod (2026-08-29): una compra de tiradas gratis mando 30
- * callbacks -- `spin` con la apuesta de 5000, `pick`, y 28
- * `freeSpin`/`freeReSpin` con bet 0 -- todos con el mismo
- * `roundId=1787962756` adentro y 30 UUIDs distintos arriba.
- *
- * Sin esto cada accion quedaba como una ronda separada. Y como el proveedor
- * solo manda `round_finished: true` al cerrar la ronda ENTERA, las 29
- * primeras se quedaban en `placed` para siempre: fuera del NetWin, y por lo
- * tanto fuera de la base de comision (que filtra `status = settled`).
- *
- * Los callbacks del formato viejo (`1349885914_0` / `_1`) no traen `info`,
- * asi que caen a `normalizeRoundId` y se comportan igual que antes.
+ * Existe por el caso patológico: si el proveedor deja una ronda abierta y no
+ * manda ni el `round_finished: true` ni el rollback, sin corte se tragaría
+ * TODO lo que el jugador juegue después. El costo es que si un jugador
+ * retoma un bonus más de un día después, esa ronda queda partida en dos —
+ * mucho menos daño que colapsar días de juego en una sola.
  */
-export function resolveRoundExternalId(body: {
-  info?: string;
-  roundId?: string;
-  transactionId?: string;
-}): string {
-  const info = body.info;
-  if (typeof info === 'string') {
-    const m = /(?:^|[?&])roundId=([^&]+)/.exec(info);
-    if (m) {
-      const inner = m[1]?.trim();
-      if (inner) return inner;
-    }
-  }
-  return normalizeRoundId((body.roundId ?? body.transactionId ?? '').trim());
-}
+const VENTANA_ACUMULACION_MS = 24 * 60 * 60 * 1000;
 
 /** Precedencia del tipo de ronda: comprar es mas especifico que disparar. */
 const ROUND_KIND_RANK: Record<string, number> = {
