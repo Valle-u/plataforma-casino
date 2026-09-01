@@ -75,7 +75,7 @@ automático arriesga contar la ronda dos veces.
 
 ---
 
-## 2. Semántica del `roundId` (RESPONDIDO — y nos deja mal parados)
+## 2. Semántica del `roundId` (RESUELTO — 2026-09-01)
 
 Mandan **dos** identificadores distintos y el de arriba no sirve para agrupar:
 
@@ -124,10 +124,28 @@ lectura correcta de su recomendación y que sólo usa campos documentados. Y la
 respuesta al punto 1 acota el riesgo: una ronda no queda abierta para siempre —
 se resuelve sola en una semana como máximo, cerrándose o reembolsándose.
 
-**Sigue sin hacerse**: es un cambio en el camino de la plata y no se hizo en la
-misma sesión que el rediseño de la reconciliación. Queda como el próximo paso
-natural — dejaría de depender de `info`, tanto para agrupar como para detectar
-la compra de tiradas (`byBonus`).
+✅ **Hecho el 2026-09-01** (commit `4ba5d0b`). Se busca la ronda abierta de la
+sesión y se acumula ahí; si no hay, se abre una nueva con `round_external_id` =
+el `transactionId` de ese callback.
+
+Tres cosas que el cambio traía y no estaban previstas acá:
+
+1. **Una ronda cancelada no manda `round_finished: true`, manda un rollback.**
+   Sin marcarla quedaría abierta y el próximo callback del jugador se
+   acumularía encima. `markRoundRolledBack` ahora busca por `transactionId`,
+   que calza solo: el rollback repite el del bet y el bet es el primer callback
+   de la ronda.
+2. **Se perdió el índice único como protección.** `(session_id,
+   round_external_id)` impedía que dos callbacks simultáneos crearan dos
+   rondas; con acumulación ya no aplica, y no había ningún lock. Se agregó una
+   transacción con la sesión bloqueada.
+3. **Corte de 24h.** Si el proveedor deja una ronda abierta sin mandar ni el
+   `true` ni el rollback, sin corte se tragaría todo lo que el jugador juegue
+   después. Una ronda ACTIVA no dura un día.
+
+⚠️ **`byBonus` sigue saliendo de `info`**: no hay campo documentado que
+distinga una compra de tiradas de un giro común. Este cambio nos sacó de `info`
+para AGRUPAR, no para clasificar. Degrada solo.
 
 ---
 
@@ -223,3 +241,33 @@ amplio de lo necesario. Queda solo `Gregmorn callbacks`, anclada a la ruta.
 > **3. Rollback.** Still never exercised on Stage — it is the only part of the
 > money path we have never seen from your system. Could you force one so we can
 > verify our handler against a real payload?
+
+---
+
+## Borrador del mensaje (2026-09-01 — respuesta a las tres)
+
+> Thanks — the detail about session retention is what we were missing, and it
+> changed our design.
+>
+> We had built a job that closed abandoned rounds after a couple of hours,
+> assuming they were stuck. Knowing the round is held on your side for up to a
+> week and then cancelled with a refund, that was closing rounds that could still
+> resolve — and a closed round enters our commission base, so we would have paid
+> our partner on money that later went back to the player. We now wait well past
+> your retention window before touching anything, and let the refund do its job.
+>
+> On the roundId — we moved to the accumulation model you confirmed. We group
+> everything until `round_finished: true` and use the first `transactionId` of
+> the round as its identifier, so we no longer depend on the `roundId` inside
+> `info`. One thing we kept from `info` is detecting a bonus buy (`byBonus`),
+> since there is no documented field that separates it from a regular spin — if
+> that ever changes on your side those rounds are simply classified as free
+> spins, which is fine for us.
+>
+> Nothing pending on your side. Appreciate you being straight about the
+> mechanism rather than treating it as a gap.
+
+**Por qué así**: no lleva preguntas nuevas. Las tres están respondidas y lo que
+queda es de nuestro lado (credenciales de Prod). Se les avisa que su respuesta
+nos evitó un error de plata concreto — es información útil para ellos y honesta
+de nuestra parte.
