@@ -21,12 +21,34 @@ export class RequestContextMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction): void {
     const requestId = generateUuidV7();
 
-    // X-Forwarded-For tiene prioridad (proxies/CDN), sino `req.ip` de Express.
-    // El header puede traer múltiples IPs ("clientIP, proxy1, proxy2") —
-    // tomamos la primera (el cliente original).
+    // De dónde sale la IP, en orden de confianza.
+    //
+    // 1. `CF-Connecting-IP`. Cloudflare SIEMPRE lo escribe con la IP real del
+    //    visitante y pisa lo que haya mandado el cliente.
+    // 2. `X-Forwarded-For`, primer valor.
+    // 3. `req.ip` de Express (el peer del socket).
+    //
+    // ⚠️ Antes se usaba (2) directamente y **guardábamos IPs de Cloudflare, no
+    // de jugadores**. La prueba está en los datos: una misma IP aparecía
+    // asociada a 5–8 usuarios distintos, y todos los rangos (172.68/69/71,
+    // 104.22/23) son de Cloudflare. Con `api.miamihub.vip` detrás de CF, el
+    // primer valor de XFF no es el cliente.
+    //
+    // Esto rompía cualquier control por IP: antifraude, geo, y la IP que le
+    // mandamos a los proveedores de juego en el launch.
+    //
+    // ⚠️ Confiar en el header supone que **todo el tráfico entra por**
+    // **Cloudflare**. Hoy el origen todavía acepta conexiones directas: blindar
+    // el firewall del VPS a los rangos de CF es la fase 2 de
+    // `docs/25-seguridad-cloudflare.md`. Hasta que eso esté, quien le pegue
+    // directo al origen puede falsear el header — igual que ya podía falsear
+    // `X-Forwarded-For`, así que esto no empeora nada.
     let ip: string | null = null;
+    const cf = req.header('cf-connecting-ip')?.trim();
     const fwd = req.header('x-forwarded-for');
-    if (fwd) {
+    if (cf) {
+      ip = cf;
+    } else if (fwd) {
       ip = fwd.split(',')[0]?.trim() ?? null;
     } else if (req.ip) {
       ip = req.ip;

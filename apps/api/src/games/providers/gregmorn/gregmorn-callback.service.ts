@@ -488,29 +488,71 @@ export class GregmornCallbackService {
       .limit(1);
     if (!game) return;
 
-    // Sesión virtual por user+game (mismo patrón que Palace y Forever).
-    const sessionKey = `gregmorn:${body.login ?? ''}:${providerGameId}`;
-    let [session] = await db
-      .select({ id: gameSessions.id })
-      .from(gameSessions)
-      .where(
-        and(
-          eq(gameSessions.userId, ctx.userId),
-          eq(gameSessions.gameId, game.id),
-          eq(gameSessions.providerSessionId, sessionKey),
-        ),
-      )
-      .limit(1);
+    // La sesión: la MISMA que abrió el launch, no una inventada.
+    //
+    // Antes se armaba una clave sintética `gregmorn:<login>:<gameId>` y se
+    // buscaba por ahí. Como el launch guarda el `sessionId` que devuelve el
+    // proveedor, las dos claves nunca coincidían: **cada apertura dejaba una
+    // fila muerta** (con la IP, el user-agent y el saldo real, pero sin una
+    // sola ronda) y las rondas se colgaban de una segunda sesión sin IP y con
+    // `opened_balance` en 0. Eran el 77% de la tabla.
+    //
+    // Resulta que no hacía falta inventar nada: **los callbacks traen el mismo
+    // `sessionid` que guardamos al abrir**. Verificado contra producción — los
+    // 2124 callbacks de la tabla matchean una sesión de launch.
+    //
+    // Se busca por ahí, y la clave sintética queda sólo de red de contención
+    // por si algún callback llega sin `sessionid`: en el camino de la plata,
+    // no encontrar la sesión NO puede significar perder la apuesta.
+    const sessionid = (body.sessionid ?? '').trim();
+    let session: { id: string } | undefined;
+
+    if (sessionid) {
+      [session] = await db
+        .select({ id: gameSessions.id })
+        .from(gameSessions)
+        .where(
+          and(
+            eq(gameSessions.userId, ctx.userId),
+            eq(gameSessions.gameId, game.id),
+            eq(gameSessions.providerSessionId, sessionid),
+          ),
+        )
+        // Si el jugador reabrió el mismo juego, la más nueva.
+        .orderBy(desc(gameSessions.startedAt))
+        .limit(1);
+    }
+
     if (!session) {
-      const id = generateUuidV7();
-      await db.insert(gameSessions).values({
-        id,
-        userId: ctx.userId,
-        gameId: game.id,
-        providerSessionId: sessionKey,
-        status: 'active',
-      });
-      session = { id };
+      const sessionKey = `gregmorn:${body.login ?? ''}:${providerGameId}`;
+      [session] = await db
+        .select({ id: gameSessions.id })
+        .from(gameSessions)
+        .where(
+          and(
+            eq(gameSessions.userId, ctx.userId),
+            eq(gameSessions.gameId, game.id),
+            eq(gameSessions.providerSessionId, sessionKey),
+          ),
+        )
+        .orderBy(desc(gameSessions.startedAt))
+        .limit(1);
+      if (!session) {
+        const id = generateUuidV7();
+        await db.insert(gameSessions).values({
+          id,
+          userId: ctx.userId,
+          gameId: game.id,
+          providerSessionId: sessionKey,
+          status: 'active',
+        });
+        session = { id };
+      }
+      this.logger.warn(
+        `Gregmorn: callback sin sessionid utilizable (login=${body.login ?? "?"} ` +
+          `game=${providerGameId}); se usó la sesión virtual. Si esto se repite, ` +
+          `las rondas quedan sin IP ni saldo de apertura.`,
+      );
     }
 
     const finished = body.round_finished === true;

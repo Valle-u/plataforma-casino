@@ -14850,3 +14850,69 @@ Por orden de riesgo:
 - **Cómo verificar el monitoreo sin adivinar**: §18.3 de escalabilidad tiene los
   tres chequeos (boot ping para la API, consola del browser para la web, query
   de spans para los traces).
+
+---
+
+## 2026-09-01 20:00 AR — Claude (Opus 5) · addendum 13
+
+**Duración**: ~1h30
+**Usuario**: Uriel
+
+Uriel pidió analizar la actividad de `yesicaprueba`, el usuario que generó las
+capturas de error del proveedor. El análisis completo está en
+[`docs/gregmorn/97-analisis-incidente-2026-09-01.md`](gregmorn/97-analisis-incidente-2026-09-01.md).
+
+### El resultado
+
+**La falla no es nuestra, y ahora hay evidencia.** De 05:44 UTC en adelante hubo
+10 aperturas de juego; nuestra API devolvió la URL en todas y Gregmorn mandó
+**cero callbacks en ocho de ellas**. El último callback de toda la sesión fue a
+las 05:49:26, con siete aperturas posteriores sin una señal.
+
+Cero rondas trabadas: las 117 quedaron `settled`.
+
+### De dónde salieron los datos
+
+Los logs del contenedor de esa ventana ya no existían. Se llegó por la base, con
+consultas de sólo lectura vía la terminal de Dokploy (el clasificador de
+permisos la bloquea por default; Uriel la habilitó a pedido).
+
+### Dos bugs nuestros, arreglados
+
+**Las IPs que guardábamos eran de Cloudflare, no de jugadores.** La prueba salió
+de los datos: la misma IP aparecía con 5–8 usuarios distintos. Cierra el
+pendiente del addendum 8 **con respuesta negativa** — el arreglo de la IP que se
+había deployado mandaba IPs de Cloudflare al proveedor. Ahora usa
+`CF-Connecting-IP`.
+
+**Cada apertura dejaba una sesión muerta.** El callback armaba una clave
+sintética y el launch guardaba el id del proveedor: nunca coincidían. Eran **296
+de 383 sesiones (77%) vacías**, y la IP y el saldo quedaban en la fila sin
+rondas. No hacía falta inventar nada — los callbacks traen el mismo `sessionid`
+que guardamos al abrir (verificado: los 2124 matchean).
+
+### Commits creados
+
+- `<hash>` — `fix(games): usar la sesion del launch y la IP real del jugador`
+
+### Notas para próximo agente
+
+- ⚠️ **5 tests e2e de `gregmorn-callback` están en rojo** desde el cambio al
+  modelo de acumulación de hoy. Buscan la ronda por `roundId` cuando ahora se
+  identifica por `transactionId`: **los tests están viejos, el código está bien**
+  — se verificó corriéndolos con y sin los cambios de esta sesión, fallan igual.
+  Hay que arreglarlos igual: un suite rojo en el camino de la plata deja de
+  avisar.
+- ⚠️ **No registramos el `getBalance`.** Es lo único que falta para poder
+  responder con datos el cartel de `CRÉDITO 0,00` que reportaron. Hoy es la
+  palabra de ellos contra la nuestra.
+- ⚠️ **Palace tiene el mismo bug de sesiones** que se arregló en Gregmorn, con
+  727 callbacks encima. No se tocó porque primero hay que ver si su protocolo
+  trae un id de sesión propio.
+- **El arreglo de la IP sigue sin verificarse en producción**: hay que loguearse
+  y mirar qué queda en `audit_log.ip`. Tiene que ser una IP de ISP, no
+  172.68/69/71 ni 104.22/23.
+- **Cómo consultar la base**: Postgres no está expuesto (`externalPort: null`).
+  Se llega por `wss://dokploy.miamihub.vip/docker-container-terminal?containerId=`
+  con el `x-api-key`, mandando el SQL en base64 para que no lo rompan las
+  comillas del PTY.
