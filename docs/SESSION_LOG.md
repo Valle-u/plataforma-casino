@@ -13982,3 +13982,103 @@ Todos en `main`, pusheados y deployados.
   stash`. No son de estos cambios.
 - Sigue en pie lo de Gregmorn: no liquidar 2026-08, el rollback sin ejercer, y
   las respuestas que faltan del proveedor.
+
+---
+
+## 2026-08-31 21:20 AR — Claude (Opus 5) · addendum 3
+
+**Duración**: ~1h30
+**Usuario**: Uriel
+
+Análisis de capacidad para producción. Uriel preguntó si la plataforma banca
+50-100 jugadores simultáneos, y por qué el CPU del VPS oscila de 0 a 100 en
+Dokploy estando él solo adentro.
+
+### Qué hicimos
+
+**1. Diagnóstico del CPU.** No eran los jugadores: **son los builds**. Dokploy
+tiene `buildServerId: null`, o sea que buildea en el mismo VPS que sirve el
+tráfico, y cada build de la web tarda ~200s a full CPU sobre los mismos 4 cores.
+Uriel estaba mirando el panel durante una sesión con ~9 deploys míos.
+
+**2. Medición de capacidad.** Con conexiones calientes, los endpoints del
+jugador responden **45-54ms de mediana sin picos**, y a 40 concurrentes dan
+**cero errores en 470 requests** con la mediana subiendo apenas 1,6x. Contra eso,
+100 jugadores quietos generan ~15 req/s = **~3 concurrentes**. Respuesta:
+**50-100 jugadores navegando entran cómodos**.
+
+**3. Caché del catálogo en Redis** (`games-catalog-cache.service.ts`). Se
+cachean listado de activos, facetas, nombres de proveedor (TTL 60s) y el ticker
+de ganadores (TTL 10s). Redis ya estaba en el proyecto pero sólo lo usaban
+permisos y rate limiting.
+
+**4. Pool de tenant 10 → 20.** La suba a 30 del Sprint 53.5 se había hecho sólo
+del lado de control; el de tenant —el que usan LOS JUGADORES— quedó en el
+default viejo.
+
+**5. Sección 17 en `docs/13-escalabilidad.md`** con todos los números medidos,
+el método, y un aviso arriba del doc: §1-16 son proyecciones, §17 son
+mediciones, y si se contradicen gana §17.
+
+### Decisiones tomadas
+
+- **La clave del caché SIEMPRE empieza por `tenantId`**, y es el primer
+  parámetro obligatorio de los dos métodos: no hay forma de llamarlos sin él. Es
+  lo único que separa el catálogo de un tenant del de otro.
+- **Las partes de la clave están tipadas como primitivos.** Con `unknown`, un
+  objeto se stringificaba como `[object Object]` y dos filtros distintos habrían
+  colapsado en la MISMA clave, sirviéndole a un jugador el resultado de otra
+  consulta. Lo encontró el linter, no yo.
+- **No se cachea cuando hay término de búsqueda**: texto libre = una clave nueva
+  por cada tecleo, un basurero que nadie vuelve a leer.
+- **TTL corto + invalidación explícita** en las cuatro mutaciones del catálogo.
+  El sync de proveedor corre fire-and-forget sin `tenantId` a mano: ahí manda el
+  TTL, y está anotado.
+- **Pool en 20 y no más alto**: no se pudo verificar el `max_connections` real
+  de producción, y 20 es seguro incluso con el default de 100 (da 50 con un
+  tenant, 90 con los 3 del target de MVP).
+
+### Commits creados
+
+- `4af0e25` — `perf(games): cachear el catalogo en Redis y subir el pool de tenant`
+- `b53f3bd` — `perf(games): cachear el ticker de ganadores 10s`
+- `eed48b0` — `docs(escalabilidad): mediciones reales de produccion (seccion 17)`
+
+Todos en `main`, pusheados y deployados.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno.
+- Los dos cachés verificados contra Redis y Postgres reales: guardan, pegan,
+  TTL correcto por tipo (60s catálogo / 10s ticker), un tenant no ve la clave
+  del otro, la búsqueda no deja claves, y la invalidación borra sólo las del
+  tenant pedido. En producción, 16 pares miss/hit con **cuerpos idénticos**.
+
+### Notas para próximo agente
+
+- ⚠️ **CÓMO MEDIR.** Es lo más importante de esta sesión. Abrir una conexión
+  TCP+TLS nueva por muestra mide **handshakes, no el servidor**: eso daba 54 a
+  608ms y me llevó a concluir que había contención en el VPS. **Era falso.** Con
+  keep-alive y el pool caliente, los mismos endpoints dan 43-63ms sin un solo
+  pico. Con `curl`, pasar N URLs en UNA invocación y **un `-o /dev/null` por
+  cada una** — con uno solo, el cuerpo de las demás se mezcla con los tiempos.
+  Todo está en `docs/13-escalabilidad.md §17.1`.
+- ⚠️ **Medir ANTES de optimizar.** Cacheé dos endpoints que no eran el cuello
+  de botella: rindieron 1,28x y 1,15x porque `0099_perf_indexes` ya había dejado
+  esas queries en ~8-15ms. Los cachés igual sirven, pero por otra razón: el
+  costo en base deja de crecer con la cantidad de jugadores. No es velocidad de
+  hoy, es seguro para cuando `game_rounds` tenga millones de filas.
+- ⚠️ **Lo que NO se probó: el camino de la apuesta.** Todo lo medido es lectura.
+  Callback → transacción → `FOR UPDATE` sobre la wallet no se ejercitó. Para
+  "¿aguanta 100 jugando de verdad?" hace falta un load test contra **staging**,
+  no contra producción.
+- **Deployar en horario pico degrada el casino** (builds a full CPU en la misma
+  caja). Es lo más accionable que quedó pendiente.
+- **El VPS es la mitad de lo planeado**: KVM 4 (4 vCPU / 16 GB) contra los 8/32
+  que dice §3 para MVP, con Postgres, Redis, API, web, Dokploy y builds
+  conviviendo. Una sola réplica de API = un core para JS. Sin monitoreo:
+  `application.readAppMonitoring` devuelve vacío.
+- **Si se agregan tenants, subir `max_connections` de Postgres ANTES** de tocar
+  los pools. La aritmética está en `client.ts` y en §17.6.
+- Sigue en pie lo de Gregmorn: no liquidar 2026-08, el rollback sin ejercer, y
+  las respuestas que faltan del proveedor.
