@@ -14706,3 +14706,60 @@ continua.
   resuelve y es lo que hacía falta para el diagnóstico de §17.
 - Sigue en pie para producción: credenciales de Prod del proveedor, probar una
   restauración de backup, y no deployar en horario pico.
+
+---
+
+## 2026-09-01 18:45 AR — Claude (Opus 5) · addendum 11
+
+**Duración**: ~20min
+**Usuario**: Uriel
+
+Salió de una pregunta de Uriel: con el monitoreo prendido, qué cambia con los
+problemas del proveedor. Revisando eso apareció un hueco.
+
+### El hueco
+
+**A Sentry sólo llegan los 5xx y lo que se captura a mano.** `logger.warn` y
+`logger.error` no llegan — no hay integración de logs. Dos cosas de plata
+quedaban invisibles:
+
+1. **El cron cerrando rondas.** Se loguea como WARNING porque cerrar una ronda
+   significa que el proveedor no la resolvió en 10 días. Cada ronda cerrada
+   entra a la base de comisión, y nadie se enteraba salvo yendo a los logs del
+   contenedor.
+2. **La reconciliación fallando para un tenant.** El `catch` del cron existe
+   para que un tenant roto no frene a los demás, pero se tragaba el error. Un
+   job de plata que falla en silencio es peor que uno que se cae: las rondas
+   nunca se reconcilian y nadie lo sabe.
+
+Los dos ahora se capturan explícitamente. El mensaje del primero es **fijo**:
+con los números adentro, cada corrida sería un issue nuevo — alertas repetidas
+y cuota quemada. Los números van como contexto.
+
+### Qué cambia (y qué no) con los problemas del proveedor
+
+Quedó dicho en la conversación y vale anotarlo:
+
+- **Sí cambia**: ahora se mide cuánto tarda SU API. Las llamadas salientes
+  quedan como spans `http.client`, así que "a veces abren lento" pasa a ser un
+  número. Y se puede descartar que la falla sea nuestra: el monitor de uptime
+  dice si la API estaba viva a esa hora.
+- **No cambia**: el juego corre en un **iframe de su dominio**. Nuestro Sentry
+  del browser no puede ver adentro — es otro origen. El frame en blanco, el
+  "CRÉDITO 0,00" y sus carteles de error siguen siendo tan invisibles como
+  antes. **La falla del proveedor vive justo donde el monitoreo no llega.**
+
+### Commits creados
+
+- `<pendiente>` — `feat(monitoring): avisar a Sentry cuando el cron cierra rondas`
+
+### Notas para próximo agente
+
+- ⚠️ **Loguear no es avisar.** Si agregás otro job que toca plata, `logger.warn`
+  no le llega a nadie. Hay que capturarlo explícitamente.
+- ⚠️ **Mensajes fijos en `captureMessage`.** Meter números variables en el texto
+  crea un issue nuevo por corrida: rompe el agrupamiento, repite las alertas y
+  come de los 5.000 eventos/mes. Los datos van en `setContext`.
+- **Sigue sin verificarse el arreglo de la IP del jugador** (addendum 8). El
+  monitoreo no lo verifica: hay que abrir un juego y decodificar el JWT del log
+  de `openGame`.

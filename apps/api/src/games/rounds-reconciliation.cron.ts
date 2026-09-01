@@ -26,6 +26,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import * as Sentry from '@sentry/nestjs';
 import { CronJob } from 'cron';
 import { eq } from 'drizzle-orm';
 import { tenants, type ControlDb, type Tenant } from '@casino/db';
@@ -127,9 +128,21 @@ export class RoundsReconciliationCron {
       for (const tenant of activos) {
         try {
           const db = this.connectionCache.get(tenant);
-          const resumen = await this.service.runForTenant(db, opts);
+          const resumen = await this.service.runForTenant(db, opts, tenant.slug);
           salida.push({ tenantSlug: tenant.slug, resumen });
         } catch (err) {
+          // El catch existe para que un tenant roto no frene a los demás,
+          // pero eso hacía que el fallo quedara sólo en los logs del
+          // contenedor. Un job de plata que falla en silencio es peor que
+          // uno que se cae: las rondas nunca se reconcilian y nadie se
+          // entera.
+          Sentry.withScope((scope) => {
+            scope.setTag('tenant', tenant.slug);
+            scope.setTag('job', 'rounds-reconciliation');
+            Sentry.captureException(
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          });
           this.logger.error(
             `Reconciliación de rondas del tenant ${tenant.slug} falló: ` +
               `${(err as Error).message}`,

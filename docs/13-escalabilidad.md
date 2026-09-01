@@ -744,6 +744,24 @@ alguien.
 Se borraron las dos reglas que Sentry crea sola ("high priority issues"), que
 son una heurística de ellos y se solapaban con éstas.
 
+#### Qué llega a Sentry (y qué no)
+
+Sólo llegan **los 5xx** (vía el filtro global) y **lo que se captura a mano**.
+⚠️ **`logger.warn` y `logger.error` NO llegan** — no hay integración de logs.
+Eso hacía que dos cosas relevantes para la plata quedaran invisibles, y por eso
+se capturan explícitamente:
+
+| Dónde | Qué avisa |
+|---|---|
+| `rounds-reconciliation.service.ts` | el cron cerró rondas que el proveedor no resolvió (entran a la base de comisión) |
+| `rounds-reconciliation.cron.ts` | la reconciliación falló para un tenant — el `catch` existe para no frenar a los demás, y se tragaba el fallo |
+
+El mensaje del primero es **fijo a propósito**: con los números adentro, cada
+corrida sería un issue nuevo para Sentry — alertas repetidas y cuota quemada.
+Los números van como contexto del evento.
+
+**Si agregás otro job de plata, acordate**: loguearlo no es avisarlo.
+
 #### Monitor de uptime
 
 `https://api.miamihub.vip/health` cada **60s**, desde fuera del VPS. Es la única

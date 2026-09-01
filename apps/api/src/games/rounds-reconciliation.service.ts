@@ -73,6 +73,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { sql } from 'drizzle-orm';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
@@ -128,6 +129,7 @@ export class RoundsReconciliationService {
   async runForTenant(
     db: TenantDb,
     opts: ReconciliationOptions,
+    tenantSlug: string,
   ): Promise<ReconciliationSummary> {
     const idle = intervalo(opts.sessionIdleHours, DEFAULT_SESSION_IDLE_HOURS, 'hours');
     const minAge = intervalo(opts.minAgeDays, DEFAULT_MIN_AGE_DAYS, 'days');
@@ -239,6 +241,7 @@ export class RoundsReconciliationService {
     // que el proveedor no la resolvió NI cerrándola NI reembolsándola en
     // `minAgeDays`. Eso es una anomalía de su lado, no rutina.
     if (resumen.total > 0) {
+      avisarASentry(tenantSlug, opts.minAgeDays, resumen);
       this.logger.warn(
         `Se cerraron ${resumen.total} ronda(s) que el proveedor no resolvió en ` +
           `${opts.minAgeDays} días (sesión cerrada ${resumen.bySessionClosed}, ` +
@@ -255,6 +258,43 @@ export class RoundsReconciliationService {
     }
     return resumen;
   }
+}
+
+/**
+ * Manda el cierre a Sentry además de loguearlo.
+ *
+ * `logger.warn` **no llega a Sentry** — sólo van los 5xx del filtro global
+ * y lo que se captura a mano. Sin esto, el cron podía cerrar rondas en masa
+ * y nadie se enteraba salvo que fuera a mirar los logs del contenedor. Es
+ * plata: cada ronda cerrada entra a la base de comisión.
+ *
+ * El mensaje es **fijo a propósito**. Si le metiéramos los números adentro,
+ * cada corrida sería un issue nuevo para Sentry: alertas repetidas y, con
+ * 5.000 eventos/mes de cuota, un agujero al pedo. Los números van como
+ * contexto, que es donde se pueden mirar sin ensuciar el agrupamiento.
+ */
+function avisarASentry(
+  tenantSlug: string,
+  minAgeDays: number,
+  resumen: ReconciliationSummary,
+): void {
+  Sentry.withScope((scope) => {
+    scope.setLevel('warning');
+    scope.setTag('tenant', tenantSlug);
+    scope.setTag('job', 'rounds-reconciliation');
+    scope.setContext('reconciliación', {
+      rondasCerradas: resumen.total,
+      porSesiónCerrada: resumen.bySessionClosed,
+      porSesiónExpirada: resumen.bySessionExpired,
+      porRondaPosterior: resumen.byLaterSettledRound,
+      sinEvidencia: resumen.byNoEvidence,
+      netWinQueEntraAComisión: resumen.net.total,
+      díasDeAntigüedadMínima: minAgeDays,
+    });
+    Sentry.captureMessage(
+      'Reconciliación cerró rondas que el proveedor no resolvió',
+    );
+  });
 }
 
 /** Fila del RETURNING: el motivo (si la query lo trae) y el neto. */
