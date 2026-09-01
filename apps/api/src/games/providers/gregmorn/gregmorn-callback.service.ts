@@ -498,6 +498,7 @@ export class GregmornCallbackService {
         betAmount: gameRounds.betAmount,
         winAmount: gameRounds.winAmount,
         action: gameRounds.action,
+        autoSettledReason: gameRounds.autoSettledReason,
       })
       .from(gameRounds)
       .where(
@@ -514,6 +515,20 @@ export class GregmornCallbackService {
     if (existing) {
       const bet = Number(existing.betAmount) + p.bet;
       const win = Number(existing.winAmount) + p.win;
+
+      // Llegó actividad para una ronda que habíamos cerrado NOSOTROS: el
+      // criterio de `RoundsReconciliationService` fue demasiado agresivo.
+      // No es un error —el dato se acumula igual y la ronda se reabre si
+      // este callback no es final— pero hay que enterarse: si pasa seguido,
+      // hay que subir `ROUNDS_RECON_IDLE_HOURS`. Y si el período ya se
+      // liquidó, ese número quedó desactualizado.
+      if (existing.autoSettledReason) {
+        this.logger.warn(
+          `Ronda ${existing.id} (round ${roundExternalId}) la habíamos ` +
+            `cerrado por "${existing.autoSettledReason}" y el proveedor ` +
+            `mandó más actividad. Revisar el criterio de reconciliación.`,
+        );
+      }
       await db
         .update(gameRounds)
         .set({
@@ -521,6 +536,8 @@ export class GregmornCallbackService {
           winAmount: win.toFixed(2),
           netAmount: (win - bet).toFixed(2),
           status: finished ? 'settled' : 'placed',
+          // El proveedor habló: manda su palabra, no nuestra inferencia.
+          autoSettledReason: null,
           action: resolveRoundKind(body, existing.action),
           // Los wallet tx llegan en callbacks distintos (el bet en el primero,
           // el win en el segundo). No pisar con null el que ya está guardado.

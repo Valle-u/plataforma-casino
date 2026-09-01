@@ -147,6 +147,17 @@ export const gameRounds = pgTable(
 
     settledAt: timestamp('settled_at', { withTimezone: true, mode: 'date' }),
 
+    /**
+     * NULL = la cerró el proveedor mandando `round_finished: true` (lo normal).
+     * No NULL = la cerramos nosotros, y acá queda con qué criterio.
+     *
+     * Existe porque Gregmorn deja rondas abiertas para siempre y su API no
+     * tiene endpoint para consultarlas: hay que cerrarlas por nuestra cuenta,
+     * y sin esta marca el cierre automático sería indistinguible del real.
+     * Ver la migración 0109 y `RoundsReconciliationService`.
+     */
+    autoSettledReason: text('auto_settled_reason'),
+
     rolledBackAt: timestamp('rolled_back_at', {
       withTimezone: true,
       mode: 'date',

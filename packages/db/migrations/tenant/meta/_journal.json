@@ -771,6 +771,13 @@
       "when": 1789301000000,
       "tag": "0108_drop_bank_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1789301100000,
+      "tag": "0109_round_auto_settle",
+      "breakpoints": true
     }
   ]
 }
