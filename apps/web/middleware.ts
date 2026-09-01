@@ -16,6 +16,11 @@
  *
  * Fase A es aditiva: no cambia el comportamiento del render (el seed del user
  * viene en la Fase B). Cualquier fallo → `NextResponse.next()` sin refrescar.
+ *
+ *  3. **Pasa la IP real del jugador** al backend en `x-player-ip`, para las
+ *     rutas `/api/tenant/*` y `/api/player/*` que `next.config.ts` proxea.
+ *     Ver `IP_JUGADOR` más abajo: es el único lugar del sistema donde esa IP
+ *     todavía se conoce.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -27,6 +32,38 @@ import {
 } from '@/lib/auth-cookies';
 
 const TENANT_HOST = process.env.NEXT_PUBLIC_TENANT_HOST ?? '';
+
+/**
+ * Header con el que le pasamos al backend la IP REAL del jugador.
+ *
+ * Hace falta porque `next.config.ts` proxea `/api/tenant/*` con un *rewrite*,
+ * y **los rewrites de Next corren en el servidor**. La cadena real es:
+ *
+ *   navegador → Cloudflare → Next (nuestro VPS) → Cloudflare → API
+ *
+ * En el segundo salto el cliente somos nosotros, así que Cloudflare pisa el
+ * `CF-Connecting-IP` con la IP del VPS y el backend guardaba eso. Verificado
+ * en producción: las sesiones de juego quedaban con `147.93.32.111`, y antes
+ * con IPs de Cloudflare compartidas por 5–8 usuarios distintos.
+ *
+ * Acá, en cambio, estamos sobre la request ORIGINAL del navegador: el
+ * `CF-Connecting-IP` es el del jugador de verdad. Es el único punto del
+ * sistema donde esa IP todavía existe.
+ *
+ * ⚠️ El backend confía en este header. Hoy el origen acepta conexiones
+ * directas, así que alguien que le pegue derecho podría falsearlo — igual que
+ * ya podía falsear `X-Forwarded-For`. Lo cierra la fase 2 de
+ * `docs/25-seguridad-cloudflare.md` (firewall del VPS a rangos de CF).
+ */
+const IP_JUGADOR = 'x-player-ip';
+
+/** La IP del visitante, tal como la ve la request original del navegador. */
+function ipDelJugador(req: NextRequest): string | null {
+  const cf = req.headers.get('cf-connecting-ip')?.trim();
+  if (cf) return cf;
+  const fwd = req.headers.get('x-forwarded-for');
+  return fwd?.split(',')[0]?.trim() || null;
+}
 
 /**
  * ¿El JWT venció (o vence dentro de `skewSec`)? Solo decodifica el payload para
@@ -52,6 +89,17 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   const panel: Panel = pathname.startsWith('/play') ? 'player' : 'admin';
 
   const requestHeaders = new Headers(req.headers);
+  const ip = ipDelJugador(req);
+  if (ip) requestHeaders.set(IP_JUGADOR, ip);
+
+  // Las rutas proxeadas no son navegaciones: no necesitan panel, ni el
+  // redirect por subdominio, ni el refresh de cookies (el api-client refresca
+  // por su cuenta). Sólo pasan por acá para llevarse la IP, así que se sale
+  // temprano y no se les agrega latencia.
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   requestHeaders.set('x-panel', panel);
   requestHeaders.set('x-pathname', pathname);
 
@@ -141,7 +189,15 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  // Corre en todas las rutas de página, EXCEPTO: assets de _next, los handlers
-  // /api (los BFF refrescan por su cuenta), y archivos con extensión (estáticos).
-  matcher: ['/((?!_next/|api/|.*\\.[\\w]+$).*)'],
+  // Rutas de página: todas EXCEPTO assets de _next, los handlers /api (los BFF
+  // refrescan por su cuenta) y archivos con extensión (estáticos).
+  //
+  // Y además las dos rutas que `next.config.ts` proxea al backend, que entran
+  // sólo para llevarse `x-player-ip` (ver arriba). Sin esto el backend nunca
+  // ve la IP del jugador.
+  matcher: [
+    '/((?!_next/|api/|.*\\.[\\w]+$).*)',
+    '/api/tenant/:path*',
+    '/api/player/:path*',
+  ],
 };

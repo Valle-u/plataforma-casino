@@ -23,10 +23,14 @@ export class RequestContextMiddleware implements NestMiddleware {
 
     // De dónde sale la IP, en orden de confianza.
     //
-    // 1. `CF-Connecting-IP`. Cloudflare SIEMPRE lo escribe con la IP real del
-    //    visitante y pisa lo que haya mandado el cliente.
-    // 2. `X-Forwarded-For`, primer valor.
-    // 3. `req.ip` de Express (el peer del socket).
+    // 1. `x-player-ip`, que pone el middleware de la web. **Es el único que
+    //    trae la IP del jugador** cuando la llamada viene proxeada por Next:
+    //    ahí el cliente somos nosotros mismos y todo lo demás miente. Ver el
+    //    comentario largo en `apps/web/middleware.ts`.
+    // 2. `CF-Connecting-IP`, para las llamadas que sí entran derecho desde el
+    //    navegador. Cloudflare lo escribe y pisa lo que mande el cliente.
+    // 3. `X-Forwarded-For`, primer valor.
+    // 4. `req.ip` de Express (el peer del socket).
     //
     // ⚠️ Antes se usaba (2) directamente y **guardábamos IPs de Cloudflare, no
     // de jugadores**. La prueba está en los datos: una misma IP aparecía
@@ -44,9 +48,12 @@ export class RequestContextMiddleware implements NestMiddleware {
     // directo al origen puede falsear el header — igual que ya podía falsear
     // `X-Forwarded-For`, así que esto no empeora nada.
     let ip: string | null = null;
+    const delProxy = req.header('x-player-ip')?.trim();
     const cf = req.header('cf-connecting-ip')?.trim();
     const fwd = req.header('x-forwarded-for');
-    if (cf) {
+    if (delProxy) {
+      ip = delProxy;
+    } else if (cf) {
       ip = cf;
     } else if (fwd) {
       ip = fwd.split(',')[0]?.trim() ?? null;
