@@ -3,15 +3,44 @@
 > Cosas que necesitan respuesta de ellos (`GH_Support_Dave`). Se escribe en
 > **inglés**, sin saludo: la conversación ya está abierta.
 >
-> Última actualización: 2026-08-31 (respondieron 2 y 3; la 1 sigue abierta).
+> Última actualización: 2026-09-01. **Las tres respondidas.** Queda como
+> registro de lo que contestaron y de qué se hizo con cada respuesta.
 
 ---
 
-## 1. Rondas que nunca se cierran (ABIERTO — el más importante)
+## 1. Rondas que nunca se cierran (RESPONDIDO — 2026-09-01)
 
-> **2026-08-31:** pidieron más tiempo para investigarlo bien. Es la respuesta
-> que destraba el punto 2: sin saber cómo cierran una ronda abandonada, no se
-> puede pasar al modelo de acumulación.
+> ## La respuesta, y por qué cambió el diseño
+>
+> **Una ronda abierta no está rota: está esperando.** Si el jugador abandona a
+> mitad de un bonus, **retienen la sesión de su lado hasta que vuelva**. Cuánto
+> la retienen depende del proveedor del juego: **de un día a una semana**, sin
+> un timeout único. Si se vence la retención sin que el jugador vuelva, **la
+> ronda se cancela y se emite un reembolso**.
+>
+> O sea que toda ronda se resuelve sola, por una de dos vías:
+>
+> 1. El jugador vuelve → llega el `round_finished: true`.
+> 2. No vuelve → llega un `rollback`, que `GregmornCallbackService` marca como
+>    `rolled_back` y el motor de comisiones EXCLUYE. Correcto sin hacer nada.
+>
+> Confirmaron además que **no existe endpoint para consultar el estado de una
+> ronda**: `round_finished` es el único marcador. No es un hueco nuestro.
+>
+> ⚠️ **Esto invalidó la primera versión de nuestra reconciliación**, que cerraba
+> las rondas a las 2 HORAS de inactividad. Cerrar una ronda la mete en la base
+> de comisión; si esa ronda terminaba reembolsada, se le pagaba comisión al
+> operador sobre plata devuelta al jugador. Y dejaba inútil el freno de
+> `settlePeriods`, que nunca se disparaba porque el job ya había cerrado justo
+> las rondas que todavía podían revertirse.
+>
+> **Qué se hizo** (`RoundsReconciliationService`, commit `cc0dd58`): nada se
+> cierra antes de **10 días** (por encima de su máximo de una semana). Por
+> debajo el sistema espera, que es lo correcto. Cerrar una ronda pasó a ser la
+> excepción y se loguea como WARNING: significa que no la resolvieron ni
+> cerrándola ni reembolsándola en diez días.
+
+### Lo que se les había reportado
 
 **Qué pasa.** Mandan `round_finished: false` en todos los callbacks de una ronda
 y, en algunas, **nunca llega el `true`**. La ronda queda abierta para siempre.
@@ -86,10 +115,19 @@ y con la compra (30 callbacks, ninguno true). Se les pidió que lo confirmen.
 **Ventaja si confirman**: usa solo campos documentados. Se dejaría de depender
 de `info`, tanto para agrupar como para detectar la compra (`byBonus`).
 
-**Por qué NO se cambió todavía**: con ese modelo, una ronda que nunca cierra se
-traga todo lo que el jugador juegue después. Sin la respuesta al punto 1, el
-cambio sería peor que lo actual — que al menos degrada solo (si `info` cambia,
-`resolveRoundExternalId` cae al campo documentado).
+**Estaba frenado** porque con ese modelo una ronda que nunca cierra se traga
+todo lo que el jugador juegue después, y sin la respuesta al punto 1 el cambio
+era peor que lo actual.
+
+✅ **2026-09-01: destrabado.** Confirmaron que el modelo de acumulación es la
+lectura correcta de su recomendación y que sólo usa campos documentados. Y la
+respuesta al punto 1 acota el riesgo: una ronda no queda abierta para siempre —
+se resuelve sola en una semana como máximo, cerrándose o reembolsándose.
+
+**Sigue sin hacerse**: es un cambio en el camino de la plata y no se hizo en la
+misma sesión que el rediseño de la reconciliación. Queda como el próximo paso
+natural — dejaría de depender de `info`, tanto para agrupar como para detectar
+la compra de tiradas (`byBonus`).
 
 ---
 
