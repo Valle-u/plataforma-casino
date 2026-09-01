@@ -4,6 +4,10 @@
 
 Define cómo crece la plataforma de 1 a N tenants y de 100 a 100.000 usuarios sin refactor mayor. Estrategia por etapas, no over-engineering en MVP.
 
+> ⚠️ **Las secciones 1 a 16 son proyecciones y planes.** Los números MEDIDOS
+> contra producción están en **§17**, junto con el método y sus límites. Si
+> algo de acá contradice a §17, gana §17.
+
 ---
 
 ## 1. Principios
@@ -493,3 +497,143 @@ Estimado: 2-4 semanas de trabajo dedicado.
 - **Performance testing**: definir suite de load tests (k6, artillery) y baseline de SLOs.
 - **Optimización por tenant grande**: connection pool tuning específico, índices custom si hace falta.
 - **Hot/cold separation de game_rounds** más fino: rounds del último mes en hot, resto en cold accesible vía vista.
+
+---
+
+## 17. Mediciones reales de producción (2026-08-31)
+
+> Todo lo de arriba son proyecciones y planes. Esta sección son **números
+> medidos contra `miamihub.vip` en producción**, con el método y sus límites.
+> Si contradicen a una proyección, ganan estos.
+
+### 17.1 Cómo medir (y cómo NO medir)
+
+**El error a no repetir.** La primera tanda de mediciones abría una conexión
+TCP+TLS nueva por cada muestra (un `curl` por request). Eso dio latencias de 54
+a 608ms y llevó a concluir que había *contención en el VPS*. **Era falso**: se
+estaban midiendo handshakes, no el servidor. Un navegador real reusa la
+conexión.
+
+Con la conexión ya caliente, los mismos endpoints:
+
+| Endpoint | Muestras (ms) | Mediana |
+|---|---|---|
+| `/health` | 43 43 44 45 45 45 45 46 47 48 48 | **45ms** |
+| `games/recent-wins?limit=10` | 45 46 47 49 50 54 59 60 60 62 63 | **54ms** |
+| `games/facets` | 45 45 45 46 46 46 48 49 49 50 51 | **46ms** |
+| `games/active?limit=60` (34 KB) | 43 46 46 47 48 50 51 51 51 52 54 | **50ms** |
+
+Distribuciones apretadas, sin picos. La única request lenta es la primera de
+cada tanda (350-400ms de handshake).
+
+**Regla para el próximo que mida**: usar keep-alive y **calentar** antes de
+tomar la muestra. Con `curl`, pasar N URLs en UNA invocación y un `-o /dev/null`
+por cada una — con un solo `-o`, el cuerpo de las demás se mezcla con los
+tiempos y los parsea mal.
+
+### 17.2 Concurrencia
+
+Solo lectura, `recent-wins`, conexiones calientes:
+
+| Concurrencia | Requests | OK | Errores | p50 | p90 | p99 |
+|---|---|---|---|---|---|---|
+| 1 | 20 | 20 | 0 | 155ms | 161ms | 172ms |
+| 10 | 60 | 60 | 0 | 168ms | 445ms | 830ms |
+| 25 | 150 | 150 | 0 | 197ms | 408ms | 848ms |
+| 40 | 240 | 240 | 0 | 248ms | 457ms | 583ms |
+
+**Cero errores en 470 requests.** La mediana sube 1,6x entre 1 y 40
+concurrentes. (Las medianas acá son más altas que en 17.1 porque el cliente era
+Node y suma overhead propio; lo que importa es la **degradación relativa**.)
+
+Para dimensionar: **100 jugadores quietos generan ~15 req/s** (ver 17.3), que
+con ~200ms por request son **~3 concurrentes**. Se probó 40.
+
+**Conclusión: 50-100 jugadores navegando entran cómodos.**
+
+⚠️ **Lo que esto NO prueba.** Todo es lectura. El camino de la apuesta
+(callback → transacción → `FOR UPDATE` sobre la wallet) **no se ejercitó**. Para
+100 personas jugando de verdad ese es el número que falta, y necesita un load
+test contra staging, no contra producción.
+
+### 17.3 Carga que genera un jugador
+
+Del polling del front (`refetchInterval`), con la pestaña visible:
+
+| Origen | Cada | req/min |
+|---|---|---|
+| `useMyWallet` | 20s | 3 |
+| `useMyUnreadCount` | 30s | 2 |
+| `useRecentPublicWins` (ticker) | 15s | 4 |
+| **Total por jugador** | | **9** |
+
+100 jugadores = 900 req/min = **15 req/s**. El catálogo (`games/active`) **no**
+se pollea: se pide al cargar la página y al tocar un filtro.
+
+Dato bueno del diseño actual: todos usan `refetchIntervalInBackground: false`,
+así que **el polling se pausa con la pestaña oculta**.
+
+### 17.4 Qué se cacheó y cuánto rindió
+
+Ver `apps/api/src/games/games-catalog-cache.service.ts`.
+
+| Caché | TTL | Mejora medida |
+|---|---|---|
+| Catálogo (`active`, `facets`, `providers`) | 60s | **1,28x** (69ms → 54ms) |
+| Ticker (`recent-wins`) | 10s | **1,15x** (62ms → 54ms) |
+
+**Rindieron mucho menos de lo esperado**, y conviene entender por qué antes de
+cachear más cosas: la migración `0099_perf_indexes` ya había dejado esas queries
+en ~8-15ms, y el resto de la latencia es red y framework. No había mucho que
+ahorrar.
+
+**El valor del caché no es la velocidad de hoy, es que el costo en base deja de
+crecer con la cantidad de jugadores.** El ticker pasa de ~7 consultas/s con 100
+jugadores a ~0,1 — y ese número se sostiene cuando `game_rounds` tenga millones
+de filas (el propio target de §2: 100k-5M por mes). Es seguro para después.
+
+Correctitud verificada en producción: 16 pares miss/hit con **cuerpos
+idénticos**, y en local que un tenant no ve la clave del otro.
+
+### 17.5 Infraestructura: lo que sí es un problema
+
+Nada de esto depende de las mediciones erradas.
+
+1. **Los builds corren en el VPS de producción.** `buildServerId: null`, y cada
+   build de la web tarda ~200s a full CPU sobre los mismos 4 cores que sirven a
+   los jugadores. **Deployar en horario pico degrada el casino.** Es lo más
+   accionable de toda la lista, y explica el CPU que va a 100 y vuelve a 0 que
+   se ve en el panel de Dokploy.
+2. **El VPS es la mitad de lo planeado**: Hostinger KVM 4 (**4 vCPU / 16 GB**)
+   contra los 8 vCPU / 32 GB que dice §3 para MVP. Ahí adentro conviven
+   Postgres, Redis, la API, la web, Dokploy, Traefik y los builds.
+3. **Una sola réplica de la API** = un proceso Node = **un core para JS**, con
+   `cpuLimit` y `memoryLimit` sin definir en ningún contenedor.
+4. **Sin monitoreo**: `application.readAppMonitoring` devuelve todo vacío. No
+   hay histórico de CPU ni memoria para diagnosticar nada.
+5. **Tuning de Postgres sin verificar**: no se pudo leer `shared_buffers`,
+   `work_mem` ni `max_connections` reales. Si quedó con los defaults de Docker,
+   `shared_buffers` son 128 MB en una caja de 16 GB.
+
+### 17.6 Lo que se revisó y está bien
+
+- **El camino de la plata**: transacciones, `SELECT FOR UPDATE` sobre la wallet
+  y locking ordenado por id para evitar deadlocks. Sin objeciones.
+- **Índices**: `game_rounds (status, settled_at)` de `0099_perf_indexes` cubre
+  el ticker. No hay seq scan sobre la tabla de mayor volumen.
+- **Argon2id no bloquea el event loop**: `@node-rs/argon2` corre en el
+  threadpool. El clásico "100 logins simultáneos tumban el server" no aplica.
+- **Pools**: control 30, tenant 20 (subido de 10 el 2026-08-31). Con el default
+  de `max_connections = 100` la cuenta da 50 con un tenant y 90 con los 3 del
+  target de MVP. Pasar de ahí exige subir `max_connections` **antes**.
+
+### 17.7 Próximos pasos, por impacto
+
+1. **Sacar los builds del VPS de producción** (build server aparte) o, como
+   mínimo, deployar fuera de horario.
+2. **Load test del camino de apuesta** contra staging. Es el único hueco real
+   que queda para responder "¿aguanta 100 jugando?".
+3. **Prender monitoreo** de CPU/memoria: hoy se diagnostica a ciegas.
+4. **Verificar el tuning de Postgres** en el contenedor de producción.
+5. Antes de cachear nada más, **medir primero**: acá se cachearon dos endpoints
+   que no eran el cuello de botella.
