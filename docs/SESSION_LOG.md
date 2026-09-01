@@ -14445,3 +14445,80 @@ En `main`, pusheados y deployados.
   preguntas nuevas.
 - Sigue en pie para producción: credenciales de Prod del proveedor, sin
   monitoreo, backups nunca restaurados de prueba, y deployar corta sesiones.
+
+---
+
+## 2026-09-01 16:00 AR — Claude (Opus 5) · addendum 8
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+Uriel reportó fallos intermitentes con Gregmorn (capturas): juegos que no abren,
+que abren lento, saldo en 0 dentro del juego, y tres carteles de error
+distintos. Preguntó si era nuestro o del staging.
+
+### Qué encontramos
+
+**Nuestro lado del launch funciona.** Las 4 llamadas a `openGame` de la sesión
+de prueba devolvieron `HTTP 200 status:success`. La falla es siempre DESPUÉS de
+que entregamos la URL, y todos los carteles de las capturas son UI de los
+estudios, no nuestra.
+
+**El hallazgo principal: la URL del juego caduca a los 100 segundos.** El
+`mgckey` es un JWT con `exp = iat + 100` en las cuatro muestras. Eso explica la
+cascada de las capturas: un error transitorio hace que el juego se reinicie
+solo, el reinicio recarga su propia URL, y para entonces el token venció → *"¡Acceda
+a su cuenta!"*. **El segundo error, el que asusta, es consecuencia del primero.**
+Nuestra página sí pide una URL nueva en cada carga; lo que no controlamos es el
+reinicio interno del juego.
+
+**Un bug nuestro: no mandábamos la IP del jugador.** En el token que devuelven,
+`UserIp` era `157.180.34.113` — una IP de datacenter, **la misma en cuatro
+sesiones distintas**. Un estudio que haga control geográfico o antifraude ve a
+todo el casino saliendo del mismo lugar.
+
+**El catálogo trae los juegos duplicados.** El proveedor expone el mismo título
+bajo dos namespaces de id: `Sweet Bonanza` como `black:pragmatic:658` y como
+`greece:700:30010`, mismo estudio. Se repite en decenas de títulos. Los juegos
+que fallaron están en AMBAS líneas, así que no es una ruta rota.
+
+### Qué se hizo
+
+Se manda la IP real del jugador en el launch. El arreglo resultó chico: el campo
+`ip` ya existía en el cliente (con un comentario que decía "algunos estudios la
+exigen") y la IP ya la teníamos — el controller la pasa a `createSession` y se
+guarda en `opened_from_ip`. **Simplemente no llegaba al provider.**
+
+Se agregaron 4 preguntas al mensaje del proveedor, cada una con su evidencia, más
+el mapa de las capturas a adjuntar.
+
+### Commits creados
+
+- `57bdbb6` — `fix(games): mandarle al proveedor la IP real del jugador`
+- `dbbc48d` — `docs(gregmorn): 4 preguntas nuevas al proveedor + mapa de capturas`
+
+En `main`, pusheados y deployados.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno técnico.
+- Mensaje enviado al proveedor por Uriel, con las capturas.
+
+### Notas para próximo agente
+
+- ⚠️ **El arreglo de la IP NO está verificado en producción.** No hubo ningún
+  launch después del deploy. Para confirmarlo: abrir un juego y mirar el
+  `UserIp` del JWT en el log de `openGame` — tiene que ser la IP del jugador, no
+  `157.180.34.113`.
+- ⚠️ **No se puede descartar que parte de la inestabilidad sea nuestra.** Un
+  deploy deja la API en 502 unos segundos, y los logs de la ventana de las
+  capturas ya se habían ido con los reinicios del contenedor. **Sin monitoreo no
+  hay forma de correlacionar.** Es el primer lugar donde mirar si el problema
+  persiste en su Prod — y otra razón para prender monitoreo antes de abrir.
+- **Cómo diagnosticar esto de nuevo**: los logs de `openGame` traen la respuesta
+  cruda con el JWT. Decodificando el payload salen `UserIp`, `iat`/`exp` y el
+  `GameId` real. Fue de ahí que salieron los dos hallazgos.
+- **El duplicado del catálogo es del proveedor, no nuestro.** Si contestan que
+  hay que usar una sola línea, se filtra en el sync — no tocar la grilla.
+- Sigue en pie para producción: credenciales de Prod, monitoreo, backups nunca
+  restaurados de prueba, y deployar corta sesiones.
