@@ -14608,5 +14608,10 @@ En `main`, pusheado y deployado.
   `notifications/me/unread-count` y `chat/ws-token` se llevan ~95 y ~90 muestras
   por hora al 20% de sampleo — o sea ~475 y ~450 requests/hora **con un solo
   usuario**. Vale medirlo antes de estimar carga con 100 jugadores.
+- ⚠️ **`autoDeploy: true` en las dos apps**: cualquier push a `main` las
+  rebuildea. Se verificó sin querer — el commit de docs de esta misma sesión
+  dejó API y web en 502 unos segundos. **Un cambio de documentación degrada
+  producción**; mientras los builds corran en el VPS, conviene agrupar los
+  commits y pushear fuera de horario.
 - Sigue en pie para producción: credenciales de Prod del proveedor, alertas,
   probar una restauración de backup, y no deployar en horario pico.

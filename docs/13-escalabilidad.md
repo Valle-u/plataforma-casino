@@ -631,6 +631,13 @@ Nada de esto depende de las mediciones erradas.
 
 1. **Sacar los builds del VPS de producción** (build server aparte) o, como
    mínimo, deployar fuera de horario.
+
+   ⚠️ Las dos apps tienen **`autoDeploy: true`**, así que esto lo dispara
+   *cualquier* push a `main` — verificado el 2026-09-01 con un commit que
+   tocaba **sólo `docs/`**: rebuildeó las dos apps y dejó ambas en 502 unos
+   segundos. Mientras los builds vivan en el VPS de producción, un cambio de
+   documentación cuesta ~5min de CPU al palo sobre los mismos 4 cores que
+   sirven a los jugadores.
 2. **Load test del camino de apuesta** contra staging. Es el único hueco real
    que queda para responder "¿aguanta 100 jugando?".
 3. ~~**Prender monitoreo**~~ — hecho a medias el 2026-09-01: Sentry cubre
