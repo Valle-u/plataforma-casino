@@ -55,6 +55,29 @@
  *
  * Todas son idempotentes: sólo tocan `status = 'placed'`, así que correr el job
  * dos veces no hace nada la segunda.
+ *
+ * ## En qué período cae la ronda
+ *
+ * `settled_at` se pone en el **`placed_at` de la ronda**, no en `now()`.
+ *
+ * Importa porque el NetWin y la comisión atribuyen por `settled_at`
+ * (`WalletStatsService.netwinFor`, `network-commissions`). Con `now()`, una
+ * ronda jugada el 29 de agosto y cerrada por este job el 1 de septiembre
+ * contaba para **septiembre**: agosto quedaba corto para siempre y septiembre
+ * arrancaba inflado con plata que no se jugó ahí.
+ *
+ * Con `placed_at` cada ronda cae en el mes en que se jugó, que es donde se
+ * generó la NetWin.
+ *
+ * Bonus: `settled_at` también ordena el ticker de ganadores
+ * (`listRecentPublicWins`). Con `now()`, un premio de hace tres días saltaba
+ * al tope como si fuera recién ganado.
+ *
+ * ⚠️ El costo: si un período YA se liquidó y después aparece una ronda vieja,
+ *    entra a un período cerrado y esa liquidación queda desactualizada. Por eso
+ *    el job avisa cuando cierra algo más viejo que `DIAS_PARA_AVISAR`, y por eso
+ *    la regla operativa es **no liquidar un mes que todavía tenga rondas
+ *    abiertas**.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -98,6 +121,15 @@ export interface ReconciliationOptions {
 
 export const DEFAULT_SESSION_IDLE_HOURS = 2;
 
+/**
+ * A partir de cuántos días de antigüedad una ronda cerrada merece un aviso.
+ *
+ * Con el job corriendo cada 10 minutos, lo normal es cerrar rondas de hace un
+ * par de horas. Algo de hace más de una semana significa que estuvo trabado
+ * mucho tiempo — y que puede caer en un período ya liquidado.
+ */
+const DIAS_PARA_AVISAR = 7;
+
 @Injectable()
 export class RoundsReconciliationService {
   private readonly logger = new Logger(RoundsReconciliationService.name);
@@ -131,7 +163,7 @@ export class RoundsReconciliationService {
     const porSesion = await db.execute(sql`
       UPDATE game_rounds r
          SET status = 'settled',
-             settled_at = now(),
+             settled_at = r.placed_at,
              auto_settled_reason = CASE s.status
                WHEN 'closed' THEN 'session_closed'
                ELSE 'session_expired'
@@ -140,7 +172,8 @@ export class RoundsReconciliationService {
        WHERE s.id = r.session_id
          AND r.status = 'placed'
          AND s.status IN ('closed', 'expired')
-      RETURNING r.id, r.auto_settled_reason AS motivo, r.net_amount AS neto
+      RETURNING r.id, r.auto_settled_reason AS motivo, r.net_amount AS neto,
+                r.placed_at AS jugada
     `);
 
     // ── Paso 3: hay una ronda posterior YA CERRADA en la misma sesión ───
@@ -151,7 +184,7 @@ export class RoundsReconciliationService {
     const porPosterior = await db.execute(sql`
       UPDATE game_rounds r
          SET status = 'settled',
-             settled_at = now(),
+             settled_at = r.placed_at,
              auto_settled_reason = 'later_settled_round'
        WHERE r.status = 'placed'
          AND EXISTS (
@@ -160,7 +193,7 @@ export class RoundsReconciliationService {
                   AND p.status = 'settled'
                   AND p.placed_at > r.placed_at
              )
-      RETURNING r.id, r.net_amount AS neto
+      RETURNING r.id, r.net_amount AS neto, r.placed_at AS jugada
     `);
 
     // ── Paso 4: último recurso, sólo si el dueño lo prendió ─────────────
@@ -170,11 +203,11 @@ export class RoundsReconciliationService {
       const r = await db.execute(sql`
         UPDATE game_rounds
            SET status = 'settled',
-               settled_at = now(),
+               settled_at = placed_at,
                auto_settled_reason = 'stale_timeout'
          WHERE status = 'placed'
            AND placed_at < now() - ${sql.raw(`interval '${horas}'`)}
-        RETURNING id, net_amount AS neto
+        RETURNING id, net_amount AS neto, placed_at AS jugada
       `);
       porTimeout = filasDe(r);
     }
@@ -211,6 +244,21 @@ export class RoundsReconciliationService {
         resumen.net.byStaleTimeout,
     );
 
+    // Una ronda vieja puede caer en un período que ya se liquidó. No se puede
+    // impedir desde acá (el job no sabe qué se liquidó), pero sí avisar.
+    const viejas = [...motivos, ...posteriores, ...porTimeout].filter((f) => {
+      if (!f.jugada) return false;
+      const cuando = new Date(f.jugada).getTime();
+      return Number.isFinite(cuando) && Date.now() - cuando > DIAS_PARA_AVISAR * 86_400_000;
+    });
+    if (viejas.length > 0) {
+      this.logger.warn(
+        `${viejas.length} de las rondas cerradas se jugaron hace más de ` +
+          `${DIAS_PARA_AVISAR} días. Se atribuyen al período en que se jugaron: ` +
+          `si ese período YA se liquidó, la liquidación quedó desactualizada.`,
+      );
+    }
+
     if (resumen.total > 0) {
       this.logger.log(
         `Rondas cerradas por reconciliación: ${resumen.total} ` +
@@ -243,6 +291,7 @@ function horasValidas(valor: number, porDefecto: number): number {
 interface Fila {
   motivo?: string;
   neto?: string | number | null;
+  jugada?: string | Date | null;
 }
 
 /** postgres-js devuelve las filas del RETURNING como array. */
