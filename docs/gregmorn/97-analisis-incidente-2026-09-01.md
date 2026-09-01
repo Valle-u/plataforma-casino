@@ -243,3 +243,50 @@ que es el captcha del login. Probablemente por eso la sesión no se renovó.
    `UserIp: 157.180.34.113` para todos los jugadores. ¿El campo se aplica?
 4. Los tres juegos de IGT nunca aceptaron una apuesta en 12 aperturas.
    ¿Están habilitados para nuestro hall?
+
+---
+
+## 8. La prueba definitiva del `CRÉDITO 0,00` (23:09 UTC)
+
+Media hora después de empezar a registrar los `getBalance`, el jugador volvió a
+abrir **6 Jokers** (`greece:700:30163`) y el juego mostró otra vez
+`CRÉDITO 0,00 ARS`. Esta vez sí quedó registrado qué contestamos:
+
+| Hora (UTC) | Login | Saldo que devolvimos | Resultado |
+|---|---|---|---|
+| 23:09:16 | `usertest_1` | **2066.01** | `ok` |
+| 23:09:36 | `usertest_1` | **2066.01** | `ok` |
+
+El wallet real decía `2066.01`. La sesión guardó `opened_balance = 2066.01`. La
+IP registrada fue la real del jugador.
+
+**Nos preguntaron dos veces, contestamos bien las dos veces, y el juego mostró
+cero.** No hay margen de interpretación: el saldo se pierde del lado de ellos,
+entre nuestra respuesta y lo que dibuja el juego.
+
+### Queda descartada la hipótesis de bug propio
+
+§4 dejaba abierta la posibilidad de que `handleGetBalance` estuviera devolviendo
+`UNKNOWN_PLAYER` — el caso en que el juego se queda legítimamente sin saldo. **No
+es eso**: el resultado registrado es `ok` en las dos llamadas. El jugador se
+resolvió perfecto.
+
+### El error que tira su motor
+
+Con los rodillos vacíos, su engine crashea solo:
+
+```
+Uncaught TypeError: Cannot read properties of undefined (reading 'length')
+    at VS_Reel.GetReelScreenSymbols
+    at VS_Reel.GetNextSymbol
+    at VS_Reel.SymbolLeftTheReel
+    at VS_ReelSymbolHolder.UpdateVisual
+```
+
+Es código de ellos (`build.1757704797000.js`) intentando leer los símbolos de los
+rodillos. El juego arranca sin recibir su configuración y explota al dibujar.
+
+### Dato menor
+
+En el callback de `getBalance` **no mandan `gameId`** (queda `null`). Sin el
+`sessionid` no se podría saber a qué juego corresponde cada consulta.
