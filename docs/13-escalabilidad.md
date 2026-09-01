@@ -633,7 +633,97 @@ Nada de esto depende de las mediciones erradas.
    mínimo, deployar fuera de horario.
 2. **Load test del camino de apuesta** contra staging. Es el único hueco real
    que queda para responder "¿aguanta 100 jugando?".
-3. **Prender monitoreo** de CPU/memoria: hoy se diagnostica a ciegas.
+3. ~~**Prender monitoreo**~~ — hecho a medias el 2026-09-01: Sentry cubre
+   errores y traces (§18). **Falta el histórico de CPU/memoria del host**, que
+   es lo que hacía falta para el diagnóstico de §17.
 4. **Verificar el tuning de Postgres** en el contenedor de producción.
 5. Antes de cachear nada más, **medir primero**: acá se cachearon dos endpoints
    que no eran el cuello de botella.
+
+---
+
+## 18. Monitoreo en producción (Sentry) — 2026-09-01
+
+Lo que hay prendido hoy, verificado de punta a punta contra producción.
+
+### 18.1 Qué está corriendo
+
+| Proyecto | Cubre | SDK | `tracesSampleRate` en prod |
+|---|---|---|---|
+| `casino-api` | Errores 5xx de la API + traces de request/query/Redis | `@sentry/nestjs` | 0.2 |
+| `casino-web` | Errores de browser y de server-side rendering | `@sentry/nextjs` | 0.1 |
+
+Org de Sentry: `miami-hub`. Los dos proyectos mandan con
+`environment=production` y `sendDefaultPii: false`, y un `beforeSend` redacta
+`password`, `token`, `secret`, `authorization` y `cookie` antes de que el evento
+salga.
+
+**Dónde vive cada DSN**, que no es lo mismo en los dos:
+
+- La API lo lee en runtime (`SENTRY_DSN` en el env de Dokploy). Cambiarlo es un
+  restart del contenedor, ~20s.
+- La web lo necesita en **build time** (`NEXT_PUBLIC_SENTRY_DSN` como *build
+  arg*), porque Next hornea los `NEXT_PUBLIC_*` en el bundle del cliente.
+  Ponerlo en el env de runtime **no hace nada**. Cambiarlo es un rebuild
+  completo, ~5min.
+
+### 18.2 El bug que tenía el wiring
+
+El `Sentry.init()` estaba escrito en el cuerpo de `main.ts`. **El cuerpo de un
+módulo corre después de que se evaluaron todos sus `import`**, así que para
+cuando Sentry arrancaba, Express, `pg` e `ioredis` ya estaban cargados. La
+auto-instrumentación de OpenTelemetry parchea los módulos en el momento en que
+se los requiere: llegando tarde, no parcheaba nada.
+
+El efecto era silencioso y parcial — **la captura de errores sí funcionaba**,
+porque el filtro global llama `captureException` a mano; lo que no existía era
+todo lo automático (traces de HTTP, queries y Redis). Un panel de Sentry con
+errores adentro parece sano aunque le falte la mitad.
+
+El arreglo es el que documenta Sentry para NestJS: el init se mudó a
+`apps/api/src/instrument.ts` y se importa **primero de todo** en `main.ts`.
+Faltaba además `SentryModule.forRoot()` en el `AppModule`.
+
+### 18.3 Cómo verificar que el monitoreo está vivo
+
+Un sistema de alertas falla en silencio: si el DSN quedó mal o el contenedor no
+tiene salida a internet, no te enterás hasta el día que pasa algo y no llega
+nada. Por eso hay dos chequeos baratos.
+
+**API** — `SENTRY_BOOT_PING=1` en el env, redeploy, y el arranque manda un
+mensaje `info` a Sentry. Si aparece, el camino completo funciona. Se apaga
+después (queda apagado por default).
+
+**Web** — en la consola del navegador, sobre cualquier página del sitio:
+
+```js
+window.__SENTRY__['10.68.0'].defaultCurrentScope.getClient().getOptions().dsn
+```
+
+Si devuelve el DSN, el build horneó bien el build arg. Si `window.__SENTRY__` no
+existe, el bundle salió sin DSN.
+
+**Traces** — se confirman con la API de Sentry, no con la UI:
+
+```
+GET /api/0/organizations/miami-hub/events/
+    ?field=transaction&field=count()&statsPeriod=1h
+    &project=<id>&dataset=spans
+```
+
+⚠️ El endpoint `/projects/.../stats/?stat=received` **devolvió 0 aun con eventos
+ya visibles en el proyecto**. No sirve para verificar; usar la lista de issues o
+la query de spans de arriba.
+
+### 18.4 Lo que Sentry NO cubre
+
+Sentry ve lo que pasa *adentro* de la aplicación. Sigue sin haber:
+
+- **Histórico de CPU/memoria del host.** `application.readAppMonitoring` de
+  Dokploy sigue vacío. Es lo que hacía falta para el diagnóstico de §17 y no lo
+  resuelve Sentry.
+- **Uptime desde afuera.** Si el VPS entero se cae, no hay nadie que avise:
+  Sentry solo se entera de errores que la app llega a reportar.
+- **Alertas configuradas.** Los proyectos reciben eventos, pero no hay ninguna
+  regla que notifique a nadie. Sin eso, el monitoreo es un panel que alguien
+  tiene que acordarse de mirar.

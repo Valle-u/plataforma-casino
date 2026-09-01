@@ -14522,3 +14522,91 @@ En `main`, pusheados y deployados.
   hay que usar una sola línea, se filtra en el sync — no tocar la grilla.
 - Sigue en pie para producción: credenciales de Prod, monitoreo, backups nunca
   restaurados de prueba, y deployar corta sesiones.
+
+---
+
+## 2026-09-01 17:00 AR — Claude (Opus 5) · addendum 9
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+"Prendamos el monitoreo". Quedó prendido y **verificado de punta a punta** en
+las dos apps, no sólo configurado.
+
+### Qué se hizo
+
+**Sentry cargado por API, no a mano.** Uriel generó un token de cuenta (el
+primero era de organización y daba 403 en todo). Con eso se crearon los dos
+proyectos en la org `miami-hub` y se cargaron los DSN en Dokploy: `SENTRY_DSN`
+como env de runtime en la API, `NEXT_PUBLIC_SENTRY_DSN` como **build arg** en la
+web (Next hornea los `NEXT_PUBLIC_*` en el bundle; en el env de runtime no hace
+nada).
+
+**El bug que tenía el wiring.** El código de Sentry ya estaba commiteado de
+antes, pero el `Sentry.init()` vivía en el cuerpo de `main.ts` — y el cuerpo de
+un módulo corre **después** de que se evaluaron todos sus `import`. Express, `pg`
+e `ioredis` ya estaban cargados cuando Sentry arrancaba, así que la
+auto-instrumentación de OpenTelemetry no parcheaba nada.
+
+Lo peligroso es que fallaba **en silencio y a medias**: la captura de errores sí
+andaba (el filtro global llama `captureException` a mano), lo que faltaba era
+todo lo automático. Un panel con errores adentro parece sano aunque le falte la
+mitad. Se movió el init a `apps/api/src/instrument.ts`, importado primero de
+todo, y se sumó el `SentryModule.forRoot()` que faltaba en el `AppModule`.
+
+**Se sumó `SENTRY_BOOT_PING`**, apagado por default: prendido, el arranque manda
+un mensaje de prueba a Sentry. Un sistema de alertas falla en silencio — si el
+DSN quedó mal o el contenedor no tiene salida, no te enterás hasta el día que
+pasa algo y no llega nada.
+
+### Cómo se verificó
+
+- **Web**: se leyó el cliente de Sentry desde la consola del navegador en
+  producción (proyecto y `environment: production` correctos) y se disparó un
+  error de prueba — llegó a Sentry.
+- **API**: `SENTRY_DSN` confirmado dentro del contenedor corriendo vía
+  `docker.getConfig` de Dokploy, y el boot ping llegó al proyecto.
+- **Traces**: aparecen transacciones reales con nombre de ruta
+  (`GET /tenant/wallet/me`, etc.) — o sea que la instrumentación ahora sí
+  parchea. Era exactamente lo que estaba roto.
+- Los dos issues de prueba quedaron resueltos; los proyectos están en 0 sin
+  resolver.
+
+### Commits creados
+
+- `814a3b7` — `fix(monitoring): iniciar Sentry antes de cargar lo que instrumenta`
+
+En `main`, pusheado y deployado.
+
+### Estado al cerrar
+
+- **Bloqueos**: ninguno.
+- Nada de configuración de Dokploy se perdió: cada escritura respaldó el estado
+  previo y verificó después que las 25 líneas de env de la API y las 5 env + 4
+  build args de la web siguieran ahí.
+
+### Notas para próximo agente
+
+- ⚠️ **Sentry no tiene ninguna alerta configurada.** Los proyectos reciben
+  eventos pero no notifican a nadie. Hoy el monitoreo es un panel que alguien
+  tiene que acordarse de mirar. Es lo primero a completar antes de abrir.
+- ⚠️ **Sigue sin haber uptime desde afuera.** Si el VPS entero se cae, Sentry no
+  se entera: sólo ve errores que la app llega a reportar.
+- **`application.saveEnvironment` de Dokploy valida el objeto entero.** Hay que
+  mandar `env`, `buildArgs`, `buildSecrets`, `previewEnv`, `previewBuildArgs`,
+  `previewBuildSecrets` y `createEnvFile` **todos juntos**, o rebota con
+  "Input validation failed" nombrando el que falta, de a uno por vez. Mandar
+  sólo el campo que cambia no pisa nada — rebota entero — pero conviene igual
+  leer, appendear y reverificar.
+- **Para verificar el env de un contenedor** sin poder hacer exec:
+  `docker.getContainers` lista los contenedores y `docker.getConfig?containerId=`
+  devuelve el inspect con `Config.Env`.
+- ⚠️ **`/projects/.../stats/?stat=received` de Sentry devolvió 0 con eventos ya
+  visibles en el proyecto.** No sirve para verificar. Usar la lista de issues, o
+  `organizations/.../events/?dataset=spans` para traces.
+- **Dato de paso, para §17 de escalabilidad**: en las transacciones se ve que
+  `notifications/me/unread-count` y `chat/ws-token` se llevan ~95 y ~90 muestras
+  por hora al 20% de sampleo — o sea ~475 y ~450 requests/hora **con un solo
+  usuario**. Vale medirlo antes de estimar carga con 100 jugadores.
+- Sigue en pie para producción: credenciales de Prod del proveedor, alertas,
+  probar una restauración de backup, y no deployar en horario pico.
