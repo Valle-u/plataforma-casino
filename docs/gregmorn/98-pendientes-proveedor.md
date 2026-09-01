@@ -244,30 +244,75 @@ amplio de lo necesario. Queda solo `Gregmorn callbacks`, anclada a la ruta.
 
 ---
 
-## Borrador del mensaje (2026-09-01 — respuesta a las tres)
+## Borrador del mensaje (2026-09-01 — respuesta + 4 preguntas nuevas)
 
-> Thanks — the detail about session retention is what we were missing, and it
-> changed our design.
+> Va con las capturas adjuntas. Mapa de las imágenes:
 >
-> We had built a job that closed abandoned rounds after a couple of hours,
-> assuming they were stuck. Knowing the round is held on your side for up to a
-> week and then cancelled with a refund, that was closing rounds that could still
-> resolve — and a closed round enters our commission base, so we would have paid
-> our partner on money that later went back to the player. We now wait well past
-> your retention window before touching anything, and let the refund do its job.
->
-> On the roundId — we moved to the accumulation model you confirmed. We group
-> everything until `round_finished: true` and use the first `transactionId` of
-> the round as its identifier, so we no longer depend on the `roundId` inside
-> `info`. One thing we kept from `info` is detecting a bonus buy (`byBonus`),
-> since there is no documented field that separates it from a regular spin — if
-> that ever changes on your side those rounds are simply classified as free
-> spins, which is fine for us.
->
-> Nothing pending on your side. Appreciate you being straight about the
-> mechanism rather than treating it as a gap.
+> | # | Qué muestra |
+> |---|---|
+> | 1 | Catálogo con `Sweet Bonanza` duplicado (las dos rutas) |
+> | 2 | Juego que no abre — frame en blanco |
+> | 3 | Juego abierto con `CRÉDITO 0,00` mientras el header marca saldo |
+> | 4 | *"Error de comunicación — El juego se reiniciará"* |
+> | 5 | *"¡UPS! Ha habido un problema"* (id `1_1788241840_1208`) |
+> | 6 | *"¡Acceda a su cuenta!"* — el reinicio con el token vencido |
+> | 7 | Catálogo, `Life and Death` y `Lovely Lady Deluxe` (los que fallaron) |
 
-**Por qué así**: no lleva preguntas nuevas. Las tres están respondidas y lo que
-queda es de nuestro lado (credenciales de Prod). Se les avisa que su respuesta
-nos evitó un error de plata concreto — es información útil para ellos y honesta
-de nuestra parte.
+```
+Thanks — the detail about session retention is what we were missing, and it
+changed our design.
+
+We had built a job that closed abandoned rounds after a couple of hours,
+assuming they were stuck. Knowing the round is held on your side for up to a
+week and then cancelled with a refund, that was closing rounds that could
+still resolve — and a closed round enters our commission base, so we would
+have paid our partner on money that later went back to the player. We now wait
+well past your retention window and let the refund do its job.
+
+On the roundId — we moved to the accumulation model you confirmed. We group
+everything until round_finished: true and use the first transactionId of the
+round as its identifier, so we no longer depend on the roundId inside info. We
+still read info to tell a bonus buy from a regular spin (byBonus), since there
+is no documented field for that; if it ever changes, those rounds are simply
+classified as free spins, which is fine for us.
+
+Separately, we are seeing intermittent problems on Stage and would value your
+read on four things. Screenshots attached.
+
+1. Launch token lifetime. The mgckey in the launch URL is a JWT with
+   exp = iat + 100 — every sample we have is exactly 100 seconds. That seems to
+   explain a pattern we keep seeing: a game hits a transient error, shows "the
+   game will restart", reloads its own URL, and by then the key has expired, so
+   the player gets "please log in to your account". Is 100 seconds expected? Is
+   there a documented way to refresh it, or should the client request a new
+   launch URL on restart?
+
+2. Player IP. We were not sending ip on openGame. In the token you return,
+   UserIp was a datacenter address — the same one across four different player
+   sessions. We have started sending the real player IP. Should we be sending
+   it, and do any studios restrict or reject based on that field?
+
+3. Duplicate catalog entries. getUserGames returns the same titles under two id
+   namespaces — for example Sweet Bonanza as black:pragmatic:658 and as
+   greece:700:30010, same studio. Our players see the game twice. Are both
+   meant to be enabled for us, and which one should we use?
+
+4. Stage stability. Games sometimes take much longer to open than others, and
+   sometimes do not open at all (blank frame). Our openGame calls all return
+   200 success, so the failure is after we hand off the URL. Is this expected
+   on Stage, and should we expect different behaviour on production?
+
+Nothing pending on your side for the round questions — appreciate you being
+straight about the mechanism rather than treating it as a gap.
+```
+
+**Por qué así**: las cuatro preguntas son concretas y verificables, cada una
+con el dato que la respalda. Se les dice también qué cambiamos de nuestro lado
+(el `ip`), para que no parezca una lista de reclamos. Y se les cuenta que su
+respuesta anterior nos evitó un error de plata: es útil para ellos y honesto de
+nuestra parte.
+
+⚠️ **Lo que NO se les dice**: que la inestabilidad puede ser en parte nuestra.
+Un deploy deja la API en 502 unos segundos y no hay monitoreo para descartarlo
+en la ventana de esas capturas. Si el problema persiste en su Prod, ese es el
+primer lugar donde mirar antes de volver a escribirles.
