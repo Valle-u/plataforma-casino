@@ -103,29 +103,67 @@ export class AlertsService {
     ].join('\n');
 
     try {
-      const r = await fetch(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: this.chatId,
-          text: texto,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-        }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!r.ok) {
-        const cuerpo = await r.text().catch(() => '');
-        this.logger.warn(
-          `Telegram rechazó la alerta \`${a.clave}\`: HTTP ${r.status} ${cuerpo.slice(0, 200)}`,
+      const r = await this.postear(this.chatId, texto);
+      if (r.ok) return;
+
+      // Caso especial: el grupo se convirtió en supergrupo.
+      //
+      // Telegram cambia el `chat_id` cuando eso pasa, y el nuestro deja de
+      // existir. Es la peor forma de romperse: las alertas dejan de llegar y
+      // nada avisa. Por suerte la respuesta trae el id nuevo, así que se
+      // reintenta ahí mismo —para no perder ESTE aviso— y se loguea bien
+      // grande cuál es el número que hay que poner en el env.
+      const nuevo = r.migrateTo;
+      if (nuevo) {
+        this.logger.error(
+          `El grupo de alertas se convirtió en supergrupo y cambió de id. ` +
+            `ACTUALIZAR TELEGRAM_ALERT_CHAT_ID = ${nuevo} ` +
+            `(hasta entonces se sigue mandando ahí, pero sin persistirlo).`,
         );
+        const r2 = await this.postear(String(nuevo), texto);
+        if (r2.ok) return;
       }
+
+      this.logger.warn(
+        `Telegram rechazó la alerta \`${a.clave}\`: HTTP ${r.status} ${r.cuerpo.slice(0, 200)}`,
+      );
     } catch (err) {
       // Sin re-lanzar: ver la cabecera del archivo.
       this.logger.warn(
         `No se pudo mandar la alerta \`${a.clave}\`: ${(err as Error).message}`,
       );
     }
+  }
+
+  /** Un POST a Telegram. Devuelve lo que hace falta para decidir qué hacer. */
+  private async postear(
+    chatId: string | undefined,
+    texto: string,
+  ): Promise<{ ok: boolean; status: number; cuerpo: string; migrateTo?: number }> {
+    const r = await fetch(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: texto,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (r.ok) return { ok: true, status: r.status, cuerpo: '' };
+
+    const cuerpo = await r.text().catch(() => '');
+    let migrateTo: number | undefined;
+    try {
+      const j = JSON.parse(cuerpo) as {
+        parameters?: { migrate_to_chat_id?: number };
+      };
+      migrateTo = j.parameters?.migrate_to_chat_id;
+    } catch {
+      // Respuesta que no es JSON: no hay nada que rescatar.
+    }
+    return { ok: false, status: r.status, cuerpo, migrateTo };
   }
 }
 
