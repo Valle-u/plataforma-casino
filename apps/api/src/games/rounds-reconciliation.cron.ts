@@ -28,6 +28,7 @@ import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import * as Sentry from '@sentry/nestjs';
 import { CronJob } from 'cron';
+import { AlertsService } from '../alerts/alerts.service';
 import { eq } from 'drizzle-orm';
 import { tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
@@ -56,6 +57,7 @@ export class RoundsReconciliationCron {
     private readonly service: RoundsReconciliationService,
     private readonly scheduler: SchedulerRegistry,
     private readonly cronLock: CronLockService,
+    private readonly alertas: AlertsService,
   ) {
     this.enabled = config.get<string>('ROUNDS_RECON_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -142,6 +144,20 @@ export class RoundsReconciliationCron {
             Sentry.captureException(
               err instanceof Error ? err : new Error(String(err)),
             );
+          });
+          // Y al grupo de monitoreo, en castellano: un job de plata que falla
+          // en silencio es peor que uno que se cae.
+          void this.alertas.enviar({
+            clave: `reconciliacion-fallo:${tenant.slug}`,
+            nivel: 'critico',
+            titulo: 'Falló la revisión de rondas abiertas',
+            detalle: [
+              `Casino: ${tenant.slug}`,
+              `Error: ${(err as Error).message}`,
+              '',
+              'Mientras esto falle, las rondas que el proveedor deja abiertas no',
+              'se cierran solas, y esa plata no entra a la base de comisión.',
+            ].join('\n'),
           });
           this.logger.error(
             `Reconciliación de rondas del tenant ${tenant.slug} falló: ` +

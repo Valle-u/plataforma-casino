@@ -75,6 +75,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { sql } from 'drizzle-orm';
+import { AlertsService } from '../alerts/alerts.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 /** Cuántas rondas cerró cada regla en una corrida, y por cuánta plata. */
@@ -125,6 +126,8 @@ export const DEFAULT_SESSION_IDLE_HOURS = 2;
 @Injectable()
 export class RoundsReconciliationService {
   private readonly logger = new Logger(RoundsReconciliationService.name);
+
+  constructor(private readonly alertas: AlertsService) {}
 
   async runForTenant(
     db: TenantDb,
@@ -242,6 +245,7 @@ export class RoundsReconciliationService {
     // `minAgeDays`. Eso es una anomalía de su lado, no rutina.
     if (resumen.total > 0) {
       avisarASentry(tenantSlug, opts.minAgeDays, resumen);
+      void this.avisarPorTelegram(tenantSlug, opts.minAgeDays, resumen);
       this.logger.warn(
         `Se cerraron ${resumen.total} ronda(s) que el proveedor no resolvió en ` +
           `${opts.minAgeDays} días (sesión cerrada ${resumen.bySessionClosed}, ` +
@@ -257,6 +261,37 @@ export class RoundsReconciliationService {
       );
     }
     return resumen;
+  }
+
+  /**
+   * Aviso por Telegram al grupo de monitoreo.
+   *
+   * Distinto del de Sentry, que va para quien lee un stack trace. Este lo
+   * puede leer alguien de operaciones: dice qué pasó, cuánta plata mueve y
+   * qué conviene hacer.
+   *
+   * Se llama con `void` a propósito: reconciliar no tiene por qué esperar a
+   * que Telegram conteste.
+   */
+  private async avisarPorTelegram(
+    tenantSlug: string,
+    minAgeDays: number,
+    resumen: ReconciliationSummary,
+  ): Promise<void> {
+    await this.alertas.enviar({
+      clave: `rondas-cerradas:${tenantSlug}`,
+      nivel: 'aviso',
+      titulo: 'Se cerraron rondas que el proveedor no resolvió',
+      detalle: [
+        `Casino: ${tenantSlug}`,
+        `Rondas cerradas: ${resumen.total}`,
+        `NetWin que entra a la base de comisión: ${resumen.net.total}`,
+        '',
+        `Son rondas que el proveedor no cerró ni reembolsó en ${minAgeDays} días,`,
+        'así que las cerró nuestro sistema. No hay plata perdida, pero conviene',
+        'preguntarle al proveedor por qué quedaron abiertas.',
+      ].join('\n'),
+    });
   }
 }
 
