@@ -14,6 +14,7 @@ import { GameProviderPingCron } from './game-provider-ping.cron';
 import { GameProviderLogsRetentionCron } from './game-provider-logs-retention.cron';
 import { RoundsReconciliationService } from './rounds-reconciliation.service';
 import { RoundsReconciliationCron } from './rounds-reconciliation.cron';
+import { GamesHealthCron } from './games-health.cron';
 import { GameProviderRegistry } from './providers/game-provider.registry';
 import { ProviderBackendRegistry } from './providers/provider-backend.registry';
 import { PalaceModule } from './providers/palace/palace.module';
@@ -55,6 +56,7 @@ import { GregmornModule } from './providers/gregmorn/gregmorn.module';
     GameProviderLogsRetentionCron,
     RoundsReconciliationService,
     RoundsReconciliationCron,
+    GamesHealthCron,
   ],
   exports: [GamesService, GameSessionsService],
 })
