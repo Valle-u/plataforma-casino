@@ -13,6 +13,7 @@ import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { TurnstileModule } from './security/turnstile.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { RedisModule } from './redis/redis.module';
 import { RequestContextMiddleware } from './request-context/request-context.middleware';
 import { RequestContextModule } from './request-context/request-context.module';
@@ -87,6 +88,10 @@ import { CRM_ENABLED } from './chat/chat.flag';
     // Si REDIS_URL no está seteado, opera en modo disabled sin romper callers.
     // Base para cache de permisos, rate limit distribuido, BullMQ y Socket.io.
     RedisModule,
+
+    // AlertsModule: avisos operativos por Telegram (grupo). Global porque los
+    // avisos salen de crons, callbacks y detectores distintos.
+    AlertsModule,
 
     // StorageModule (Sprint 51.6): @Global. Driver de storage para
     // uploads (comprobantes de deposit, futuro: avatars, branding, etc).

@@ -20,6 +20,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { migrateAllDatabases } from '@casino/db';
 import { AppModule } from './app.module';
+import { AlertsService } from './alerts/alerts.service';
 import { GlobalExceptionFilter } from './common/global-exception.filter';
 
 /** ¿El env está en "on" (1/true/yes)? Para flags de boot. */
@@ -126,6 +127,24 @@ async function bootstrap(): Promise<void> {
   logger.log(`🚀 API corriendo en http://localhost:${port}`);
   logger.log(`📚 Health check: http://localhost:${port}/health`);
   logger.log(`🔐 Auth: POST http://localhost:${port}/platform/auth/login`);
+
+  // Smoke test del canal de alertas, apagado por default.
+  //
+  // Mismo criterio que `SENTRY_BOOT_PING`: un canal de avisos falla en
+  // silencio. Si el token del bot quedó mal o el grupo es otro, no te enterás
+  // hasta el día que pasa algo y no llega nada. Se prende, se verifica que
+  // llegue al grupo, y se vuelve a apagar.
+  if (isTruthy(process.env.ALERTS_BOOT_PING)) {
+    await app.get(AlertsService).enviar({
+      clave: 'boot-ping',
+      nivel: 'info',
+      titulo: 'Prueba de alertas',
+      detalle:
+        'Si ves esto, el canal de avisos del casino funciona. ' +
+        'Es una prueba, no hay ningún problema.',
+      silencioMin: 0,
+    });
+  }
 }
 
 // Llamamos a bootstrap y manejamos cualquier error fatal al arrancar.
