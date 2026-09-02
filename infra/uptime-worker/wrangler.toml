@@ -1,0 +1,23 @@
+name = "miamihub-uptime"
+main = "src/worker.js"
+compatibility_date = "2026-09-02"
+
+# Cada minuto. Con el umbral de 2 fallos seguidos, una caída se avisa a los
+# ~2 minutos y un timeout aislado no molesta a nadie.
+[triggers]
+crons = ["* * * * *"]
+
+# El estado (fallos seguidos, si ya se avisó) vive acá. Se escribe SOLO cuando
+# algo cambia: el plan gratis da 1000 escrituras por día y una por minuto se las
+# comería sola.
+#
+# El `id` lo completa quien crea el namespace:
+#   npx wrangler kv namespace create ESTADO
+[[kv_namespaces]]
+binding = "ESTADO"
+id = "PENDIENTE_COMPLETAR"
+
+# TELEGRAM_BOT_TOKEN y TELEGRAM_ALERT_CHAT_ID NO van acá.
+# Son secretos y se cargan aparte, que no quedan en el repo:
+#   npx wrangler secret put TELEGRAM_BOT_TOKEN
+#   npx wrangler secret put TELEGRAM_ALERT_CHAT_ID
