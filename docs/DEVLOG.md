@@ -9182,3 +9182,172 @@ es donde se pueden mirar sin ensuciar nada.
 
 **Lección general**: si agregás un job que toca plata, loguearlo no alcanza.
 Y cuando lo captures, pensá primero cómo va a agrupar.
+
+---
+
+## 2026-09-02 — Un canal de avisos que no es Sentry
+
+**Contexto**: al cerrar el 01/09 el monitoreo estaba prendido y verificado, pero
+todo lo que sabía llegaba a un solo lugar: el mail de Sentry de Uriel
+(`maxMembers: 1` del plan gratis). Y llegaba escrito para quien va a leer un
+stack trace.
+
+El problema no es sólo de destinatario, es de idioma. Un casino que se rompe no
+tiene sólo un lector técnico: hay que avisarle a alguien que va a mirar el
+celular y decidir si llama al proveedor, si recarga el saldo o si no hace nada.
+
+**Decisión**: un `AlertsService` propio que manda a un grupo de Telegram, en
+castellano, **además** de Sentry. No lo reemplaza — son dos públicos distintos y
+por eso los mensajes son distintos. Sentry dice qué excepción fue; Telegram dice
+"se cerraron 7 rondas, entran $X a la base de comisión, preguntale al proveedor
+por qué quedaron abiertas".
+
+**Tres reglas que el servicio respeta sí o sí** (están en la cabecera de
+`apps/api/src/alerts/alerts.service.ts`):
+
+1. **Nunca tira una excepción.** Un aviso que no se pudo mandar no puede tumbar
+   una apuesta. Si Telegram no contesta, se loguea y se sigue. Por eso las
+   llamadas desde los crons son con `void`: reconciliar no tiene por qué esperar
+   a que Telegram conteste.
+2. **No spamea.** Hay una ventana de silencio por clave (30 min por defecto). La
+   clave identifica el **tipo** de alerta, no el evento puntual —
+   `rondas-trabadas`, no `rondas-trabadas-7`— por la misma razón por la que el
+   mensaje de `captureMessage` va fijo (ver la entrada del 01/09): si la clave
+   lleva números adentro, cada aviso es uno nuevo y no se silencia nunca. Una
+   alerta que suena cada 30 segundos se ignora sola a los dos días.
+3. **Sin token queda apagado.** En desarrollo no molesta: si falta
+   `TELEGRAM_BOT_TOKEN` o `TELEGRAM_ALERT_CHAT_ID`, loguea y no manda nada.
+
+**Detalle no obvio**: la marca de "ya mandé esto" se escribe **antes** de mandar,
+no después. Si Telegram está caído no queremos reintentar en loop contra un
+servicio que no responde.
+
+**Implicaciones**: `AlertsModule` es `@Global()` a propósito — los avisos salen
+de lugares muy distintos (cron de reconciliación, callbacks de proveedores,
+detector de salud de juegos) y reimportarlo en cada uno no aporta nada.
+
+Se suma `ALERTS_BOOT_PING`, apagado por default, con el mismo criterio que
+`SENTRY_BOOT_PING`: un canal de avisos falla en silencio, y sin una prueba
+explícita no sabés si el token o el grupo quedaron bien hasta el día que pasa
+algo y no llega nada.
+
+**Alternativa abierta**: ⚠️ **la memoria de deduplicación es del proceso.** Con
+una réplica de la API alcanza. El día que haya dos, cada una va a poder mandar su
+copia del mismo aviso y hay que mover el mapa a Redis.
+
+---
+
+## 2026-09-02 — El grupo de Telegram que cambia de número solo
+
+**Contexto**: Telegram convierte los grupos básicos en supergrupos por su cuenta
+—pasa al sumar gente, entre otras cosas— y en esa conversión **cambia el
+`chat_id`**. El id viejo deja de existir.
+
+Es la peor forma de romperse que tiene un canal de avisos: las alertas dejan de
+llegar y **nada avisa que dejaron de llegar**. Todo parece bien hasta el día que
+necesitás una.
+
+Aplica ya, no es hipotético: el grupo actual es de tipo `group`, y como se va a
+sumar gente la conversión es cuestión de tiempo.
+
+**Decisión**: cuando Telegram rechaza el envío, se lee
+`parameters.migrate_to_chat_id` de la respuesta de error y se usa para dos cosas
+distintas:
+
+1. **Reintentar ahí mismo**, para no perder *ese* aviso.
+2. **Loguear en ERROR el número exacto** que hay que poner en
+   `TELEGRAM_ALERT_CHAT_ID`.
+
+**Razón para no persistirlo solo**: guardarlo automáticamente escondería el
+problema. El env queda desactualizado igual, y el día que se reinicie el proceso
+o se levante otra réplica volvemos al mismo punto sin haberlo notado nunca. El
+reintento salva el aviso; el log en ERROR obliga a arreglar la causa.
+
+**Implicaciones**: mientras el env no se actualice, cada alerta hace dos POST a
+Telegram (el que falla y el que funciona). Es aceptable como estado transitorio,
+y el log en ERROR está justamente para que sea transitorio.
+
+---
+
+## 2026-09-02 — "Hubo aperturas y ninguna apuesta": detectar lo que no genera errores
+
+**Contexto**: el 01/09 los juegos dejaron de aceptar apuestas **durante horas**.
+La causa fue que se había agotado el saldo de nuestra cuenta en el panel del
+proveedor: los juegos abrían, nos pedían el saldo, se lo dábamos bien, y nunca
+mandaban la apuesta.
+
+Nada de eso genera un error. La API contestó **93 callbacks con HTTP 200 y ni un
+4xx en todo el día**: Sentry no tenía nada que reportar y el monitor de uptime
+veía la plataforma perfecta. **Se descubrió porque un jugador se quejó, 18 horas
+después.**
+
+Es una clase de falla distinta a todo lo que teníamos cubierto: el sistema
+funciona, responde bien, y el negocio está parado.
+
+**Decisión**: un cron (`GamesHealthCron`, cada 10 min) que busca una firma, no
+una causa: **hubo aperturas de juego y ninguna apuesta** en la ventana. Sirve
+igual si se agotó el saldo, si el proveedor se cayó o si rompimos el launch
+nosotros.
+
+**Tres detalles que no son obvios:**
+
+**Se evalúa por proveedor.** Si Gregmorn está muerto pero Palace anda, el total
+de apuestas no da cero y el problema pasaría desapercibido.
+
+**Los dos conteos van por separado, no con un `LEFT JOIN` de sesiones a rondas.**
+Con el join sólo se contarían las apuestas de los juegos **abiertos en la
+ventana**, y bastaría con que alguien siguiera jugando en un juego que abrió
+antes para que el detector dijera "nadie puede jugar" mientras se está jugando.
+Una alerta que miente una vez ya no se lee más. Por lo mismo, las apuestas se
+cuentan por la ronda y no por la sesión: una sesión con rondas viejas no dice
+nada sobre si **ahora** se puede jugar.
+
+**El umbral no se eligió a ojo.** Una apertura sin apuesta es normal — el jugador
+mira el juego y lo cierra. Se replicó el detector sobre todo el 01/09 en ventanas
+de 30 minutos: con **5 aperturas** habría avisado a las 17:30 y 18:30 UTC —unos
+40 minutos después de empezar el problema, en vez de las 18 horas que tardó— y
+**no habría disparado ni una vez de más** en las ventanas sanas del mismo día.
+
+**Alternativa abierta**: ⚠️ **un apagón parcial se le escapa.** El incidente de la
+mañana del 01/09 tuvo 6 aperturas y 1 apuesta en media hora, y como se exige
+CERO apuestas no habría sonado. Un ratio (por ejemplo, menos del 20% de las
+aperturas con apuesta) lo cubriría, pero con pocos jugadores un ratio hace ruido.
+Vale recalibrarlo cuando haya tráfico real que mirar.
+
+---
+
+## 2026-09-02 — La alerta que no puede vivir en el servidor que vigila
+
+**Contexto**: quedaba un caso sin cubrir, y es el más básico de todos: **si la
+API está caída, no puede avisar que está caída.** Todas las alertas nuevas salen
+de la propia API, así que justo el escenario más grave las apaga a todas.
+
+**Decisión**: un Cloudflare Worker (`infra/uptime-worker/`), fuera del VPS, que
+cada minuto pega a `api.miamihub.vip/health` y a `miamihub.vip/play` y avisa por
+el mismo grupo de Telegram.
+
+**Por qué Cloudflare y no otro monitor externo**: el dominio ya está ahí, el plan
+gratis alcanza holgado (1.440 corridas/día contra un límite de 100.000) y evita
+sumar un proveedor más. También cubre el hueco que dejaba Sentry, cuyo plan
+Developer incluye **un solo** monitor de uptime, ya usado por la API — la web no
+tenía ninguno.
+
+**El chequeo de `/health` cubre más de lo que parece**: desde el arreglo del
+01/09 devuelve **503** si la base de datos o Redis no responden, no sólo si el
+proceso está levantado.
+
+**Tres decisiones para que el canal siga siendo creíble:**
+
+- **Avisa recién al segundo fallo seguido.** Un timeout suelto no despierta a
+  nadie, y algo que se cae de verdad no se arregla en un minuto.
+- **Avisa una sola vez por caída**, no en cada corrida.
+- **Avisa cuando vuelve.** Es la mitad que casi siempre falta: sin eso no sabés
+  si sigue roto o ya está.
+
+**Detalle de costo**: el estado (fallos seguidos, si ya se avisó) vive en KV y se
+escribe **sólo cuando algo cambia**. El plan gratis da 1.000 escrituras por día y
+una por minuto se las comería sola.
+
+**Alternativa abierta**: ⚠️ es independiente del VPS, **no de Cloudflare**. Si el
+problema fuera de ellos, este monitor podría no verlo. Para lo que importa —que
+el servidor propio se muera— alcanza. Queda anotado en el README del Worker.

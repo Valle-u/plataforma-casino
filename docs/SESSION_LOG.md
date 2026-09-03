@@ -14916,3 +14916,148 @@ que guardamos al abrir (verificado: los 2124 matchean).
   Se llega por `wss://dokploy.miamihub.vip/docker-container-terminal?containerId=`
   con el `x-api-key`, mandando el SQL en base64 para que no lo rompan las
   comillas del PTY.
+
+---
+
+## 2026-09-02 AR — Claude (Opus 5) — Canal de avisos operativos
+
+> ⚠️ **Entrada reconstruida el 2026-09-03**, a partir de los 5 commits y del
+> código. La sesión del 02/09 se cerró sin escribir en `SESSION_LOG` ni en
+> `DEVLOG` — la deuda se saldó al día siguiente. Todo lo que sigue sale de los
+> commits y de los archivos; **lo que no se pudo determinar está marcado como
+> tal** en vez de rellenarse. Regla de `START_HERE.md §8`: la sesión se cierra
+> con entrada, siempre.
+
+**Ventana de commits**: 15:57 → 16:50 AR (duración real de la sesión: no
+determinable).
+**Usuario**: Uriel
+
+### El problema que se atacó
+
+El 01/09 quedó cerrado con el monitoreo prendido y verificado, y aun así con dos
+agujeros que ninguna cantidad de Sentry tapaba:
+
+1. **Las alertas llegaban sólo al mail de Uriel**, escritas para quien lee un
+   stack trace.
+2. **Hay fallas que no generan ningún error.** Ese mismo 01/09 los juegos
+   dejaron de aceptar apuestas durante horas: 93 callbacks con HTTP 200, ni un
+   4xx, Sentry sin nada que reportar y el monitor de uptime viendo la plataforma
+   perfecta. Se descubrió porque **un jugador se quejó, 18 horas después**.
+
+### Qué se hizo
+
+**Un canal de avisos por Telegram, separado de Sentry.** `AlertsService`
+(`apps/api/src/alerts/`), global, con tres reglas duras: nunca tira una
+excepción, no spamea (ventana de silencio por clave, 30 min por defecto), y sin
+token queda apagado. Los mensajes están escritos en castellano para que los lea
+alguien de operaciones, no un dev.
+
+**Se blindó contra la conversión a supergrupo.** Telegram cambia el `chat_id`
+cuando convierte un grupo básico en supergrupo, y ahí las alertas dejan de llegar
+sin que nada avise. Ahora se lee `parameters.migrate_to_chat_id` del error, se
+reintenta en el id nuevo (para no perder ese aviso) y se loguea en ERROR el
+número que hay que poner en el env.
+
+**Se conectaron los dos avisos de plata del cron de reconciliación.** Ya iban a
+Sentry; ahora también a Telegram, con otro texto: cuántas rondas se cerraron,
+cuánto NetWin entra a la base de comisión y qué conviene hacer.
+
+**Se construyó el detector que faltaba: `GamesHealthCron`.** Cada 10 minutos
+busca la firma del incidente del 01/09 — **aperturas de juego sin ninguna
+apuesta**, por proveedor, en una ventana de 30 min con mínimo 5 aperturas. El
+umbral se calibró replicando el detector sobre todo el 01/09: habría avisado a
+los ~40 minutos en vez de a las 18 horas, sin un solo falso positivo en las
+ventanas sanas del mismo día.
+
+**Se sacó fuera del VPS la alerta de caída.** Cloudflare Worker
+(`infra/uptime-worker/`) que cada minuto chequea `api.miamihub.vip/health` y
+`miamihub.vip/play`. Avisa al segundo fallo seguido, una sola vez por caída, y
+**avisa cuando vuelve**. Es la única alerta que no puede salir de la API: si la
+API está muerta no puede avisar que está muerta.
+
+### Decisiones tomadas
+
+Las cuatro están en `docs/DEVLOG.md` con fecha 2026-09-02:
+
+- Un canal de avisos que no es Sentry (dos públicos, dos idiomas, tres reglas).
+- El grupo de Telegram que cambia de número solo (por qué se reintenta pero no se
+  persiste el id nuevo).
+- "Hubo aperturas y ninguna apuesta" (por qué dos conteos separados y no un
+  `LEFT JOIN`, y de dónde salió el umbral).
+- La alerta que no puede vivir en el servidor que vigila.
+
+### Commits creados
+
+| Commit | Qué |
+|---|---|
+| `f0aaf56` | `feat(alerts)` — canal de avisos operativos por Telegram |
+| `535cd66` | `fix(alerts)` — sobrevivir a la conversión del grupo en supergrupo |
+| `92ba36b` | `feat(alerts)` — avisar por Telegram cuando hay plata en riesgo |
+| `9f0eca1` | `feat(alerts)` — avisar cuando los jugadores no pueden jugar |
+| `6689894` | `feat(alerts)` — monitor de caída fuera del VPS (Cloudflare Worker) |
+
+Los 5 en `main` y pusheados (`main` == `origin/main` al 03/09).
+
+### Variables de entorno nuevas
+
+| Variable | Default | Para qué |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | — | Sin esto el canal queda apagado. |
+| `TELEGRAM_ALERT_CHAT_ID` | — | Ídem. Ojo con el supergrupo. |
+| `ALERTS_BOOT_PING` | apagado | Smoke test del canal al arrancar. |
+| `GAMES_HEALTH_ENABLED` | `true` | Se apaga con `=false`. |
+| `GAMES_HEALTH_CRON` | `*/10 * * * *` | Frecuencia del detector. |
+| `GAMES_HEALTH_WINDOW_MIN` | `30` | Ventana que mira. |
+| `GAMES_HEALTH_MIN_LAUNCHES` | `5` | Aperturas mínimas para evaluar. |
+
+Las dos del Worker (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALERT_CHAT_ID`) se cargan
+aparte con `wrangler secret put` — no van en `wrangler.toml`.
+
+### Estado al cerrar
+
+- **Fase actual**: 6 (Polish), en producción contra el proveedor **Gregmorn en
+  Stage**.
+- **Bloqueo duro para abrir**: siguen faltando las credenciales de Prod del
+  proveedor.
+
+### Verificación posterior (2026-09-03)
+
+Se chequeó contra la API de Dokploy y contra el repo. Detalle completo en
+§19.6 de `docs/13-escalabilidad.md`.
+
+**✅ El canal de la API está entero y vivo.** `TELEGRAM_BOT_TOKEN` y
+`TELEGRAM_ALERT_CHAT_ID` están cargadas en la app `api` de prod; el último deploy
+(`2026-09-02 19:51 UTC`, `done`) es el del commit `6689894`, y el `uptime` de
+`/health` confirma que el proceso corriendo es ése. `GamesHealthCron` corre por
+default con ventana de 30 min y mínimo 5 aperturas — las tres variables de ajuste
+no están seteadas y no hace falta que lo estén.
+
+**❌ El Worker de uptime NO está desplegado.** Dos señales independientes: el id
+del KV sigue en `PENDIENTE_COMPLETAR`, y `infra/uptime-worker/` no tiene carpeta
+`.wrangler/` —mientras que `worker/`, el uploader desplegado en julio, sí la
+tiene—, o sea que wrangler nunca corrió ahí. No se pudo confirmar por API porque
+el `CLOUDFLARE_API_TOKEN` que tenemos es de zona y no lee Workers.
+**Hasta completar los 4 pasos del README, la alerta de caída no existe** — y es
+la única que funciona cuando el server entero se muere.
+
+**⚠️ Sigue sin verificarse que alguna alerta suene de verdad.** Que las variables
+estén cargadas prueba que el canal *puede* mandar, no que mande: el `chat_id`
+podría apuntar a otro lado o el bot podría no estar en el grupo. La prueba son 2
+minutos: prender `ALERTS_BOOT_PING`, reiniciar, ver si llega, apagarlo.
+
+### Notas para el próximo agente
+
+- ⚠️ **La deduplicación de alertas es memoria del proceso.** Con una réplica
+  alcanza; con dos, cada una manda su copia. Está anotado en el archivo.
+- ⚠️ **El detector de juegos no agarra apagones parciales.** Exige CERO apuestas;
+  el incidente de la mañana del 01/09 (6 aperturas, 1 apuesta) no habría sonado.
+  Recalibrar con un ratio cuando haya tráfico real.
+- **Siguen abiertos los pendientes del addendum 13**: los 5 e2e de
+  `gregmorn-callback` en rojo, la verificación en producción de la IP real del
+  jugador (`audit_log.ip` tiene que ser de un ISP, no 172.68/69/71 ni
+  104.22/23), la restauración de backup nunca probada, y el bug de sesiones
+  muertas de Palace (mismo que se arregló en Gregmorn, con 727 callbacks
+  encima).
+- **Si agregás una alerta nueva**: la `clave` identifica el TIPO, nunca el evento
+  puntual. Un número adentro de la clave rompe el silenciado igual que rompe el
+  agrupamiento de Sentry.

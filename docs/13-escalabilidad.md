@@ -803,9 +803,16 @@ existe la alerta de ">50 en 1h" — es tanto un aviso de incidente como de cuota
 - **Histórico de CPU/memoria del host.** `application.readAppMonitoring` de
   Dokploy sigue vacío. Es lo que hacía falta para el diagnóstico de §17 y no lo
   resuelve Sentry.
-- **Uptime de la web por separado** (ver arriba, límite del plan).
-- **Nadie más que Uriel recibe las alertas.** Con `maxMembers: 1`, si él no está
-  mirando el mail, no las ve nadie.
+- ~~**Uptime de la web por separado**~~ (era un límite del plan de Sentry).
+  **Cubierto el 2026-09-02** por el Worker de §19.3, que chequea
+  `miamihub.vip/play` aparte de la API.
+- ~~**Nadie más que Uriel recibe las alertas.**~~ **Cubierto el 2026-09-02**: el
+  canal de Telegram de §19 no tiene límite de miembros. La restricción de
+  `maxMembers: 1` sigue valiendo **para los mails de Sentry**.
+- **Sigue sin cubrirse: lo que pasa adentro del iframe del proveedor.** El juego
+  corre en su dominio; nuestro Sentry del browser no puede ver ahí. El frame en
+  blanco y sus carteles de error siguen invisibles. Lo que sí se detecta ahora,
+  indirectamente, es el efecto: §19.2.
 
 ### 18.7 Gotcha de la API de Sentry
 
@@ -824,3 +831,187 @@ Un *workflow* se ata a **detectores**, no a proyectos. Cada proyecto tiene su
 esquemas se descubren con `/organizations/{org}/available-actions/` y
 `/organizations/{org}/data-conditions/?group=workflow_trigger` (o
 `action_filter`).
+
+---
+
+## 19. Canal de avisos operativos (Telegram) — 2026-09-02
+
+Sentry (§18) es para errores de código: sirve para quien va a leer un stack
+trace. Esto es otra cosa — avisar **que algo le está pasando al casino**, en
+castellano, a un grupo donde puede haber gente que no programa. Los dos conviven:
+un mismo evento puede ir a los dos con textos distintos.
+
+El disparador fue el incidente del 01/09: los juegos dejaron de aceptar apuestas
+durante horas, la API contestó 93 callbacks con HTTP 200, no hubo un solo 4xx, y
+**se descubrió porque un jugador se quejó 18 horas después**. Sentry no tenía nada
+que reportar porque no había errores. Hay fallas que no se ven mirando errores.
+
+### 19.1 El servicio
+
+`apps/api/src/alerts/alerts.service.ts`. Módulo `@Global()` — los avisos salen de
+lugares muy distintos.
+
+**Tres reglas que respeta sí o sí:**
+
+| Regla | Por qué |
+|---|---|
+| **Nunca tira una excepción** | Un aviso que no se pudo mandar no puede tumbar una apuesta. Todas las llamadas desde crons van con `void`. |
+| **No spamea** | Ventana de silencio por clave (30 min por defecto, configurable por alerta). |
+| **Sin token queda apagado** | En desarrollo no molesta. Loguea y sigue. |
+
+⚠️ **La `clave` identifica el TIPO de alerta, no el evento puntual.**
+`rondas-trabadas`, nunca `rondas-trabadas-7`. Un número adentro de la clave
+convierte cada aviso en uno nuevo y el silenciado deja de existir — es el mismo
+error que romper el agrupamiento de Sentry con un mensaje variable (§18.4).
+
+⚠️ **La memoria de deduplicación es del proceso.** Con una réplica de la API
+alcanza. Con dos, cada una manda su copia y hay que mover el mapa a Redis.
+
+**Niveles**: 🔴 `critico` · 🟠 `aviso` · 🔵 `info`. Se leen de un vistazo en el
+celular.
+
+**Gotcha de Telegram — la conversión a supergrupo.** Telegram convierte los
+grupos básicos en supergrupos solo, y ahí **cambia el `chat_id`**. Las alertas
+dejan de llegar y nada avisa que dejaron de llegar. El servicio lee
+`parameters.migrate_to_chat_id` de la respuesta de error, reintenta ahí mismo
+(para no perder ese aviso) y **loguea en ERROR el número nuevo**. No lo persiste
+a propósito: hay que actualizar `TELEGRAM_ALERT_CHAT_ID` a mano, si no el
+problema queda escondido hasta el próximo reinicio.
+
+### 19.2 Qué dispara un aviso
+
+| Alerta | Nivel | De dónde sale | Silencio |
+|---|---|---|---|
+| Los jugadores no pueden jugar | 🔴 | `GamesHealthCron` | 60 min |
+| Se cerraron rondas que el proveedor no resolvió | 🟠 | `RoundsReconciliationService` | 30 min |
+| Falló la revisión de rondas abiertas | 🔴 | `RoundsReconciliationCron` | 30 min |
+| Plataforma caída / recuperada | 🔴 / 🔵 | Worker de §19.3 | una vez por caída |
+| Prueba de alertas | 🔵 | `ALERTS_BOOT_PING` | — |
+
+**"Los jugadores no pueden jugar"** (`apps/api/src/games/games-health.cron.ts`)
+es el detector que faltaba. Busca una **firma, no una causa**: hubo aperturas de
+juego y **ninguna** apuesta. Sirve igual si se agotó el saldo del hall, si el
+proveedor se cayó o si rompimos el launch nosotros.
+
+Tres cosas que no son obvias en esa consulta:
+
+- **Se evalúa por proveedor.** Si Gregmorn está muerto pero Palace anda, el total
+  no da cero y el problema pasa desapercibido.
+- **Los dos conteos van separados, no con un `LEFT JOIN`** de sesiones a rondas.
+  Con el join sólo contarían las apuestas de los juegos *abiertos en la ventana*,
+  y bastaría con que alguien siguiera jugando en uno que abrió antes para avisar
+  que "nadie puede jugar" mientras se está jugando. Una alerta que miente una vez
+  ya no se lee más.
+- **El umbral está calibrado, no elegido a ojo.** Se replicó el detector sobre
+  todo el 01/09 en ventanas de 30 min: con 5 aperturas habría avisado a las 17:30
+  y 18:30 UTC —~40 minutos después de empezar el problema, contra las 18 horas
+  que tardó— y sin un solo falso positivo en las ventanas sanas del mismo día.
+
+⚠️ **No agarra apagones parciales.** Exige CERO apuestas; el incidente de la
+mañana del 01/09 (6 aperturas, 1 apuesta en media hora) no habría sonado. Un
+ratio lo cubriría, pero con pocos jugadores un ratio hace ruido. Recalibrar
+cuando haya tráfico real.
+
+### 19.3 El monitor de caída vive afuera del VPS
+
+`infra/uptime-worker/` — Cloudflare Worker. **Es la única alerta que no puede
+salir de la API: si la API está caída, no puede avisar que está caída.**
+
+Cada minuto pega a `api.miamihub.vip/health` y a `miamihub.vip/play`. El chequeo
+de la API cubre más de lo que parece: desde el arreglo del 01/09, `/health`
+devuelve **503** si la base o Redis no responden (§18.4), no sólo si el proceso
+está levantado.
+
+| Ajuste | Valor | Dónde |
+|---|---|---|
+| Frecuencia | cada minuto | `crons` en `wrangler.toml` |
+| Fallos seguidos antes de avisar | 2 | `FALLOS_PARA_AVISAR` en `src/worker.js` |
+| Timeout por chequeo | 10s | `TIMEOUT_MS` |
+
+- Avisa **al segundo fallo seguido**: un timeout suelto no despierta a nadie.
+- Avisa **una sola vez** por caída.
+- Y **avisa cuando vuelve** — sin eso no sabés si sigue roto o ya está.
+
+El estado vive en KV y **se escribe sólo cuando algo cambia**: el plan gratis da
+1.000 escrituras por día y una por minuto se las comería sola. Costo total: cero
+(1.440 corridas/día contra un límite de 100.000).
+
+Para probarlo sin esperar al próximo minuto, el Worker también responde por HTTP
+y devuelve cómo vio cada objetivo. Los 4 pasos de instalación están en su README.
+
+⚠️ **Es independiente del VPS, no de Cloudflare.** Si el problema fuera de ellos,
+este monitor podría no verlo. Para lo que importa —que el servidor propio se
+muera— alcanza.
+
+### 19.4 Variables de entorno
+
+| Variable | Default | Para qué |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | — | Sin esto el canal entero queda apagado. |
+| `TELEGRAM_ALERT_CHAT_ID` | — | Ídem. Ojo con el supergrupo (§19.1). |
+| `ALERTS_BOOT_PING` | apagado | Smoke test al arrancar. |
+| `GAMES_HEALTH_ENABLED` | `true` | Se apaga con `=false`. |
+| `GAMES_HEALTH_CRON` | `*/10 * * * *` | Frecuencia del detector. |
+| `GAMES_HEALTH_WINDOW_MIN` | `30` | Ventana que mira. |
+| `GAMES_HEALTH_MIN_LAUNCHES` | `5` | Aperturas mínimas para evaluar. |
+
+Las dos del Worker se cargan con `wrangler secret put`, **no** en
+`wrangler.toml`. Son los mismos valores que usa la API.
+
+### 19.5 Cómo verificar que el canal está vivo
+
+Un canal de avisos **falla en silencio**: si el token quedó mal o el grupo es
+otro, no te enterás hasta el día que pasa algo y no llega nada. Mismo criterio
+que `SENTRY_BOOT_PING` (§18.3).
+
+1. **Canal de la API**: prender `ALERTS_BOOT_PING`, reiniciar, ver que llegue
+   🔵 *"Prueba de alertas"* al grupo, y **volver a apagarlo**.
+2. **Worker**: `curl https://miamihub-uptime.<subdominio>.workers.dev` — con todo
+   sano devuelve `{"api":{"ok":true},"web":{"ok":true}}`.
+3. **Aviso real del Worker**: cambiar temporalmente una URL de `OBJETIVOS` por
+   una que no exista, desplegar, esperar dos minutos, ver que llegue el mensaje.
+   Después revertir.
+
+### 19.6 Estado verificado (2026-09-03)
+
+Chequeado contra la API de Dokploy y contra el repo. Qué está vivo y qué no:
+
+| | Estado |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` en la app `api` de prod | ✅ cargada |
+| `TELEGRAM_ALERT_CHAT_ID` en la app `api` de prod | ✅ cargada |
+| Código de alertas deployado | ✅ el último deploy (`2026-09-02 19:51 UTC`, estado `done`) es el del commit `6689894` |
+| El proceso corriendo es ese deploy | ✅ el `uptime` de `/health` arranca ~19:50 UTC del 02/09 |
+| `GamesHealthCron` activo | ✅ por default (`GAMES_HEALTH_ENABLED` no está seteada y el default es prendido) |
+| Detector con valores por default | ✅ ventana 30 min, mínimo 5 aperturas, cada 10 min |
+| **Worker de uptime desplegado** | ❌ **casi con certeza NO** — ver abajo |
+
+**Del canal de la API no queda nada por configurar**: las dos variables están,
+el código está deployado y el cron corre con los defaults. Las tres variables de
+ajuste (`GAMES_HEALTH_CRON`, `_WINDOW_MIN`, `_MIN_LAUNCHES`) no están seteadas y
+no hace falta que lo estén — sólo se agregan para recalibrar.
+
+⚠️ **El Worker de uptime no está desplegado.** Dos señales independientes:
+
+1. El id del namespace KV sigue en `PENDIENTE_COMPLETAR` en `wrangler.toml`, y el
+   árbol de trabajo está limpio — la versión commiteada no es desplegable.
+2. `infra/uptime-worker/` **no tiene carpeta `.wrangler/`**, mientras que
+   `worker/` (el uploader, desplegado en julio) **sí la tiene**. Wrangler nunca
+   corrió en ese directorio.
+
+No se pudo confirmar por la API de Cloudflare: el `CLOUDFLARE_API_TOKEN` que
+tenemos es **de zona** (lee `miamihub.vip`, no lee Workers ni cuentas). Para
+verificarlo por API hace falta un token con `Workers Scripts: Read`; si no, se
+mira en el panel → Workers & Pages.
+
+**Mientras tanto, la alerta de caída no existe.** Es la única que funciona cuando
+el server entero se muere, así que es lo primero que conviene cerrar: son los 4
+pasos del README del Worker.
+
+### 19.7 Lo que sigue sin verificarse
+
+- ⚠️ **Ninguna alerta se vio disparar de verdad.** El detector de juegos se validó
+  replicando la consulta sobre datos del 01/09, que no es lo mismo que verlo
+  sonar. Que las variables estén cargadas prueba que el canal *puede* mandar, no
+  que mande: el `chat_id` podría apuntar a otro lado, o el bot podría no estar en
+  el grupo. La prueba real son 2 minutos — §19.5, paso 1.
