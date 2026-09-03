@@ -3,8 +3,12 @@
 > Cosas que necesitan respuesta de ellos (`GH_Support_Dave`). Se escribe en
 > **inglés**, sin saludo: la conversación ya está abierta.
 >
-> Última actualización: 2026-09-01. **Las tres respondidas.** Queda como
-> registro de lo que contestaron y de qué se hizo con cada respuesta.
+> Última actualización: **2026-09-03**. Los puntos 1 a 5 están cerrados y quedan
+> como registro de lo que contestaron y de qué se hizo con cada respuesta.
+>
+> **Abiertos hoy**: el punto 6 (RTP, contestado a medias) y el **setup de
+> producción**, que se preguntó el 2026-09-02 y sigue sin respuesta — es lo único
+> que bloquea el lanzamiento.
 
 ---
 
@@ -201,7 +205,111 @@ amplio de lo necesario. Queda solo `Gregmorn callbacks`, anclada a la ruta.
 
 ---
 
-## Borrador del mensaje (enviado 2026-08-29)
+
+---
+
+## 6. RTP configurable (CONTESTADO A MEDIAS — 2026-09-03)
+
+Surgió al preguntar por el saldo del hall (§7) y terminó abriendo un tema que no
+estaba documentado en ninguna parte del repo, pese a que **la LEY E7 ya lo
+contempla** (`rtp ∈ (0, 1]`) y `games.config.rtp` existe desde Fase 1.
+
+### Lo que contestaron
+
+| | |
+|---|---|
+| **Stage** | RTP **95** para **todos** los juegos, valor único |
+| **Producción** | Configurable, pero **sólo** para SL-games, Nova, X-games y Slot7Zon |
+| **Rango** | mínimo **75**, máximo **96** |
+| **El resto de los proveedores** | *"the RTP varies and cannot be configured"* |
+
+### Lo que quedó sin responder
+
+Se preguntaron cuatro cosas y contestaron dos. Siguen abiertas:
+
+1. **Cuál es el default de los proveedores que no se pueden configurar.** Se les
+   aclaró explícitamente *"we need that number either way for our planning"* y
+   contestaron *"varies"*, que es un adjetivo, no un número. Sin eso no se puede
+   modelar el margen del catálogo.
+2. **Si lo seteamos nosotros desde el panel o hay que pedírselo cada vez.**
+   Define si es una palanca operativa nuestra o una dependencia de soporte.
+
+Y una tercera que todavía **no se les preguntó** y conviene incluir cuando se
+retome: **si al cambiar el RTP de un juego, `getUserGames` refleja el valor
+nuevo.** Si no lo refleja, nuestro dato queda viejo sin que nadie se entere.
+
+### Qué implica de nuestro lado
+
+⚠️ **Hoy el RTP que guardamos es inventado.**
+
+- **Palace**: `palace-sync.service.ts` escribe `config: { rtp: 0.95 }`
+  **hardcodeado** para los 2.148 juegos.
+- **Gregmorn**: el sync **no completa `rtp`** — sus juegos quedan sin target.
+
+Eso importa porque el roadmap define alertas cuando el *RTP real diverge >5% del
+target del config* (`/game-stats`, "Por juego"). Con un target hardcodeado en un
+caso y ausente en el otro, esa comparación no puede funcionar. **Si se empieza a
+configurar el RTP con ellos, hay que reflejarlo en `games.config.rtp`.**
+
+Dato feliz: el `0.95` hardcodeado de Palace coincide con el 95 de stage de
+Gregmorn. Es coincidencia, no diseño.
+
+### Antes de elegir un valor
+
+El rango que ofrecen va de **75 a 96**, y los dos extremos son negocios
+distintos:
+
+| RTP | Ventaja de la casa | Cuánto llega a apostar un depósito de $1.000 |
+|---|---|---|
+| 96 | 4% | ~$25.000 |
+| 75 | 25% | ~$4.000 |
+
+Con RTP 75 **el mismo depósito da seis veces menos tiempo de juego**. El estándar
+de la industria está en 94–97, así que un jugador que juegue en los dos lados
+nota la diferencia. Con todo el sistema de referidos y sorteos de la plataforma
+—que vive del boca a boca— subir el margen por juego puede costar más de lo que
+rinde. **Decisión del dueño**; queda anotado el número, no una recomendación.
+
+---
+
+## 7. Saldo del hall — cómo vigilarlo (RESUELTO — 2026-09-02)
+
+El 2026-09-01 los juegos dejaron de aceptar apuestas y **nadie de nuestro lado
+podía ver por qué**. La causa la dio el proveedor:
+
+> *"Hello, the balance on your account in our admin panel has run out. Please
+> try again now."* — `GH_Support_Dave`, 2026-09-02 11:40 AR
+
+**Se había agotado el saldo de nuestra cuenta con ellos.** Ver la corrección al
+inicio de [`97-analisis-incidente-2026-09-01.md`](97-analisis-incidente-2026-09-01.md):
+ese documento había atribuido la falla a ellos, porque el saldo del hall es
+invisible desde nuestra base.
+
+### Dónde se mira ahora
+
+**Panel de stage**: `https://office-dev.gamble-hub.net/login`, con el login y
+password de integración. Ahí se ve el saldo y el historial.
+
+⚠️ Ojo con el dominio: el back office vive en **`gamble-hub.net`**, no en
+`gregmorn.org`, que es el que figura en toda la documentación de la API.
+
+⚠️ **No hay endpoint para consultarlo.** Su OpenAPI expone sólo `auth/login`,
+`games/openGame`, `getUserGames` y el `apiIndividualWallet` del modelo Transfer
+que no usamos. Se pidió también un aviso automático cuando el saldo esté bajo; no
+lo ofrecieron.
+
+### La red de contención que sí es nuestra
+
+`GamesHealthCron` (`apps/api/src/games/games-health.cron.ts`) busca la firma
+**"hubo aperturas de juego y ninguna apuesta"** cada 10 minutos. Habría avisado a
+los ~40 minutos en vez de las 18 horas que tardó un jugador en quejarse. Es un
+indicador *tardío* —avisa cuando los jugadores ya no pueden jugar— pero es lo
+único automatizable: el saldo no se puede consultar.
+
+**Antes de abrir a producción**: mirar el panel de Prod y cargar saldo con
+margen. Quedarse sin fondos en producción es que el casino deje de aceptar
+apuestas, en silencio y sin un solo error.
+## Mensaje ENVIADO (2026-08-29)
 
 > Thanks — 18.184.217.6 is whitelisted, and we will add 3.78.156.229 when we
 > move to production. The live games are out of our catalog after a re-sync.
@@ -244,8 +352,12 @@ amplio de lo necesario. Queda solo `Gregmorn callbacks`, anclada a la ruta.
 
 ---
 
-## Borrador del mensaje (2026-09-01 — respuesta + 4 preguntas nuevas)
+## Mensaje ENVIADO (2026-09-01 — respuesta + 4 preguntas nuevas)
 
+> ✅ **Enviado.** De las 4 preguntas contestaron el token de launch y la
+> configurabilidad del RTP (§6). El **setup de producción**, que se les preguntó
+> después, sigue sin respuesta.
+>
 > Va con las capturas adjuntas. Mapa de las imágenes:
 >
 > | # | Qué muestra |
@@ -319,8 +431,18 @@ primer lugar donde mirar antes de volver a escribirles.
 
 ---
 
-## Borrador del mensaje (2026-09-01, segundo envío — evidencia medida)
+## Mensaje ENVIADO (2026-09-02, segundo envío — evidencia medida)
 
+> ✅ **Enviado, y funcionó.** Es el mensaje que hizo que el proveedor encontrara
+> la causa: a las 11:40 AR contestaron que **el saldo de nuestra cuenta en su
+> panel se había agotado** (ver §7). Se les respondió reconociéndolo.
+>
+> **La ironía vale anotarla**: el punto 1 acusaba a su sistema de perder el saldo
+> entre nuestra respuesta y la pantalla, y el problema era nuestro. Lo que
+> resolvió el caso no fue la acusación sino **los datos** — timestamps, ids y
+> montos concretos le permitieron a Dave mirar la cuenta y ver el número en cero.
+> Reportar con mediciones funciona incluso cuando la conclusión propia está mal.
+>
 > Va como **continuación** del mensaje anterior, no lo reemplaza. La diferencia
 > es que ahora todo está medido contra producción: horas, ids y montos. Las
 > cuatro preguntas de antes siguen en pie; esto les agrega los datos.

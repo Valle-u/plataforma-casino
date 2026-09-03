@@ -19,6 +19,34 @@
   Evolution). El `gameId` viene con forma `integration:provider:game`, ej.
   `integration_a:provider_a:game_001`.
 - **Cuenta nuestra:** login `MiamiHub`. Credenciales de **Stage**.
+- **Back office (Stage):** `https://office-dev.gamble-hub.net/login`, con el
+  mismo login y password de integración. ⚠️ **Ojo con el dominio**: el panel vive
+  en `gamble-hub.net`, no en `gregmorn.org` — que es el que aparece en toda la
+  documentación de la API. Ahí se ve el **saldo de nuestro hall** y su historial.
+
+## ⚠️ El saldo del hall: la falla que no genera ningún error
+
+Además del saldo de cada jugador —que vive en nuestra base— existe **el saldo de
+nuestra cuenta con Gregmorn**. Si se agota, **el casino deja de aceptar apuestas
+sin producir un solo error**: los juegos abren, muestran `CRÉDITO 0,00`, no llega
+ningún callback, y nuestra API contesta 200 a todo.
+
+Pasó el 2026-09-01 y se tardó **18 horas** en detectarlo, porque se descubrió por
+la queja de un jugador. El análisis inicial llegó a atribuirle la falla al
+proveedor; fueron ellos mismos quienes encontraron la causa. Ver la corrección al
+inicio de [`97-analisis-incidente-2026-09-01.md`](97-analisis-incidente-2026-09-01.md).
+
+**Cómo se vigila:**
+
+| | |
+|---|---|
+| **Por API** | ❌ **imposible** — no hay endpoint. Su OpenAPI expone sólo `auth/login`, `games/openGame`, `getUserGames` y el `apiIndividualWallet` que no usamos |
+| **Por panel** | ✅ el back office de arriba. Es el único lugar donde se ve el número |
+| **Alerta propia** | ✅ `GamesHealthCron` avisa por Telegram cuando hay aperturas de juego y **ninguna** apuesta. Llega a los ~40 min, no antes |
+
+La alerta es un indicador **tardío**: avisa cuando los jugadores ya no pueden
+jugar. **Antes de abrir a producción, mirar el panel de Prod y cargar con
+margen.**
 
 ## Hechos clave
 
@@ -53,6 +81,9 @@
 | **`user_id`** | ✅ **es el `user.id` del `/auth/login`** — no se carga a mano |
 | **Idempotencia del `rollback`** | ✅ **`cmd + transactionId` aprobado por ellos** |
 | ¿`3.78.156.229` es su única IP? | ✅ sí, y avisan antes de sumar otras |
+| **RTP** | ✅ Stage = **95** para todos · Prod configurable (75–96) sólo en SL-games, Nova, X-games y Slot7Zon — ⬜ **falta el default del resto** y si lo seteamos nosotros. Ver [`98` §6](98-pendientes-proveedor.md) |
+| **Saldo del hall** | ✅ se ve en el back office (arriba) — ❌ **no hay API**. Ver la sección de arriba |
+| **Setup de producción** | ⬜ **preguntado el 2026-09-02, sin respuesta.** Es el bloqueante para lanzar |
 
 ## Trampas (leer antes de codear la wallet)
 

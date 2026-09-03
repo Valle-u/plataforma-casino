@@ -11,15 +11,67 @@ capturas de error que se le mandaron al proveedor. Todas las horas son **UTC**
 
 ---
 
+> # ⚠️ CORRECCIÓN (2026-09-02) — LEER ANTES QUE NADA
+>
+> **La causa era nuestra: se había agotado el saldo de nuestra cuenta en el
+> panel de Gregmorn.** Lo confirmó el propio proveedor por Telegram, a las 11:40
+> (hora AR) del 2026-09-02, respondiendo al mensaje con las mediciones:
+>
+> > *"Hello, the balance on your account in our admin panel has run out. Please
+> > try again now."*
+>
+> Y efectivamente, al recargar volvió a funcionar todo.
+>
+> **Las mediciones de este documento siguen siendo válidas. Lo que estaba mal es
+> la inferencia.** Cada observación se hizo sobre el saldo del **jugador** —que
+> estaba bien, y eso quedó probado— pero existe un segundo saldo que desde
+> nuestra base **es invisible**:
+>
+> | | Dónde vive | ¿Lo vemos? |
+> |---|---|---|
+> | Saldo del **jugador** | nuestra base (`wallet_transactions`) | ✅ sí |
+> | Saldo de **nuestro hall** con Gregmorn | el panel de ellos | ❌ no, ni por API |
+>
+> Al descartar el único saldo que se podía ver, el análisis dedujo que no quedaba
+> otra explicación que la de ellos. Era la explicación que faltaba mirar.
+>
+> **Con un hall sin fondos, el síntoma es exactamente el que se documentó acá**:
+> el juego abre, muestra `CRÉDITO 0,00` y no manda un solo callback, aunque
+> nosotros contestemos el `getBalance` perfecto — porque el juego nunca llega a
+> quedar fondeado. Una sola causa explica los tres incidentes de la noche.
+>
+> **Qué se hizo con esto** (ver `apps/api/src/games/games-health.cron.ts`):
+> se construyó el detector que faltaba, porque esta falla **no genera ningún
+> error** — la API contestó 93 callbacks con HTTP 200 y ni un 4xx en todo el día.
+> Busca la firma "hubo aperturas de juego y ninguna apuesta" y habría avisado a
+> los ~40 minutos, en vez de las 18 horas que tardó un jugador en quejarse.
+>
+> ⚠️ **El saldo del hall no se puede consultar por API** — el OpenAPI de Gregmorn
+> tiene sólo `login`, `openGame`, `getUserGames` y el `apiIndividualWallet` que
+> no usamos. **Sí se ve en su panel de stage**
+> (`https://office-dev.gamble-hub.net/login`, con las credenciales de
+> integración). Ese panel y la alerta son las dos únicas formas de enterarse.
+>
+> **Nada de esto quedó mal con el proveedor**: ellos mismos identificaron la
+> causa al recibir las mediciones, y se les respondió reconociéndolo.
+
+---
+
 ## 1. La conclusión
 
-**La falla no es nuestra.** De 05:44 en adelante hubo **10 aperturas de juego**;
-nuestra API devolvió la URL en todas. Gregmorn mandó **un solo callback en dos
-de ellas y cero en las otras ocho**. El último callback de toda la sesión fue a
-las **05:49:26**: después hubo siete aperturas más sin una sola señal de su lado.
+> ⚠️ **Esta sección quedó desmentida.** Ver la corrección de arriba: la causa era
+> el saldo agotado de nuestro hall. Se preserva el texto original porque los
+> datos que cita son correctos y siguen sirviendo.
 
-Un juego que no manda ni una apuesta es un juego que nunca llegó a jugarse. La
-falla está entre su cliente y sus servidores, después de que soltamos la URL.
+**~~La falla no es nuestra.~~** De 05:44 en adelante hubo **10 aperturas de
+juego**; nuestra API devolvió la URL en todas. Gregmorn mandó **un solo callback
+en dos de ellas y cero en las otras ocho**. El último callback de toda la sesión
+fue a las **05:49:26**: después hubo siete aperturas más sin una sola señal de su
+lado.
+
+Un juego que no manda ni una apuesta es un juego que nunca llegó a jugarse.
+~~La falla está entre su cliente y sus servidores, después de que soltamos la
+URL.~~ **Nunca llegó a jugarse porque nuestro hall estaba sin fondos.**
 
 ## 2. La línea de tiempo
 
@@ -246,7 +298,12 @@ que es el captcha del login. Probablemente por eso la sesión no se renovó.
 
 ---
 
-## 8. La prueba definitiva del `CRÉDITO 0,00` (23:09 UTC)
+## 8. El `CRÉDITO 0,00` medido (23:09 UTC)
+
+> ⚠️ **El título decía "la prueba definitiva" y no lo era.** Los datos de acá son
+> correctos y valiosos —son los que hicieron que el proveedor encontrara la
+> causa— pero la conclusión que se sacaba de ellos estaba mal. Ver la corrección
+> del encabezado.
 
 Media hora después de empezar a registrar los `getBalance`, el jugador volvió a
 abrir **6 Jokers** (`greece:700:30163`) y el juego mostró otra vez
@@ -261,8 +318,22 @@ El wallet real decía `2066.01`. La sesión guardó `opened_balance = 2066.01`. 
 IP registrada fue la real del jugador.
 
 **Nos preguntaron dos veces, contestamos bien las dos veces, y el juego mostró
-cero.** No hay margen de interpretación: el saldo se pierde del lado de ellos,
-entre nuestra respuesta y lo que dibuja el juego.
+cero.** Eso sigue siendo cierto y sigue siendo la medición más útil del
+documento.
+
+~~No hay margen de interpretación: el saldo se pierde del lado de ellos, entre
+nuestra respuesta y lo que dibuja el juego.~~
+
+**Sí había margen, y era éste**: el juego no mostraba cero porque perdiera
+nuestra respuesta, sino porque **nuestro hall estaba sin fondos** y el juego
+nunca llegó a quedar fondeado. Nuestro `getBalance` era correcto e irrelevante
+al mismo tiempo — se contestaba bien una pregunta que ya no cambiaba nada.
+
+💡 **La lección, que es lo que vale guardar**: contestar bien una pregunta no
+prueba que el problema sea del que la hizo. Faltaba una variable que ni siquiera
+se podía mirar desde nuestra base, y el análisis trató "descarté todo lo que veo"
+como si fuera "descarté todo". Antes de atribuirle una falla a un tercero,
+conviene preguntarse qué parte del sistema no se está pudiendo observar.
 
 ### Queda descartada la hipótesis de bug propio
 
