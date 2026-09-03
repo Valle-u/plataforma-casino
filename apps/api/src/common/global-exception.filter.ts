@@ -32,6 +32,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as Sentry from '@sentry/nestjs';
+import { extractRequestContext } from '../request-context/request-context';
 import { redactHttpRequest } from './redact';
 
 @Catch()
@@ -53,13 +54,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const shouldLog = !isHttpException || status >= 500 || this.logAll;
 
+    // El `request_id` que sirve es el que GENERA `RequestContextMiddleware`
+    // (UUIDv7), porque es el mismo que queda en `audit_log.request_id`.
+    //
+    // ⚠️ Antes acá se leía `x-request-id` del request ENTRANTE — un header que
+    // ningún cliente nuestro manda. El tag de Sentry y el `requestId` del log
+    // salían vacíos **siempre**, y con eso se perdía la única forma de cruzar un
+    // error con su fila de auditoría. El middleware lo devuelve en la respuesta
+    // (`X-Request-Id`), no lo espera en la entrada.
+    const requestId = extractRequestContext(request).requestId;
+
     // Enviar 5xx y errores no-Http a Sentry
     if (status >= 500) {
       Sentry.withScope((scope) => {
         scope.setTag('http.method', request.method);
         scope.setTag('http.url', request.originalUrl ?? request.url);
         scope.setTag('http.status_code', String(status));
-        const requestId = request.headers['x-request-id'] as string | undefined;
         if (requestId) scope.setTag('request_id', requestId);
         scope.setExtra('query', request.query);
         scope.setExtra('params', request.params);
@@ -74,12 +84,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         query: request.query,
         params: request.params,
       });
-      const requestId = request.headers['x-request-id'] as string | undefined;
       const meta = {
         method: request.method,
         url: request.originalUrl ?? request.url,
         status,
-        requestId: requestId ?? null,
+        requestId,
         ...safeReq,
       };
       const stack =
