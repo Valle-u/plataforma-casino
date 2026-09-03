@@ -18,6 +18,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { createTestUser } from '../helpers/test-users';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
+import { EffectivePermissionsService } from '../../permissions/effective-permissions.service';
 
 describe('users.view_admin_network — aislamiento sub-red independiente (E2E)', () => {
   let ctx: TestApp;
@@ -131,7 +132,12 @@ describe('users.view_admin_network — aislamiento sub-red independiente (E2E)',
     // que cuelgan de un socio independiente. No depende de que el empleado
     // tenga descendants — el permiso lo habilita a operar la red del admin.
     // Debe VER: red del admin.
-    expect(ids.has(emp.id)).toBe(true); // a sí mismo
+    // ⚠️ El actor NO se ve a sí mismo: `/tenant/users` devuelve su red, no su
+    // propia fila. Antes acá había un `expect(ids.has(emp.id)).toBe(true)` que
+    // fallaba por eso — y no era una fuga ni un permiso faltante, era la
+    // semántica del endpoint. (Lo mismo dejaba `adminId` en `undefined` en
+    // permission-overrides.e2e, que sacaba su id del listado.)
+    expect(ids.has(emp.id)).toBe(false);
     expect(ids.has(socioDep.id)).toBe(true);
     expect(ids.has(cajeroDep.id)).toBe(true);
     expect(ids.has(playerDep.id)).toBe(true);
@@ -211,6 +217,22 @@ describe('users.view_admin_network — aislamiento sub-red independiente (E2E)',
       VALUES (${adminId}, 'users.view_all', 'revoke', NULL, 'e2e test')
       ON CONFLICT (user_id, permission_code) DO UPDATE SET effect = 'revoke'
     `);
+
+    // ⚠️ Invalidar el caché de permisos, SIN ESTO el revoke de arriba no existe
+    // para la API.
+    //
+    // `EffectivePermissionsService` cachea los permisos efectivos en Redis 5
+    // minutos (`perms:<userId>`) y sólo se invalida desde `deleteCacheForUser`.
+    // Los dos writes de arriba son SQL crudo, así que el admin seguía teniendo
+    // `users.view_all` efectivo — y con ese permiso **ver la sub-red
+    // independiente es lo correcto**. El test fallaba con "Received: true" y
+    // parecía una fuga de aislamiento; no lo era.
+    //
+    // Ojo en local: `REDIS_URL` apunta a Upstash, que es externo y persistente,
+    // así que el caché sobrevive entre corridas. Con un TTL de 5 minutos y una
+    // suite de ~25, el resultado cambiaba según cuándo expirara cada entrada:
+    // de ahí la flakiness de 62 vs 63 fallas con el mismo código.
+    await ctx.app.get(EffectivePermissionsService).deleteCacheForUser(adminId);
 
     const ids = await fetchAllUserIds(ctx.request, adminToken);
 

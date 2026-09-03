@@ -103,17 +103,40 @@ async function waitForEffectivePermission(
 }
 
 /** Ayuda: lista users del tenant y devuelve mapa username → id. */
+/**
+ * Mapa username → id de TODOS los usuarios del tenant.
+ *
+ * ⚠️ Pagina. Antes pedía `/tenant/users` a secas y se quedaba con la primera
+ * página: el tenant de test **acumula usuarios suite tras suite** (`users` no se
+ * trunca entre archivos), así que el admin del seed se fue quedando fuera del
+ * corte y `adminId` terminaba `undefined`.
+ *
+ * El síntoma no ayudaba: un test comparaba `chain: [undefined]` contra un UUID
+ * real, y el otro reventaba adentro del driver de Postgres con
+ * `UNDEFINED_VALUE: Undefined values are not allowed`. Ninguno de los dos
+ * apuntaba a la causa.
+ */
 async function getUserMap(
   ctx: TestApp,
   token: string,
 ): Promise<Record<string, string>> {
-  const res = await ctx.request
-    .get('/tenant/users')
-    .set('Host', TEST_TENANT.host)
-    .set('Authorization', token);
-  const data = (res.body as { data: Array<{ id: string; username: string }> }).data;
   const map: Record<string, string> = {};
-  for (const u of data) map[u.username] = u.id;
+  const limit = 200;
+  let offset = 0;
+  // Cap defensivo, igual que en users-view-admin-network.
+  for (let page = 0; page < 20; page += 1) {
+    const res = await ctx.request
+      .get(`/tenant/users?limit=${limit}&offset=${offset}`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', token);
+    if (res.status !== 200) {
+      throw new Error(`getUserMap falló: ${res.status} ${JSON.stringify(res.body)}`);
+    }
+    const rows = (res.body as { data: Array<{ id: string; username: string }> }).data;
+    for (const u of rows) map[u.username] = u.id;
+    if (rows.length < limit) break;
+    offset += limit;
+  }
   return map;
 }
 
@@ -127,8 +150,21 @@ describe('PermissionOverridesController (E2E)', () => {
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
+    // ⚠️ El id del admin NO sale del listado: **un actor no aparece en
+    // `/tenant/users`**, que devuelve su red, no a él mismo. Sacarlo de ahí
+    // dejaba `adminId` en `undefined`, y de eso salían las dos fallas de este
+    // archivo: una comparaba `chain: [undefined]` contra un UUID real y la otra
+    // reventaba en el driver de Postgres con `UNDEFINED_VALUE`.
+    //
+    // `/tenant/auth/me` es la fuente correcta para el propio id — mismo patrón
+    // que usa tenant-settings.e2e.
+    const me = await ctx.request
+      .get('/tenant/auth/me')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken);
+    adminId = (me.body as { user: { id: string } }).user.id;
+
     const users = await getUserMap(ctx, adminToken);
-    adminId = users[TEST_TENANT.admin.username]!;
     cajero1Id = users[TEST_TENANT.cajero1.username]!;
     cajero2Id = users[TEST_TENANT.cajero2.username]!;
   });

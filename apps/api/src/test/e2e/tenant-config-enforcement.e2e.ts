@@ -72,6 +72,12 @@ function registerBody(username: string): Record<string, unknown> {
     username,
     password: `pwd-${username}-2026`,
     displayName: 'Register Test',
+    // ⚠️ El teléfono es obligatorio: `registration.phone_required` tiene
+    // **default `true`** (ver `tenant-auth.controller.ts`, paso 2.5). Sin él el
+    // registro devuelve 400 y estos tests fallaban creyendo que el registro
+    // estaba cerrado, cuando lo que faltaba era un campo. En el DTO figura como
+    // opcional — quien decide es el setting, no la validación.
+    phone: `+54911${Math.floor(Math.random() * 90_000_000 + 10_000_000)}`,
     ageConfirmation: true,
     consentDataProcessing: true,
   };

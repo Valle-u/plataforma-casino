@@ -82,6 +82,29 @@ async function resetAdminTwoFa(): Promise<void> {
   }
 }
 
+/**
+ * Marca (o desmarca) que el rol `admin_tenant` exija 2FA.
+ *
+ * ⚠️ Hace falta porque **el seed ya no lo exige**: el 2026-08-27 se decidió que
+ * el 2FA no se usa en la plataforma, y todos los roles de `tenant-seed.ts`
+ * quedaron con `requiresTwoFa: false`. Sin esto el guard no bloquea nunca —
+ * aunque la policy esté encendida— y los tests recibían 200 y 409 en vez de 403.
+ *
+ * El mecanismo sigue existiendo en el código y vale probarlo para el día que se
+ * reactive; lo que ya no se puede es asumir que viene prendido de fábrica.
+ */
+async function setAdminRoleRequiresTwoFa(value: boolean): Promise<void> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    await sql.unsafe(
+      `UPDATE roles SET requires_two_fa = $1 WHERE code = 'admin_tenant'`,
+      [value],
+    );
+  } finally {
+    await sql.end();
+  }
+}
+
 describe('TwoFaPolicyGuard (E2E)', () => {
   let ctx: TestApp;
   let policy: TwoFaPolicyService;
@@ -90,10 +113,14 @@ describe('TwoFaPolicyGuard (E2E)', () => {
     ctx = await bootstrapTestApp({ enableTwoFaPolicy: true });
     policy = ctx.app.get(TwoFaPolicyService);
     expect(policy.isEnabled()).toBe(true);
+    // El seed ya no lo exige — ver el comentario del helper.
+    await setAdminRoleRequiresTwoFa(true);
   });
 
   afterAll(async () => {
     await resetAdminTwoFa();
+    // Devolver el rol como lo dejó el seed, para no contaminar otros suites.
+    await setAdminRoleRequiresTwoFa(false);
     await ctx.close();
   });
 

@@ -20,7 +20,9 @@
  */
 
 import postgres from 'postgres';
+import { sql } from 'drizzle-orm';
 import { TEST_TENANT } from '../setup/test-tenant';
+import { TenantSettingsService } from '../../tenant-settings/tenant-settings.service';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
@@ -28,15 +30,34 @@ import { fundWalletForTests } from '../helpers/fund-wallet';
 import { matchBankTxForDeposit } from '../helpers/bank-tx';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
-async function deleteAllSettings(): Promise<void> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
+/**
+ * Borra todos los settings — **por el servicio**, no con un DELETE crudo.
+ *
+ * ⚠️ `TenantSettingsService` cachea in-memory 5 minutos y sólo se entera desde
+ * `set()`/`unset()`. Antes esto hacía `DELETE FROM tenant_settings` por una
+ * conexión aparte: las filas desaparecían y el caché seguía devolviendo los
+ * valores viejos. Eso hacía fallar a "purge sin entries", que recibía
+ * `retentionDaysApplied: 30` —de un test previo— cuando el default es 365.
+ *
+ * Se listan las claves y se borra una por una: `unset` borra la fila **y**
+ * invalida. El history sí se puede limpiar por SQL, no está cacheado.
+ */
+async function deleteAllSettings(ctx: TestApp): Promise<void> {
+  const settings = ctx.app.get(TenantSettingsService);
+  const rows = (await ctx.tenantDb.execute(
+    sql`SELECT key FROM tenant_settings`,
+  )) as unknown as Array<{ key: string }>;
+  const keys = (Array.isArray(rows) ? rows : ((rows as { rows?: Array<{ key: string }> }).rows ?? []));
+  for (const r of keys) {
+    await settings.unset(ctx.tenantDb, r.key);
+  }
+
+  const sql2 = postgres(getTestTenantUrl(), { max: 1 });
   try {
-    await sql.unsafe(`DELETE FROM tenant_settings`);
-    // También el history — sin esto, los tests del describe `History
-    // endpoint` ven entries de tests previos del mismo suite.
-    await sql.unsafe(`DELETE FROM tenant_settings_history`);
+    // El history no pasa por el caché.
+    await sql2.unsafe(`DELETE FROM tenant_settings_history`);
   } finally {
-    await sql.end();
+    await sql2.end();
   }
 }
 
@@ -130,7 +151,7 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
   });
 
   beforeEach(async () => {
-    await deleteAllSettings();
+    await deleteAllSettings(ctx);
     await deleteAllFraudLinks();
   });
 
