@@ -52,8 +52,38 @@ export default {
   /**
    * Además del cron, responde por HTTP para poder probarlo a mano sin esperar
    * al próximo minuto. No expone nada sensible: sólo dice cómo vio cada cosa.
+   *
+   * Con `?ping=1` manda un aviso de prueba al grupo en vez de chequear.
    */
-  async fetch(_request, env) {
+  async fetch(request, env) {
+    // Prueba del canal, a pedido.
+    //
+    // Mismo criterio que `ALERTS_BOOT_PING` en la API: un canal de avisos falla
+    // en silencio. Si el token quedó mal o el grupo es otro, no te enterás hasta
+    // el día que pasa algo y no llega nada — y justamente ese día es el peor
+    // para descubrirlo.
+    //
+    // Antes, la única forma de probarlo era apuntar un objetivo a una URL que no
+    // existe, desplegar, esperar dos minutos y revertir. Además de incómodo,
+    // mandaba al grupo un aviso que decía "los jugadores no pueden entrar",
+    // indistinguible de una caída real. Esto manda UN mensaje que se lee como lo
+    // que es, y no toca el estado en KV.
+    if (new URL(request.url).searchParams.has('ping')) {
+      const r = await avisar(env, {
+        icono: '🔵',
+        titulo: 'Prueba del monitor de caída',
+        detalle:
+          'Si ves esto, el monitor que corre fuera del VPS puede avisar.\n\n' +
+          'Es una prueba, no hay ningún problema.',
+      });
+      // Se devuelve lo que contestó Telegram, no un "listo" optimista: la
+      // pregunta que responde esta ruta es justamente si el aviso llega.
+      return new Response(JSON.stringify({ ping: r }, null, 2), {
+        status: r.ok ? 200 : 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const estado = await revisarTodo(env);
     return new Response(JSON.stringify(estado, null, 2), {
       headers: { 'Content-Type': 'application/json' },
@@ -137,22 +167,45 @@ async function pegar(url) {
   }
 }
 
+/**
+ * Manda el aviso. **Nunca tira** — quien la llama no puede fallar por esto.
+ *
+ * Devuelve qué pasó, y eso no es decorativo: sin el resultado, `?ping=1` diría
+ * "enviado" aunque Telegram lo hubiera rechazado, que es precisamente el modo
+ * de falla que tenemos que poder detectar. Cuando un grupo básico se convierte
+ * en supergrupo, Telegram le cambia el `chat_id` y responde 400 al viejo: las
+ * alertas dejan de llegar y nada avisa. Una prueba que no mira la respuesta no
+ * distingue ese caso de uno sano.
+ */
 async function avisar(env, { icono, titulo, detalle }) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_ALERT_CHAT_ID) return;
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_ALERT_CHAT_ID) {
+    return { ok: false, motivo: 'sin TELEGRAM_BOT_TOKEN o TELEGRAM_ALERT_CHAT_ID' };
+  }
   const texto = `${icono} <b>${escapar(titulo)}</b>\n\n${escapar(detalle)}`;
   try {
-    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: env.TELEGRAM_ALERT_CHAT_ID,
-        text: texto,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      }),
-    });
-  } catch {
+    const r = await fetch(
+      `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: env.TELEGRAM_ALERT_CHAT_ID,
+          text: texto,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        }),
+      },
+    );
+    if (r.ok) return { ok: true };
+
+    // El cuerpo del error trae el motivo (`description`) y, si el grupo migró,
+    // el id nuevo en `parameters.migrate_to_chat_id`. Se devuelve tal cual: acá
+    // no hay logs que mirar después.
+    const cuerpo = await r.text().catch(() => '');
+    return { ok: false, status: r.status, motivo: cuerpo.slice(0, 300) };
+  } catch (err) {
     // Si Telegram no contesta no hay mucho más que hacer desde acá.
+    return { ok: false, motivo: `no se pudo conectar: ${err.message}` };
   }
 }
 

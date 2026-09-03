@@ -57,24 +57,53 @@ Y desplegar:
 npx wrangler deploy
 ```
 
+## Dónde vive
+
+**Desplegado el 2026-09-03** en
+`https://miamihub-uptime.urielalejandrovalle493.workers.dev`, cuenta
+`5627e3f2c291921ece435f3cca6463c5` (la misma de `casino-uploader`).
+
 ## Cómo probar que anda
 
-El Worker también responde por HTTP, así que no hace falta esperar al próximo
-minuto ni romper nada:
+Dos cosas distintas que conviene no confundir: que **vea** los objetivos, y que
+sepa **avisar**. La segunda es la que falla en silencio.
+
+### 1. Que vea los objetivos
 
 ```bash
-curl https://miamihub-uptime.<tu-subdominio>.workers.dev
+curl https://miamihub-uptime.urielalejandrovalle493.workers.dev
 ```
 
-Devuelve cómo vio cada objetivo. Con todo sano:
+Con todo sano:
 
 ```json
 { "api": { "ok": true }, "web": { "ok": true } }
 ```
 
-Para probar el aviso de verdad, cambiar temporalmente una URL de `OBJETIVOS` en
-`src/worker.js` por una que no exista, desplegar, esperar dos minutos y ver que
-llegue el mensaje al grupo. Después revertir.
+### 2. Que el aviso llegue al grupo
+
+```bash
+curl "https://miamihub-uptime.urielalejandrovalle493.workers.dev/?ping=1"
+```
+
+Manda **un** mensaje al grupo, redactado como prueba —no se puede confundir con
+una caída real— y **devuelve lo que contestó Telegram**:
+
+```json
+{ "ping": { "ok": true } }
+```
+
+Si algo está mal responde **HTTP 502** con el motivo, por ejemplo el `chat_id`
+viejo después de que el grupo se convierta en supergrupo:
+
+```json
+{ "ping": { "ok": false, "status": 400, "motivo": "{\"description\":\"Bad Request: ...\"}" } }
+```
+
+⚠️ **Mirá el `ok`, no el hecho de que responda.** Antes esta ruta no existía y
+había que apuntar un objetivo a una URL inexistente, desplegar, esperar dos
+minutos y revertir — además de incómodo, le mandaba al grupo un aviso que decía
+*"los jugadores no pueden entrar"*, indistinguible de una caída de verdad.
 
 ## Ajustes
 
