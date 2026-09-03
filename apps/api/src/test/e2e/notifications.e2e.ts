@@ -550,7 +550,15 @@ describe('Notifications (E2E)', () => {
       expect(email!.status).toBe('sent');
     });
 
-    it('web_push sin suscripciones → failed user_has_no_push_subscription', async () => {
+    // ⚠️ Web push se REMOVIÓ el 2026-08-13 (commit `58c7123`): funcionaba mal y
+    // se sacaron la UI, los endpoints y el provider. La tabla
+    // `push_subscriptions` y el valor `web_push` del enum quedaron dormidos a
+    // propósito, para poder reactivarlo sin migración.
+    //
+    // Este test sobrevive porque cubre la garantía que ese commit prometió: si
+    // igual apareciera una notificación de ese canal, **se marca `failed` y no
+    // queda en loop**. Lo único que cambió es el motivo del error.
+    it('web_push (removido) → failed web_push_disabled, no queda en loop', async () => {
       const u = await createTestUser(ctx.request, adminToken, {
         suite: 'notif-disp-push-nosub',
         label: 'p',
@@ -570,46 +578,7 @@ describe('Notifications (E2E)', () => {
       const rows = await readNotificationsFromDb(u.id);
       const push = rows.find((r) => r.channel === 'web_push');
       expect(push!.status).toBe('failed');
-      expect(push!.error).toBe('user_has_no_push_subscription');
-    });
-
-    it('web_push con suscripción del user → se procesa (no queda pending)', async () => {
-      const u = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-disp-push-sub',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      const db = ctx.tenantDb;
-      await service.enqueue(db, {
-        userId: u.id,
-        kind: 'test_event',
-        channel: 'web_push',
-        payload: { title: 'x', message: 'y' },
-      });
-
-      // Registrar una suscripción fake del dispositivo.
-      const token = await loginAs(ctx.request, u.username, u.password);
-      const sub = await ctx.request
-        .post('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token)
-        .send({
-          endpoint: `https://fake-push.test/${Date.now()}`,
-          p256dh: 'p256dh',
-          auth: 'auth',
-          deviceLabel: 'jest-e2e',
-        });
-      expect(sub.status).toBe(201);
-
-      const result = await service.dispatch(db, TEST_TENANT.slug);
-      expect(result.processed).toBeGreaterThanOrEqual(1);
-
-      // Determinístico: la notif se procesó (sent con ConsolePushProvider,
-      // o failed 'push_delivery_failed' si VAPID está seteado y el envío a
-      // un endpoint fake falla). Nunca queda 'pending'.
-      const rows = await readNotificationsFromDb(u.id);
-      const push = rows.find((r) => r.channel === 'web_push');
-      expect(['sent', 'failed']).toContain(push!.status);
+      expect(push!.error).toBe('web_push_disabled');
     });
   });
 
@@ -1747,136 +1716,10 @@ describe('Notifications (E2E)', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
-  // Push subscriptions endpoints
-  // ──────────────────────────────────────────────────────────────────────
-
-  describe('Push subscriptions (E2E)', () => {
-    const endpoint = `https://fcm.googleapis.com/fcm/send/${Date.now()}`;
-
-    it('sin token → 401', async () => {
-      const res = await ctx.request
-        .get('/tenant/push-subscriptions/vapid-public-key')
-        .set('Host', TEST_TENANT.host);
-      expect(res.status).toBe(401);
-    });
-
-    it('POST crea + upsert por endpoint (idempotente)', async () => {
-      const u = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-sub-upsert',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      const token = await loginAs(ctx.request, u.username, u.password);
-
-      const first = await ctx.request
-        .post('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token)
-        .send({ endpoint, p256dh: 'k1', auth: 'a1', deviceLabel: 'iphone' });
-      expect(first.status).toBe(201);
-      expect(first.body.endpoint).toBe(endpoint);
-
-      // Mismo endpoint de nuevo → mismo id (no duplica fila).
-      const second = await ctx.request
-        .post('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token)
-        .send({ endpoint, p256dh: 'k2', auth: 'a2', deviceLabel: 'iphone' });
-      expect(second.status).toBe(201);
-      expect(second.body.id).toBe(first.body.id);
-    });
-
-    it('GET vapid-public-key devuelve publicKey (null si no configurado)', async () => {
-      const u = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-sub-vapid',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      const token = await loginAs(ctx.request, u.username, u.password);
-      const res = await ctx.request
-        .get('/tenant/push-subscriptions/vapid-public-key')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token);
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('publicKey');
-      expect(typeof res.body.publicKey).toBe('string');
-    });
-
-    it('DELETE por endpoint borra la suscripción propia', async () => {
-      const u = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-sub-del',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      const token = await loginAs(ctx.request, u.username, u.password);
-      await ctx.request
-        .post('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token)
-        .send({ endpoint, p256dh: 'k', auth: 'a' });
-
-      const del = await ctx.request
-        .delete('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token)
-        .send({ endpoint });
-      expect(del.status).toBe(200);
-      expect(del.body).toEqual({ ok: true });
-
-      // Idempotente: borrar de nuevo → 200 ok (nada que borrar no es error).
-      const del2 = await ctx.request
-        .delete('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', token)
-        .send({ endpoint });
-      expect(del2.status).toBe(200);
-      expect(del2.body).toEqual({ ok: true });
-    });
-
-    it('DELETE de una endpoint de OTRO user → 200 pero no toca su fila (aislamiento)', async () => {
-      const owner = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-sub-owner',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      const attacker = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-sub-attacker',
-        label: 'p',
-        role: 'usuario_final',
-      });
-
-      const ownerToken = await loginAs(ctx.request, owner.username, owner.password);
-      const created = await ctx.request
-        .post('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownerToken)
-        .send({ endpoint, p256dh: 'k', auth: 'a' });
-
-      const attackerToken = await loginAs(
-        ctx.request,
-        attacker.username,
-        attacker.password,
-      );
-      const del = await ctx.request
-        .delete('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', attackerToken)
-        .send({ endpoint });
-      // Idempotente → 200, pero NO toca la fila del owner (aislamiento).
-      expect(del.status).toBe(200);
-
-      // La fila del owner sigue existiendo: re-POST del mismo endpoint
-      // devuelve el MISMO id (upsert dedupea por endpoint).
-      const rePost = await ctx.request
-        .post('/tenant/push-subscriptions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownerToken)
-        .send({ endpoint, p256dh: 'k', auth: 'a' });
-      expect(rePost.status).toBe(201);
-      expect(rePost.body.id).toBe(created.body.id);
-    });
-  });
+  // Los endpoints de suscripciones a push (`/tenant/push-subscriptions`) se
+  // borraron con la feature el 2026-08-13 (commit `58c7123`). Sus 5 tests vivían
+  // acá y se fueron con ellos: pegaban contra rutas que ya no existen y
+  // devolvían 404. Si la feature vuelve, están en el historial de git.
 
   // ──────────────────────────────────────────────────────────────────────
   // Hook new_deposit_for_review (depósito nuevo → admins, in_app + web_push)
