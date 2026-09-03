@@ -15379,3 +15379,74 @@ probó), y el bug de sesiones muertas de Palace (727 callbacks).
 - **Para diagnosticar un test en rojo, corrélo aislado primero.** La mitad de las
   62 fallas de hoy se explicaban por interacción entre suites, y aislar cuesta 30
   segundos contra horas de leer código que estaba bien.
+
+---
+
+## 2026-09-03 (cont.) — Addendum: se contestó la pregunta del scope, y apareció un hueco del producto
+
+**Respuesta del dueño a la pregunta abierta**: *"Las transferencias, en la red
+independiente, las concilia cada operador de forma independiente: el cajero hace
+las suyas, el distribuidor independiente las suyas y el socio las suyas."*
+
+O sea: **el admin no concilia las redes independientes**. Confirma que el arreglo
+de seguridad `c189a60` (2026-08-25) está bien y que los tests quedaron viejos.
+
+### El producto ya lo implementaba — en tres capas
+
+Al arreglar los tests, el backend fue rechazando en orden. Cada rechazo confirmó
+una parte del modelo:
+
+| Error | Qué enseña |
+|---|---|
+| `404` de scope | El admin no puede conciliar una solicitud de otra red |
+| `Faltan permisos: bank_tx.upload` | El operador necesita el permiso — es **delegable** justamente para esto; ningún rol lo trae por default |
+| `BANK_TX_WRONG_ACCOUNT` | Un indep sólo sube transferencias **a su propia cuenta**; `bankAccount` es opcional desde Sprint 53 para que el backend la resuelva |
+
+En T-D6 la contradicción era literal: el test afirma
+`detailStatus(adminToken) === 404` y **tres líneas después matchea con el admin**.
+
+**Resultado**: `deposits-indep-house` 5/6 y `withdrawals-indep-house` 8/8.
+
+### ⚠️ El hueco: nadie puede conciliar el depósito de un jugador colgado de un cajero indep
+
+T-D6 **queda en rojo a propósito**. No es un test viejo — es un agujero real.
+
+Escenario: jugador cuyo **padre directo es un cajero** dentro de una red
+independiente.
+
+| Actor | ¿Ve el depósito? | ¿Puede conciliar? |
+|---|---|---|
+| Cajero (padre directo) | ✅ | ❌ |
+| Socio indep (abuelo) | ❌ 404 | ✅ |
+| Admin | ❌ 404 | ❌ |
+
+**Causa**: `UserHierarchyService.getIndepBankScope` marca `independent: true`
+**sólo si el usuario mismo tiene `isIndependentBranch`**. Un cajero *dentro* de
+una red independiente no califica, así que cae en la rama "red central", que
+usa `excludeUploadedBy = getIndependentSubtreeIds` — y eso **excluye su propia
+transferencia**, porque él está en ese subárbol.
+
+Y contradice la regla del dueño: *"el cajero hace las suyas"*.
+
+**No se tocó a propósito**: `user-hierarchy` decide quién ve los extractos
+bancarios de quién. Un cambio mal hecho ahí abre una fuga entre redes, que es
+exactamente lo que `c189a60` vino a cerrar.
+
+> **Pregunta para el dueño: ¿un cajero o distribuidor dentro de una red
+> independiente debe tener scope bancario propio (sólo lo que subió él), o debe
+> heredar el del socio (ver toda la sub-red)?**
+
+Las dos son defendibles. Propio = más aislamiento, cada uno concilia lo suyo y
+nadie ve de más. Heredado = el socio supervisa a su red, y alcanza con que
+`getIndepBankScope` resuelva el socio indep **ancestro** en vez de exigir el flag
+en el propio usuario.
+
+### Estado de la suite
+
+```
+Al empezar la sesión:  62 fallas
+Ahora:                  2 fallas  (T-D6 + notifications/fraud_link_suspected)
+```
+
+De 60 arregladas, **ninguna era un bug del producto**. La que queda de tesorería
+sí señala uno, y es el único hallazgo de producto de todo el día.
