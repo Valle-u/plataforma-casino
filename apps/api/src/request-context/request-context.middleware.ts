@@ -14,7 +14,11 @@
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 import { generateUuidV7 } from '@casino/db';
-import type { RequestWithContext } from './request-context';
+import {
+  requestContextStorage,
+  type RequestContext,
+  type RequestWithContext,
+} from './request-context';
 
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
@@ -63,17 +67,24 @@ export class RequestContextMiddleware implements NestMiddleware {
 
     const userAgent = req.header('user-agent') ?? null;
 
-    (req as RequestWithContext).requestContext = {
-      requestId,
-      ip,
-      userAgent,
-    };
+    const ctx: RequestContext = { requestId, ip, userAgent };
+    (req as RequestWithContext).requestContext = ctx;
 
     // Exponemos también el request_id como response header — útil para
     // que el cliente lo incluya en bug reports y nosotros lo busquemos
     // en audit/logs.
     res.setHeader('X-Request-Id', requestId);
 
-    next();
+    // El resto del request corre DENTRO del AsyncLocalStorage, así cualquier
+    // servicio downstream puede leer el contexto sin recibir el `req`. Es lo
+    // que le da `request_id` a cada línea de log sin tocar las 325 llamadas a
+    // `this.logger` que hay en el código.
+    //
+    // Ojo: es el MISMO objeto que `req.requestContext`, no una copia. Los
+    // guards que lo enriquecen después (el JWT le agrega `sessionId` e
+    // `impersonatorId`) mutan ese objeto, y por ser el mismo la mutación se ve
+    // también desde el store. Si acá se copiara, esos dos campos nunca
+    // llegarían a los logs.
+    requestContextStorage.run(ctx, next);
   }
 }

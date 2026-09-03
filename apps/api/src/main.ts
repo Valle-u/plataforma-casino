@@ -22,6 +22,8 @@ import { migrateAllDatabases } from '@casino/db';
 import { AppModule } from './app.module';
 import { AlertsService } from './alerts/alerts.service';
 import { GlobalExceptionFilter } from './common/global-exception.filter';
+import { AxiomTransport } from './logging/axiom-transport';
+import { StructuredLogger } from './logging/structured-logger';
 
 /** ¿El env está en "on" (1/true/yes)? Para flags de boot. */
 function isTruthy(v: string | undefined): boolean {
@@ -63,6 +65,28 @@ async function bootstrap(): Promise<void> {
     // si re-serializamos el body parseado). Aditivo: no cambia el parsing.
     rawBody: true,
   });
+
+  // Logger estructurado con `request_id` en cada línea.
+  //
+  // Se instala DESPUÉS de crear la app porque `NestFactory.create` ya usó su
+  // logger para el arranque; de acá en adelante todo pasa por éste. Los niveles
+  // los sigue filtrando NestJS con la config de arriba.
+  //
+  // Sin `AXIOM_TOKEN` el transporte es `null` y sólo se escribe a stdout: en
+  // desarrollo no sale nada del VPS. Ver `docs/26-monitoreo-diagnostico.md`.
+  const axiom = AxiomTransport.desdeEnv();
+  app.useLogger(new StructuredLogger(axiom));
+  if (axiom) {
+    logger.log('Logs estructurados: enviando a Axiom.');
+    // Que no se pierda el último lote cuando el contenedor se apaga —
+    // justamente los logs de un apagado son los que después se buscan.
+    app.enableShutdownHooks();
+    for (const señal of ['SIGTERM', 'SIGINT'] as const) {
+      process.on(señal, () => {
+        void axiom.cerrar();
+      });
+    }
+  }
 
   // Compresión gzip para respuestas JSON
   app.use(compression());

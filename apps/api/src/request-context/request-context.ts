@@ -15,6 +15,7 @@
  *   - userAgent: User-Agent header crudo.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Request } from 'express';
 
 export interface RequestContext {
@@ -37,6 +38,29 @@ export interface RequestContext {
 
 export interface RequestWithContext extends Request {
   requestContext?: RequestContext;
+}
+
+/**
+ * El mismo contexto, accesible SIN tener el `req` a mano.
+ *
+ * `req.requestContext` sirve donde llega el request (controllers, guards,
+ * middlewares), pero un logger vive en cualquier servicio del árbol y no puede
+ * recibir el `req` por parámetro: son 325 llamadas a `this.logger` en 87
+ * archivos. `AsyncLocalStorage` propaga el contexto por la cadena de ejecución
+ * async, así que cada línea de log puede llevar su `request_id` sin tocar una
+ * sola de esas llamadas.
+ *
+ * Es de Node (`node:async_hooks`), no una dependencia nueva.
+ *
+ * ⚠️ Fuera de un request HTTP —los crons, el arranque— el store está vacío y
+ * `currentRequestContext()` devuelve `undefined`. Es lo correcto: un job
+ * programado no tiene request al que atribuirse.
+ */
+export const requestContextStorage = new AsyncLocalStorage<RequestContext>();
+
+/** El contexto del request en curso, si estamos dentro de uno. */
+export function currentRequestContext(): RequestContext | undefined {
+  return requestContextStorage.getStore();
 }
 
 /**
