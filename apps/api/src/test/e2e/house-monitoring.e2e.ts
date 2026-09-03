@@ -31,6 +31,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser, type TestUser } from '../helpers/test-users';
+import { TenantSettingsService } from '../../tenant-settings/tenant-settings.service';
 
 interface StockAlertBody {
   level: 'ok' | 'low' | 'critical';
@@ -77,16 +78,31 @@ async function clearMonitoringSettings(ctx: TestApp): Promise<void> {
   `);
 }
 
+/**
+ * Escribe un setting **por el servicio**, no por SQL directo.
+ *
+ * ⚠️ Antes esto hacía un INSERT ... ON CONFLICT contra `tenant_settings`, y por
+ * eso T-S4 fallaba: `TenantSettingsService` tiene un **caché in-memory con TTL
+ * de 5 minutos que sólo se invalida desde `set()`/`unset()`**. Un test anterior
+ * del archivo ya había leído esas claves y dejó cacheado "no existe", así que
+ * el servicio devolvía los defaults y el umbral custom no se aplicaba nunca.
+ *
+ * El síntoma engañaba: parecía que el override de umbrales estaba roto en
+ * producción. No lo está — era el test escribiendo por debajo del caché.
+ */
 async function setSetting(
   ctx: TestApp,
   key: string,
   value: number,
 ): Promise<void> {
-  await ctx.tenantDb.execute(sql`
-    INSERT INTO tenant_settings (key, value, updated_at)
-    VALUES (${key}, to_jsonb(${value}::numeric), now())
-    ON CONFLICT (key) DO UPDATE SET value = to_jsonb(${value}::numeric), updated_at = now()
-  `);
+  await ctx.app
+    .get(TenantSettingsService)
+    .set(ctx.tenantDb, key, value, null);
+}
+
+/** Borra un setting para que vuelva a regir el default. También invalida caché. */
+async function unsetSetting(ctx: TestApp, key: string): Promise<void> {
+  await ctx.app.get(TenantSettingsService).unset(ctx.tenantDb, key);
 }
 
 /** Inserta una wallet_transaction sintética en el wallet del user. */
@@ -209,6 +225,14 @@ describe('HouseController monitoring endpoints (E2E)', () => {
       expect(body.level).toBe('low');
       expect(body.thresholdLow).toBe('200000.00');
       expect(body.thresholdCritical).toBe('50000.00');
+
+      // ⚠️ Devolver los umbrales a los defaults. Este test es el ÚNICO que los
+      // toca, y mientras el `setSetting` de arriba escribía por SQL directo el
+      // caché los ignoraba, así que ensuciar no tenía consecuencias. Ahora que
+      // funciona, dejarlos seteados le rompe a `/capital-needed`: con un umbral
+      // de 200k y balance de 100k, `suggestedInject` deja de ser 0.
+      await unsetSetting(ctx, 'house.stock_threshold_low');
+      await unsetSetting(ctx, 'house.stock_threshold_critical');
     });
 
     it('T-S5: 400 si operatorUserId no es indep', async () => {
