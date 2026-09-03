@@ -30,6 +30,35 @@ describe('Games catalog (E2E, Sprint 34)', () => {
   let adminToken: string;
   let cajeroToken: string;
 
+  /**
+   * Borra juegos y lo que cuelga de ellos, en orden de foreign key.
+   *
+   * ⚠️ **Por qué no alcanza con borrar `games`.** Este suite necesita un catálogo
+   * determinista, así que borra los juegos que crearon otros suites. Pero varios
+   * de ellos —los de comisiones, wallet-stats, y los callbacks de proveedor—
+   * dejan filas en `game_sessions` y `game_rounds`, y **ninguno las limpia**. Con
+   * esas filas apuntando a un juego, el DELETE choca contra
+   * `game_sessions_game_id_games_id_fk` y **revienta el `beforeEach` entero**:
+   * los 30 tests de este archivo fallan por el setup, no por lo que prueban.
+   *
+   * Pasó exactamente eso: en la suite completa fallaban los 30, y corriendo este
+   * archivo solo pasaban los 30. Es contaminación entre suites, no un bug del
+   * producto.
+   *
+   * Se borran los dependientes primero. Es seguro: con `--runInBand` los suites
+   * corren en serie, así que cuando este llega los otros ya terminaron.
+   */
+  async function borrarJuegos(condicion: ReturnType<typeof sql>): Promise<void> {
+    const objetivo = sql`SELECT id FROM games WHERE ${condicion}`;
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM game_rounds WHERE game_id IN (${objetivo})`,
+    );
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM game_sessions WHERE game_id IN (${objetivo})`,
+    );
+    await ctx.tenantDb.execute(sql`DELETE FROM games WHERE ${condicion}`);
+  }
+
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
@@ -57,18 +86,14 @@ describe('Games catalog (E2E, Sprint 34)', () => {
   });
 
   afterAll(async () => {
-    await ctx.tenantDb.execute(
-      sql`DELETE FROM games WHERE code LIKE 'e2e_seed_%'`,
-    );
+    await borrarJuegos(sql`code LIKE 'e2e_seed_%'`);
     await ctx.close();
   });
 
   beforeEach(async () => {
     // Limpiar games custom creados por tests previos pero PRESERVAR los
     // fixtures del suite (los códigos empiezan con 'e2e_seed_').
-    await ctx.tenantDb.execute(
-      sql`DELETE FROM games WHERE code NOT LIKE 'e2e_seed_%'`,
-    );
+    await borrarJuegos(sql`code NOT LIKE 'e2e_seed_%'`);
     // Re-set isActive=true en los fixtures por si algún test los archivó.
     await ctx.tenantDb.execute(
       sql`UPDATE games SET is_active = true WHERE code LIKE 'e2e_seed_%'`,

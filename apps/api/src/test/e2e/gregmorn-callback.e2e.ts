@@ -91,7 +91,16 @@ async function seedGame(): Promise<void> {
   }
 }
 
-/** Rondas registradas para un `round_external_id` (ya normalizado, sin `_N`). */
+/**
+ * Rondas registradas bajo un `round_external_id`.
+ *
+ * ⚠️ **El id de una ronda es el `transactionId` del callback que la abrió**, no
+ * el `roundId`. Cambió el 2026-09-01 con el modelo de acumulación: se junta todo
+ * hasta que llega `round_finished: true`, y el primer `transactionId` queda como
+ * identificador. Antes se agrupaba por el `roundId` de adentro de `info` — el
+ * proveedor avisó que ese campo no es parte de su contrato y puede cambiar sin
+ * aviso (ver `docs/gregmorn/98-pendientes-proveedor.md` §2).
+ */
 async function readRounds(
   roundExternalId: string,
 ): Promise<{ bet: number; win: number; net: number; status: string; action: string | null }[]> {
@@ -311,7 +320,9 @@ describe('Gregmorn callback (E2E)', () => {
       }),
     );
 
-    const rounds = await readRounds(roundBase);
+    // La ronda queda bajo el transactionId del PRIMER callback, no bajo el
+    // roundId — el `roundBase` de arriba ya no identifica nada.
+    const rounds = await readRounds('tx-round-split-bet');
     expect(rounds).toHaveLength(1);
     expect(rounds[0]).toMatchObject({
       bet: 200,
@@ -319,6 +330,7 @@ describe('Gregmorn callback (E2E)', () => {
       net: -100,
       status: 'settled',
     });
+    expect(await readRounds(roundBase)).toHaveLength(0);
   });
 
   it('compra de tiradas gratis: N acciones con el MISMO roundId interno → UNA ronda', async () => {
@@ -362,7 +374,8 @@ describe('Gregmorn callback (E2E)', () => {
     }
 
     // UNA ronda: la apuesta de la compra y la suma de TODOS los premios.
-    const rounds = await readRounds(inner);
+    // Identificada por el transactionId de la compra, que fue la que abrió.
+    const rounds = await readRounds('tx-fs-buy');
     expect(rounds).toHaveLength(1);
     expect(rounds[0]).toMatchObject({
       bet: 10,
@@ -407,7 +420,7 @@ describe('Gregmorn callback (E2E)', () => {
       }),
     );
 
-    const rounds = await readRounds(inner);
+    const rounds = await readRounds('tx-fst-spin');
     expect(rounds).toHaveLength(1);
     expect(rounds[0]).toMatchObject({
       bet: 5,
@@ -415,6 +428,7 @@ describe('Gregmorn callback (E2E)', () => {
       status: 'settled',
       action: 'free_spins', // subio desde `spin` al llegar la tirada
     });
+    expect(await readRounds(inner)).toHaveLength(0);
   });
 
   // ── Trampa #2: montos en string ───────────────────────────────────
@@ -472,7 +486,16 @@ describe('Gregmorn callback (E2E)', () => {
     const round = '1349500001';
     await callback(
       ctx.request,
-      writeBet({ transactionId: 'tx-trace-bet', bet: 60, roundId: `${round}_0` }),
+      writeBet({
+        transactionId: 'tx-trace-bet',
+        bet: 60,
+        roundId: `${round}_0`,
+        // ⚠️ Sin esto la ronda cierra en el primer callback y el `win` cae en
+        // OTRA: con el modelo de acumulación lo que agrupa es `round_finished`,
+        // no el sufijo `_0`/`_1` del roundId. El default de `writeBet` es
+        // `true`, así que hay que pisarlo explícitamente.
+        round_finished: false,
+      }),
     );
     await callback(
       ctx.request,
@@ -485,7 +508,7 @@ describe('Gregmorn callback (E2E)', () => {
       }),
     );
 
-    const t = await readRoundTrace(round);
+    const t = await readRoundTrace('tx-trace-bet');
     expect(t).not.toBeNull();
     expect(t!.status).toBe('settled');
     // Sin estos dos, no se puede auditar una jugada contra el ledger.
@@ -501,7 +524,7 @@ describe('Gregmorn callback (E2E)', () => {
       ctx.request,
       writeBet({ transactionId: txId, bet: 70, roundId: `${round}_0`, round_finished: true }),
     );
-    expect((await readRoundTrace(round))!.status).toBe('settled');
+    expect((await readRoundTrace(txId))!.status).toBe('settled');
 
     await callback(ctx.request, {
       cmd: 'rollback',
@@ -516,7 +539,7 @@ describe('Gregmorn callback (E2E)', () => {
       info: '{}',
     });
 
-    const t = await readRoundTrace(round);
+    const t = await readRoundTrace(txId);
     // El motor de comisiones y las estadísticas excluyen 'rolled_back'. Si la
     // ronda quedara 'settled', el operador cobraría por una jugada anulada.
     expect(t!.status).toBe('rolled_back');
