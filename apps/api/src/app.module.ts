@@ -46,6 +46,7 @@ import { CommonModule } from './common/common.module';
 import { StorageModule } from './storage/storage.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
 import { HouseModule } from './house/house.module';
+import { HostHealthModule } from './host-health/host-health.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -161,6 +162,11 @@ import { CRM_ENABLED } from './chat/chat.flag';
     // que chequea que las fichas cuadren (balance == Σ tx, locked == Σ holds) +
     // snapshot de supply. Cron nocturno + on-demand. Solo alerta, no bloquea.
     LedgerModule,
+
+    // HostHealth: disco, memoria y carga del servidor. El disco es el que
+    // alerta — si se llena, Postgres deja de escribir y el casino se cae, y
+    // hasta ahora nada lo miraba. Ver docs/26-monitoreo-diagnostico.md §4.2.
+    HostHealthModule,
 
     // House / Tesorería (Blindaje del núcleo económico, Parte B): la cuenta
     // "Casa" (system user) — única fuente de fichas + contraparte de todo.
