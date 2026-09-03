@@ -147,8 +147,20 @@ describe('RateLimitGuard (E2E)', () => {
     });
 
     it('reset-on-success: login correcto borra el contador de intentos previos', async () => {
-      // 5 fallidos.
-      for (let i = 0; i < 5; i += 1) {
+      // ⚠️ CUATRO fallidos, no cinco. Acá se cruzan dos protecciones distintas:
+      //
+      //   - El rate limiter (lo que prueba este test) bloquea al 11° intento.
+      //   - El bloqueo de cuenta de `TenantAuthService` bloquea a los 5
+      //     (`MAX_FAILED_ATTEMPTS`), por 15 minutos.
+      //
+      // Con 5 la cuenta queda bloqueada y el login correcto de abajo devuelve
+      // 401 en vez de 200 — que es exactamente como fallaba. No es un bug del
+      // rate limiter: es que **no se puede demostrar el reset-on-success con
+      // 5 o más fallidos**, porque la cuenta se bloquea antes de poder entrar.
+      //
+      // Con 4 el contador del limiter igual quedó cargado y el reset se prueba
+      // igual de bien.
+      for (let i = 0; i < 4; i += 1) {
         const res = await ctx.request
           .post('/tenant/auth/login')
           .set('Host', TEST_TENANT.host)
