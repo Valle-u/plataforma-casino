@@ -39,6 +39,23 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
    (`amountChips`, `sellChips`): lo que nunca puede pasar es que "chips" llegue a
    la pantalla. Ojo con el homónimo: los botones tipo píldora de la UI también
    se llaman *chips* y **ésos sí son chips**. Ver `docs/01-glosario.md`.
+10. **En tests: settings y permisos SIEMPRE por el servicio o el endpoint, NUNCA
+    por SQL.** Los dos tienen caché y se invalidan sólo desde su propio código:
+    `TenantSettingsService` (in-memory, 5 min, `set`/`unset`) y
+    `EffectivePermissionsService` (**Redis**, 5 min, `deleteCacheForUser`). Un
+    `INSERT`/`DELETE` directo cambia la fila y deja al servicio devolviendo lo
+    viejo.
+    - **Por qué es una regla y no un consejo**: el 2026-09-03, de 62 tests en
+      rojo, **cuatro archivos** fallaban exactamente por esto. Y el modo de
+      falla es traicionero — uno de ellos parecía **una fuga de aislamiento
+      entre redes independientes** (violación de E8/P3) y se llegó a reportar
+      como posible incidente de seguridad. Era el caché: el test creía haber
+      revocado un permiso y no lo había revocado. **Un test que miente sobre el
+      estado no falla diciendo "no pude cambiarlo", falla diciendo "tu código de
+      seguridad está roto".**
+    - También es la fuente de tests no deterministas: en local `REDIS_URL`
+      apunta a Upstash, que es **externo y persistente**, así que el caché
+      sobrevive entre corridas. Ver `docs/DEVLOG.md` 2026-09-03.
 
 ---
 

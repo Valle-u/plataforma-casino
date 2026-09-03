@@ -9412,3 +9412,158 @@ Enabled**), correr `wsl --install --no-distribution` y levantar
 ninguna del proyecto. Antes de planificar el tercero conviene verificar
 `VirtualizationFirmwareEnabled` y el estado de los componentes opcionales —son
 dos consultas— en lugar de descubrirlo después de instalar todo.
+
+---
+
+## 2026-09-03 — Mutar estado por debajo de un caché (la causa que se repitió cuatro veces)
+
+**Contexto**: la suite de la API tenía **62 tests en rojo** sobre 952, acumulados
+sin que nadie los viera porque nada la corría automáticamente. Al desarmarlos
+uno por uno aparecieron siete causas distintas, y **ninguna era un bug del
+producto**. Pero una se repitió cuatro veces, en cuatro archivos que nadie
+escribió juntos.
+
+### El patrón
+
+El código tiene dos cachés silenciosos, y los dos se invalidan **sólo desde su
+propio servicio**:
+
+| Servicio | Dónde vive | TTL | Se invalida en |
+|---|---|---|---|
+| `TenantSettingsService` | memoria del proceso | 5 min | `set()` / `unset()` |
+| `EffectivePermissionsService` | **Redis** (`perms:<userId>`) | 5 min | `deleteCacheForUser()` |
+
+Los tests, en cambio, escribían con SQL crudo: `INSERT INTO tenant_settings`,
+`DELETE FROM role_permissions`, `UPDATE roles SET ...`. La fila cambiaba y **el
+servicio seguía devolviendo lo de antes**.
+
+Los cuatro casos:
+
+1. `house-monitoring` — el *write* de umbrales iba por SQL. El override nunca se
+   aplicaba y parecía que la feature estaba rota en producción.
+2. `house-inject-budget` — al revés: el *write* iba por el endpoint y **el
+   cleanup** por SQL. El tope quedaba cacheado y tres tests de idempotencia
+   chocaban contra un cupo fantasma.
+3. `tenant-settings` — `deleteAllSettings` borraba todo por SQL; un valor de un
+   test previo sobrevivía en el caché.
+4. `users-view-admin-network` — revocaba `users.view_all` por SQL sin invalidar
+   Redis. El admin lo conservaba efectivo y seguía viendo la sub-red de un socio
+   independiente.
+
+### Por qué el cuarto importa más que los otros tres
+
+Ese último **se leyó como una fuga de aislamiento entre redes**, que sería una
+violación de las leyes E8/P3. Se llegó a reportar como posible incidente de
+seguridad antes de encontrar la causa.
+
+No lo era: con `users.view_all` efectivo, ver todo es el comportamiento
+correcto. El test creía haber quitado el permiso y no lo había quitado.
+
+**La lección no es "revisá el caché".** Es que un test que miente sobre el estado
+del sistema no falla diciendo "no pude cambiar el estado" — falla diciendo
+**"tu código de seguridad está roto"**. Y eso arrastra a quien lo lee hacia el
+lugar equivocado.
+
+### Y explicó la flakiness
+
+Dos corridas del mismo commit daban **62 y 63 fallas**. La causa es el caché de
+permisos: TTL de 5 minutos, una suite que tarda 25, y en local `REDIS_URL`
+apuntando a **Upstash** — externo y persistente, así que el caché **sobrevive
+entre corridas**. El resultado dependía de cuándo expirara cada entrada y de qué
+había quedado de la vez anterior.
+
+Es un caso lindo de test no determinista cuya no-determinación vivía **fuera del
+proceso**.
+
+### La regla que queda
+
+En tests, **tocar settings o permisos siempre por el servicio o por el endpoint,
+nunca por SQL**. Queda escrita en `AGENTS.md` §2. Cuatro de las siete causas de
+este día habrían desaparecido con eso.
+
+⚠️ Quedan archivos con el patrón vivo (`commissions-network-settle`,
+`commissions-network-deductions`, `tenant-branding`). Hoy pasan — pero pasan por
+suerte, no por diseño.
+
+### Implicación para CI
+
+El CI que se agregó hoy levanta **Redis limpio en cada corrida**, con su propio
+`REDIS_KEY_PREFIX`. O sea que estos tests van a comportarse distinto en CI que en
+la máquina de Uriel, y **más honestamente**: sin caché heredado de la corrida
+anterior. Si algo pasa en local y falla en CI, éste es el primer lugar donde
+mirar.
+
+---
+
+## 2026-09-03 — Invertir el orden de consumo: primero el saldo real, después el bono
+
+> ⚠️ **PEDIDO DEL DUEÑO — todavía NO implementado.** Queda anotado con el estado
+> real del código y sus implicaciones, para que quien lo tome no arranque de
+> cero. Toca `packages/db/wallet` y el camino de la plata: área sensible.
+
+**Pedido (Uriel, 2026-09-03)**: hoy una apuesta consume **primero el bono y
+después el saldo real**. Se quiere al revés: **primero el real, después el
+bono**.
+
+### Cómo funciona hoy (verificado en el código, no de memoria)
+
+El núcleo es **`WalletService.placeBetWithBonusCore`**
+(`apps/api/src/wallet/wallet.service.ts`). Su comentario lo dice explícito:
+*"consume bonus_balance PRIMERO, luego balance real"*. Parte la apuesta en hasta
+dos transacciones (`bonus_debit` + `bet`) dentro de una misma TX de Postgres, con
+lock, version guard e idempotencia por `idempotency_key`.
+
+**Un solo punto de cambio, tres consumidores**: lo usan los tres proveedores
+seamless a través de dos wrappers.
+
+| Proveedor | Entrada |
+|---|---|
+| Palace | `placeBetWithBonus` |
+| Forever | `placeBetWithBonusExternal` |
+| Gregmorn | `placeBetWithBonusExternal` |
+
+### Tres hechos que hacen el cambio más simple de lo que parece
+
+1. **No hay requisito de apuesta que se rompa.** `bonus_definitions.wagering`
+   existe como JSONB libre (ej. `{ multiplier: 20, base: 'bonus' }`) pero **no se
+   aplica en ningún lado**: no aparece ni en `wallet` ni en
+   `user-bonuses.service`. O sea que invertir el orden no deja bonos "sin
+   liberar", porque hoy no hay nada que liberar.
+2. **Las fichas de bono son fungibles.** Se consumen sin tocar `user_bonuses` —
+   `remainingAmount` no decrementa (ver `removeManual`). El orden de consumo no
+   altera esa contabilidad.
+3. **El bono no se puede retirar.** Los retiros no miran `bonus_balance` en
+   ningún lado. Esa propiedad es la que hace que el cambio sea seguro… y también
+   la que lo hace significativo. Ver abajo.
+
+### La implicación de negocio, que es el punto real
+
+Hoy, con bono primero, **se gasta antes el regalo y el jugador conserva más
+tiempo su plata retirable**. Invertido, el jugador **gasta primero lo suyo** y
+queda con fichas de bono que **no puede retirar**.
+
+Para la Casa es mejor a corto plazo: el saldo real —que es pasivo, plata que el
+jugador podría llevarse— se convierte antes en ingreso. Pero es exactamente el
+tipo de cambio que un jugador nota, y esta plataforma vive del boca a boca (todo
+el sistema de referidos y sorteos depende de eso). **Es decisión del dueño y ya
+está tomada**; queda anotado el trade-off, no una objeción.
+
+### Qué habría que tocar
+
+- **`placeBetWithBonusCore`**: invertir el orden y **actualizar sus comentarios**
+  (hoy dicen "bonus PRIMERO" en tres lugares: líneas ~1435, ~1502 y la cabecera
+  del núcleo). Un comentario que miente sobre el orden del dinero es peor que no
+  tenerlo.
+- **Los tests que afirman el orden actual**: `bonuses.e2e.ts` y
+  `hold-vs-gambling.e2e.ts` lo asumen. Hay que invertirlos junto con el código,
+  en el mismo commit — si no, no se sabe si el rojo es del cambio o de otra cosa.
+- **`docs/15-engagement-promos.md`** y **`docs/05-flujos-fichas.md`**, donde esté
+  descrito el orden.
+- ⚠️ **Revisar `locked_balance`**: los bonos pueden dejar saldo bloqueado (LEY
+  R8) y las apuestas validan contra `balance - locked_balance`. Hay que
+  confirmar que invertir el orden no permita apostar plata reservada.
+
+### Lo que NO cambia
+
+El reverso de bonos (`removeManual`, LEYES E3/B4), el ancla al
+`funded_by_user_id` y el cupo del empleado (R7) son ajenos al orden de consumo.

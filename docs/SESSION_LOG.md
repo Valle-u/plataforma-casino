@@ -15186,3 +15186,196 @@ no en `C:`. Vale saberlo para el próximo formateo.
 - ⚠️ **nvm-windows no lee `.nvmrc`.** La versión se fija a mano con `nvm use 22`.
 - ⚠️ **Si instalás algo, la sesión de Claude Code queda con el `PATH` viejo.** Hay
   que reiniciarla, no reinstalar.
+
+---
+
+## 2026-09-03 — Claude Code (Opus 5) — Entorno, monitoreo y la suite de tests
+
+**Duración**: ~7h
+**Usuario**: Uriel
+
+Sesión larga y con tres frentes. Uriel formateó la PC y reinstaló Windows, así
+que arrancó por reconstruir el entorno y terminó siendo la sesión en la que se
+saldaron varias deudas viejas.
+
+---
+
+### 1. Entorno de desarrollo reconstruido
+
+Producción nunca se cayó: lo primero que se verificó fue que `api.miamihub.vip`,
+`admin` y la web seguían en 200. El formateo sólo se llevó el entorno local.
+
+Instalado: nvm-windows + **Node 22.23.2**, **pnpm 11.0.8**, **PostgreSQL 18.6**,
+Windows Terminal, GitHub CLI, VSCode. Restaurado `~/.gitconfig` con la identidad
+real de los commits (`ur1`). Bases recreadas y seedeadas de cero.
+
+Verificado **en el browser**: login de `demo_admin` entrando al panel.
+
+💡 **`node_modules` sobrevivió al formateo** — el store de pnpm está en
+`D:\.pnpm-store\v11`, no en `C:`. `pnpm install` dijo "Already up to date" en 1s.
+
+⚠️ **Docker se cayó del plan por segunda vez**: la reinstalación reseteó la BIOS
+y `SVM Mode` quedó apagado. Se volvió al Plan E (Postgres nativo). Ver DEVLOG.
+
+---
+
+### 2. Monitoreo — Fase 1 completa (ver `docs/26-monitoreo-diagnostico.md`)
+
+Se escribió el plan primero y se ejecutó lo urgente:
+
+**Se arregló la correlación** (`42d7d14`). El filtro de excepciones leía el
+`request_id` del header **entrante**, que ningún cliente manda: el tag de Sentry
+y el log salían vacíos siempre. Ya existía uno bueno —`RequestContextMiddleware`
+genera un UUIDv7 y es el mismo que queda en `audit_log`— apuntado al lugar
+equivocado. Sin eso no se puede cruzar un error con su fila de auditoría.
+
+**Logs estructurados a Axiom** (`b787d39`, `64fe6c0`). Cada línea es JSON con su
+`request_id`, propagado con `AsyncLocalStorage` para no tocar las 325 llamadas a
+`this.logger` que hay en 87 archivos. **Verificado en producción**: se ve el
+tráfico real en Axiom con `request_id` y `session_id`.
+
+**Alerta de disco** (`e4b649e`). `HostHealthCron` cada 15 min. Si el disco se
+llena, Postgres deja de escribir y el casino se cae — y nada lo miraba.
+
+**Monitor de caída desplegado y probado** (`0c8e997`, `b597276`). Estaba escrito
+desde el 02-09 pero nunca desplegado. Se agregó `?ping=1` para poder probarlo sin
+fingir una caída, y `avisar` ahora devuelve lo que contestó Telegram: antes decía
+"enviado" aunque lo rechazara.
+
+**CI que corre y que corre los tests** (`1c6fd99`). Corría **sólo en
+`pull_request`** y el trabajo va derecho a `main`: no se ejecutaba nunca. Y no
+corría los tests. Ahora sí, con Postgres 18 + Redis 7 como servicios.
+
+---
+
+### 3. La suite de tests: 62 → 7
+
+Al medirla aparecieron **62 fallas de 952**, no las "5" que registraba el
+SESSION_LOG. Se desarmaron una por una.
+
+| | |
+|---|---|
+| Al empezar | **62 fallas · 13 suites** |
+| Al cerrar | **7 fallas · 3 suites** (939/946 en verde) |
+
+**Ninguna de las 55 arregladas era un bug del producto.** Siete causas:
+
+1. **Contaminación entre suites** (30) — `games.e2e` borraba juegos de otros
+   suites y chocaba con `game_sessions` huérfanas que nadie limpia.
+2. **Tests viejos por el cambio de modelo de rondas** (5) — buscaban la ronda por
+   `roundId` cuando desde el 01-09 se identifica por `transactionId`.
+3. **Tests de una feature borrada** (7) — web push se removió el 2026-08-13 y sus
+   tests quedaron pegando contra rutas que ya no existen.
+4. **Dos protecciones chocando** (1) — el test del rate limiter hacía 5 logins
+   fallidos, que es el umbral exacto del bloqueo de cuenta.
+5. **Mutar estado por debajo de un caché** (7, en cuatro archivos) — la que más
+   se repitió. Ver DEVLOG; quedó como regla en `AGENTS.md` §2.10.
+6. **Semántica del listado** (3) — un actor **no aparece en su propio**
+   `/tenant/users`, y tres tests lo asumían.
+7. **Defaults que cambiaron** (2) — el registro ahora exige teléfono
+   (`registration.phone_required`, default `true`) y el seed ya no exige 2FA.
+
+💡 **Se explicó la flakiness**: dos corridas del mismo commit daban 62 y 63. El
+caché de permisos vive en **Redis** con TTL de 5 min, en local apunta a Upstash
+—externo y **persistente entre corridas**— y la suite tarda 25 minutos.
+
+⚠️ **Una corrección que me toca a mí**: durante el análisis reporté una posible
+**fuga de aislamiento entre redes independientes** (E8/P3), como posible
+incidente de seguridad. **No existe.** Era el caché de permisos: el test creía
+haber revocado `users.view_all` y no lo había revocado; con ese permiso, ver
+todo es correcto.
+
+---
+
+### 4. Documentación del proveedor corregida
+
+`docs/gregmorn/97-analisis-incidente-2026-09-01.md` concluía *"la falla no es
+nuestra"*. **Era nuestra**: se había agotado el saldo de nuestro hall, y lo
+confirmó el propio proveedor por Telegram. Se preservaron las mediciones y se
+corrigió la inferencia. También se documentó el hilo de RTP, el back office
+(`office-dev.gamble-hub.net`, otro dominio que la API) y que el saldo del hall
+**no tiene endpoint** — sólo se ve en su panel.
+
+---
+
+### Commits creados
+
+| Commit | Qué |
+|---|---|
+| `3acafaa` | `docs(alerts)` — cierre de la sesión del 02-09 + estado verificado |
+| `938f005` | `docs` — cierre de sesión, entorno reconstruido |
+| `74db824` | `docs(gregmorn)` — corregir a quién se le atribuyó la falla del 01-09 |
+| `0c8e997` | `chore(alerts)` — desplegar el monitor de caída |
+| `b597276` | `feat(alerts)` — poder probar que el aviso de caída llega |
+| `9b396e0` | `docs(monitoreo)` — plan de diagnóstico |
+| `42d7d14` | `fix(monitoring)` — correlacionar Sentry con la auditoría |
+| `b787d39` | `feat(monitoring)` — logs estructurados con `request_id` a Axiom |
+| `e4b649e` | `feat(monitoring)` — avisar antes de que el disco se llene |
+| `64fe6c0` | `fix(monitoring)` — la ruta de ingesta de Axiom era otra |
+| `2537b42` | `test(e2e)` — 35 fallas que no eran bugs |
+| `1c6fd99` | `ci` — correr los tests, y correr el CI cuando importa |
+| `789ecb4` | `test(e2e)` — sacar los tests de una feature que ya no existe |
+| `13ff319` | `test(e2e)` — el rate limiter chocaba con el bloqueo de cuenta |
+| `c40204e` | `test(e2e)` — el test de umbrales escribía por debajo del caché |
+| `adb84dd` | `test(e2e)` — limpiar settings por el servicio, no por SQL |
+| `b4640c4` | `test(e2e)` — las 9 fallas de permisos y config |
+
+---
+
+### Estado al cerrar
+
+- **Fase**: 6 (Polish), en producción contra **Gregmorn en Stage**.
+- **Bloqueo duro para abrir**: credenciales de Prod del proveedor.
+- Entorno local funcionando · monitoreo Fase 1 completo · CI corriendo tests.
+
+---
+
+### ⚠️ Pendientes
+
+**1. Las 7 fallas que quedan — 6 esperan UNA decisión del dueño.**
+
+`deposits-indep-house` (4) y `withdrawals-indep-house` (2) fallan todas en el
+mismo punto: el helper matchea la transferencia bancaria **con el token del
+admin** para un jugador de una red independiente, y el arreglo de seguridad
+`c189a60` (2026-08-25) lo bloquea con un 404 de scope. Los cuatro tests son
+**anteriores** a ese arreglo.
+
+> **Pregunta abierta: ¿quién concilia la transferencia bancaria de un retiro de
+> un jugador que cuelga de un socio independiente — el propio socio o el admin?**
+
+Si es el socio (lo simétrico con el arreglo, y coherente con E8/P3), la
+corrección es que los tests actúen con el token del independiente.
+
+**2. `notifications` › `fraud_link_suspected`** — pasa aislada (49/49) y falla en
+la suite completa. Es contaminación cruzada y **no está resuelta**: se creyó
+resuelta al sacar los tests de push y era sólo en aislamiento.
+
+**3. Sigue vivo el anti-patrón del caché** en `commissions-network-settle`,
+`commissions-network-deductions` y `tenant-branding`. Hoy pasan por suerte.
+
+**4. Pedido del dueño sin implementar**: invertir el orden de consumo del saldo
+—**primero el real, después el bono**—. Análisis completo en el DEVLOG de hoy:
+un solo punto de cambio (`placeBetWithBonusCore`), tres consumidores, y un riesgo
+a verificar con `locked_balance`.
+
+**5. Del monitoreo**: faltan las alertas de negocio y el runbook de diagnóstico
+(Fase 2 del doc 26). Y `scripts/deploy-checklist.md` sigue describiendo Railway y
+Vercel, que ya no se usan.
+
+**6. Verificaciones que nadie hizo todavía**: restaurar un backup (nunca se
+probó), y el bug de sesiones muertas de Palace (727 callbacks).
+
+---
+
+### Notas para el próximo agente
+
+- **Node vive en `C:\nvm4w\nodejs`**, no en `Program Files`. nvm-windows **no lee
+  `.nvmrc`**: la versión se fija con `nvm use 22`.
+- **Credenciales de dev**: `demo_admin` / `demo-pwd-2026` en `demo.localhost`.
+- ⚠️ **Si instalás algo, la sesión de Claude Code queda con el `PATH` viejo.**
+  Hay que reiniciarla, no reinstalar.
+- ⚠️ **La suite tarda ~26 minutos.** No la corras con `| tail`: el pipe buffea
+  todo y no ves nada hasta el final. Redirigí a un archivo.
+- **Para diagnosticar un test en rojo, corrélo aislado primero.** La mitad de las
+  62 fallas de hoy se explicaban por interacción entre suites, y aislar cuesta 30
+  segundos contra horas de leer código que estaba bien.
