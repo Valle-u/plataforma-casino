@@ -2,6 +2,10 @@ name = "miamihub-uptime"
 main = "src/worker.js"
 compatibility_date = "2026-09-02"
 
+# La misma cuenta donde ya vive el worker `casino-uploader` (ver /worker).
+# Explícito para que wrangler no tenga que elegir ni pregunte.
+account_id = "5627e3f2c291921ece435f3cca6463c5"
+
 # Cada minuto. Con el umbral de 2 fallos seguidos, una caída se avisa a los
 # ~2 minutos y un timeout aislado no molesta a nadie.
 [triggers]
@@ -11,11 +15,10 @@ crons = ["* * * * *"]
 # algo cambia: el plan gratis da 1000 escrituras por día y una por minuto se las
 # comería sola.
 #
-# El `id` lo completa quien crea el namespace:
-#   npx wrangler kv namespace create ESTADO
+# Creado el 2026-09-03 con `npx wrangler kv namespace create ESTADO`.
 [[kv_namespaces]]
 binding = "ESTADO"
-id = "PENDIENTE_COMPLETAR"
+id = "686c581066eb4819b421e4a8fc112e3b"
 
 # TELEGRAM_BOT_TOKEN y TELEGRAM_ALERT_CHAT_ID NO van acá.
 # Son secretos y se cargan aparte, que no quedan en el repo:
