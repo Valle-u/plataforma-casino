@@ -24,6 +24,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser, type TestUser } from '../helpers/test-users';
+import { TenantSettingsService } from '../../tenant-settings/tenant-settings.service';
 
 interface InjectionRow {
   id: string;
@@ -394,9 +395,21 @@ describe('HouseController POST /inject-budget (E2E)', () => {
     afterEach(async () => {
       // Limpiar el tope para no contaminar otros describes (el beforeEach
       // top-level solo trunca injections/wallet_tx, no los settings).
-      await ctx.tenantDb.execute(
-        sql`DELETE FROM tenant_settings WHERE key = 'treasury.monthly_mint_budget'`,
-      );
+      //
+      // ⚠️ Por el SERVICIO, no con un DELETE por SQL.
+      //
+      // `TenantSettingsService` cachea in-memory 5 minutos y sólo se invalida
+      // desde `set()`/`unset()`. `setBudget` de arriba escribe por el endpoint
+      // —así que el caché queda con el tope chico— y este cleanup borraba la
+      // fila por SQL sin avisarle a nadie: la fila desaparecía pero el servicio
+      // seguía devolviendo el tope viejo.
+      //
+      // Efecto: los tests de N3 (idempotencia) minteaban contra un tope que ya
+      // estaba consumido y recibían 409 MINT_BUDGET_EXCEEDED en vez de 201.
+      // No estaban probando lo que decían probar.
+      await ctx.app
+        .get(TenantSettingsService)
+        .unset(ctx.tenantDb, 'treasury.monthly_mint_budget');
     });
 
     it('injectBudget dentro del tope → 201 OK', async () => {

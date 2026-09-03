@@ -71,11 +71,14 @@ async function setUserBalance(
   `);
 }
 
+/**
+ * ⚠️ Por el servicio, no con un DELETE por SQL: `TenantSettingsService` cachea
+ * y sólo se entera desde `set()`/`unset()`. Borrar la fila a mano deja el
+ * caché con el valor viejo, que es la trampa que ya se comió T-S4.
+ */
 async function clearMonitoringSettings(ctx: TestApp): Promise<void> {
-  await ctx.tenantDb.execute(sql`
-    DELETE FROM tenant_settings
-    WHERE key IN ('house.stock_threshold_low', 'house.stock_threshold_critical')
-  `);
+  await unsetSetting(ctx, 'house.stock_threshold_low');
+  await unsetSetting(ctx, 'house.stock_threshold_critical');
 }
 
 /**
