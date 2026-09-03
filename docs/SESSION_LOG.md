@@ -15061,3 +15061,128 @@ minutos: prender `ALERTS_BOOT_PING`, reiniciar, ver si llega, apagarlo.
 - **Si agregás una alerta nueva**: la `clave` identifica el TIPO, nunca el evento
   puntual. Un número adentro de la clave rompe el silenciado igual que rompe el
   agrupamiento de Sentry.
+
+---
+
+## 2026-09-03 15:00 AR — Claude Code (Opus 5) — Reconstrucción del entorno + deuda documental
+
+**Duración**: ~3h (11:50 → 15:00 AR)
+**Usuario**: Uriel
+
+### Contexto
+
+Uriel formateó la PC y reinstaló Windows por completo. Sesión de dos mitades:
+saldar la documentación que faltaba, y volver a tener un entorno de desarrollo.
+
+### Lo primero que se verificó: producción está intacta
+
+```
+api.miamihub.vip/health → 200 {"db":"connected","redis":"connected"}
+admin.miamihub.vip      → 200
+miamihub.vip            → 307
+```
+
+El formateo no tocó nada del negocio. Y el repo estaba entero: `main` local ==
+`origin/main` (`66898941`), sin nada sin pushear, con los `.env.local` y
+`.claude/settings.local.json` en su lugar porque están en `D:` y gitignoreados.
+
+### Parte 1 — La sesión del 02-09 no se había documentado
+
+Los 5 commits de las alertas por Telegram se cerraron sin entrada en
+`SESSION_LOG` ni en `DEVLOG`. Se reconstruyó desde los commits y el código:
+
+- Entrada en `SESSION_LOG` marcada explícitamente como reconstruida, con lo que
+  **no** se pudo determinar señalado como tal en vez de rellenado.
+- 4 entradas al `DEVLOG` (canal separado de Sentry, supergrupo, detector de
+  "aperturas sin apuestas", monitor fuera del VPS).
+- **§19 nueva en `13-escalabilidad.md`** con el canal completo, y se tacharon los
+  dos ítems de §18.6 que este trabajo cerró.
+
+**Después se verificó contra la infraestructura, no se dejó como suposición:**
+
+| | |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` en prod | ✅ cargadas |
+| Código de alertas deployado | ✅ último deploy `19:51 UTC` del 02/09 = commit `6689894` |
+| `GamesHealthCron` | ✅ corriendo con los defaults |
+| **Worker de uptime** | ❌ **NO desplegado** |
+
+El Worker no está desplegado y hay dos señales: el id del KV sigue en
+`PENDIENTE_COMPLETAR`, y `infra/uptime-worker/` no tiene carpeta `.wrangler/`
+—la del uploader de julio sí la tiene—. **Mientras siga así, la alerta de caída
+no existe**, que es la única que sirve cuando el server entero se muere.
+
+⚠️ El `CLOUDFLARE_API_TOKEN` de `.claude/settings.local.json` **es de zona**: lee
+`miamihub.vip` pero devuelve `Authentication error` en `/accounts`,
+`/workers/scripts` y `/workers/routes`. Para verificar Workers por API hace falta
+uno con `Workers Scripts: Read`.
+
+### Parte 2 — Entorno de desarrollo reconstruido
+
+**Se intentó migrar a Docker y no se pudo**: la reinstalación reseteó la BIOS y
+`SVM Mode` quedó apagado. Se volvió al Plan E. Detalle en `DEVLOG` de hoy.
+
+Instalado: nvm-windows + **Node 22.23.2**, **pnpm 11.0.8** vía corepack,
+**PostgreSQL 18.6** nativo, Windows Terminal, GitHub CLI, VSCode.
+
+Restaurado: `~/.gitconfig` con la identidad real de los commits
+(`ur1 <urielalejandrovalle493@gmail.com>`), `init.defaultBranch main`,
+`pull.rebase true`, `core.editor code --wait`.
+
+Bases creadas y seedeadas de cero: `platform_control`, `tenant_demo_dev`
+(67 tablas, 6 roles, 119 permisos), `tenant_demo_casino`.
+
+**Verificado en el browser, no asumido**: API en 3000 con `db` y `redis`
+conectados, `/tenant/info` resolviendo `demo` por Host, web en 3001, y **login de
+`demo_admin` entrando al panel sin errores en consola**.
+
+💡 **`node_modules` sobrevivió al formateo** (888 MB, `pnpm install` dijo "Already
+up to date" en 1s). El motivo: **el store de pnpm está en `D:\.pnpm-store\v11`**,
+no en `C:`. Vale saberlo para el próximo formateo.
+
+### Commits creados
+
+- `3acafaa` — `docs(alerts): cierre de la sesion del 02-09 y estado verificado`
+- (este cierre de sesión)
+
+**Sin pushear**: no hay acceso a GitHub todavía (ver abajo).
+
+### Estado al cerrar
+
+- **Fase actual**: 6 (Polish), en producción contra **Gregmorn en Stage**.
+- **Bloqueo duro para abrir**: siguen faltando las credenciales de Prod del
+  proveedor.
+- **Entorno local**: funcionando.
+
+### ⚠️ Pendientes que deja esta sesión
+
+1. **No se puede pushear.** No hay SSH key ni sesión de GitHub. La vía más rápida
+   es `gh auth login` (ya está instalado) → GitHub.com → HTTPS → browser.
+2. **El Worker de uptime sigue sin desplegar.** Ahora que hay Node, son los 4
+   pasos de `infra/uptime-worker/README.md`. Es lo más urgente de producción.
+3. **Next no carga su binario nativo de SWC** y usa el fallback WASM. Funciona
+   (Ready en 16.5s) pero es más lento. **Causa no determinada**: se descartó el
+   VC++ Redistributable (instalado), corrupción del archivo (pnpm restauró el
+   mismo byte por byte), el disco `D:`, los espacios del path y la RAM. Las
+   pruebas con `process.dlopen` resultaron inservibles —siempre falla la primera
+   carga del proceso y funcionan las siguientes, sin importar el archivo, y
+   terminan en segfault—, así que ese camino no sirve para diagnosticarlo.
+4. 🐛 **`db:seed:dev-tenant` no termina el proceso.** Hace todo su trabajo pero
+   nunca sale: dejó tres `node` colgados que hubo que matar a mano. Es un pool de
+   Postgres sin cerrar. Molesta en CI y en cualquier script encadenado.
+5. **Siguen abiertos los pendientes del addendum 13**: los 5 e2e de
+   `gregmorn-callback` en rojo, verificar la IP real del jugador en `audit_log`,
+   la restauración de backup nunca probada, y el bug de sesiones muertas de
+   Palace.
+
+### Notas para el próximo agente
+
+- **Cómo levantar todo**: `pnpm --filter @casino/api dev` (3000) y
+  `pnpm --filter @casino/web dev` (3001). `scripts/start-dev.ps1` también sirve
+  ahora — Windows Terminal quedó instalado, que es lo que le faltaba.
+- **Credenciales de dev**: `demo_admin` / `demo-pwd-2026` en `demo.localhost`.
+- **Node vive en `C:\nvm4w\nodejs`**, no en `Program Files`. Si un script no
+  encuentra `node`, es eso.
+- ⚠️ **nvm-windows no lee `.nvmrc`.** La versión se fija a mano con `nvm use 22`.
+- ⚠️ **Si instalás algo, la sesión de Claude Code queda con el `PATH` viejo.** Hay
+  que reiniciarla, no reinstalar.

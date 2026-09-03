@@ -9351,3 +9351,64 @@ una por minuto se las comería sola.
 **Alternativa abierta**: ⚠️ es independiente del VPS, **no de Cloudflare**. Si el
 problema fuera de ellos, este monitor podría no verlo. Para lo que importa —que
 el servidor propio se muera— alcanza. Queda anotado en el README del Worker.
+
+---
+
+## 2026-09-03 — Docker se cae del plan por segunda vez, ahora por la BIOS
+
+**Contexto**: Uriel formateó la PC y reinstaló Windows por completo. El entorno
+de desarrollo se perdió entero (Node, pnpm, Postgres, la config de git, las
+llaves SSH); el repo y `node_modules` sobrevivieron porque viven en `D:`.
+
+Al rearmarlo apareció la oportunidad de saldar una deuda vieja: el
+`docker-compose.yml` con Postgres 18 + Redis está en el repo desde Fase 0 y
+nunca se usó. En mayo se decidió el **Plan E** (Postgres nativo en Windows)
+porque WSL no arrancaba y el diagnóstico fue **Component Store de Windows
+corrupto**. Con un Windows recién instalado ese bloqueo tenía que haber
+desaparecido, así que se eligió Docker.
+
+**Qué pasó**: Docker Desktop instaló bien (CLI 29.7.2) y `VirtualMachinePlatform`
+quedó habilitado, pero WSL se negó a arrancar:
+
+```
+VirtualizationFirmwareEnabled: False    ← la virtualización está apagada en la BIOS
+VMMonitorModeExtensions:       True     ← el CPU sí la soporta
+Microsoft-Windows-Subsystem-Linux: deshabilitado
+```
+
+O sea: **la reinstalación reseteó la BIOS a valores de fábrica**, y en las placas
+AMD el `SVM Mode` viene apagado por default. El hardware da (AMD Ryzen 3 2200G,
+placa MSI A320M PRO-VH, BIOS AMI 1.A0 de 2022) — es sólo una opción a activar.
+
+**Decisión**: Uriel no pudo activarla, así que **se vuelve al Plan E**. Postgres
+18.6 nativo en Windows, servicio `postgresql-x64-18`, igual que desde mayo.
+
+**Razón**: el bloqueo es de configuración de firmware, no de software, y no se
+resuelve desde el sistema operativo. Insistir dejaba el desarrollo parado por
+algo que no aporta al producto — el entorno reproducible es deseable, no
+indispensable.
+
+**Implicaciones**:
+
+- `docker-compose.yml` y `.docker/init-dbs.sql` **siguen en el repo sin usarse**.
+  No se borran: el día que se active SVM, funcionan tal cual.
+- Ojo con una diferencia: el `init-dbs.sql` de Docker crea `tenant_demo_casino`,
+  mientras que el camino nativo usa `db:seed:dev-tenant`, que crea
+  **`tenant_demo_dev`**. Son dos nombres distintos para el mismo rol.
+- **Redis local no hace falta**, y esto se verificó en vez de asumirlo: dev
+  apunta a Upstash (`factual-kangaroo-170398.upstash.io`) y **producción usa su
+  propio contenedor en el VPS** (`casino-redis-32f1iv`). Son dos instancias
+  distintas, así que el keyspace de dev nunca pisó el de prod pese a que ninguno
+  de los dos setea `REDIS_KEY_PREFIX` (ambos usan el default `casino:`). Si
+  alguna vez se los apunta a la misma instancia, ese prefijo pasa a ser
+  obligatorio.
+
+**Alternativa abierta**: sí, y es barata. Entrar a la BIOS (`Supr` al arrancar,
+`F7` para Advanced Mode, **OC → Advanced CPU Configuration → SVM Mode →
+Enabled**), correr `wsl --install --no-distribution` y levantar
+`docker compose up -d`. Todo lo demás ya está instalado.
+
+**Lección**: van dos intentos de migrar a Docker frenados por causas distintas y
+ninguna del proyecto. Antes de planificar el tercero conviene verificar
+`VirtualizationFirmwareEnabled` y el estado de los componentes opcionales —son
+dos consultas— en lugar de descubrirlo después de instalar todo.
