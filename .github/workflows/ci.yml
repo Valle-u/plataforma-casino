@@ -1,6 +1,11 @@
 name: CI
 
+# ⚠️ Antes esto corría SÓLO en pull_request. Como el trabajo va derecho a `main`
+# —`autoDeploy` deploya cada push—, el CI no se ejecutaba nunca: era decorativo.
+# Ahora corre también en push a `main`, que es donde realmente hace falta.
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -13,6 +18,7 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
+  # Rápido: da feedback en un par de minutos.
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -33,6 +39,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # ⚠️ `continue-on-error` heredado: hay errores de lint preexistentes
+      # (24 al 2026-09-03, en wallet-stats y otros). Mientras esté así, el lint
+      # informa pero no frena. Sacarlo cuando estén arreglados — si no, es
+      # exactamente igual que no tenerlo.
       - name: Lint
         run: pnpm lint
         continue-on-error: true
@@ -42,3 +52,96 @@ jobs:
 
       - name: Type-check
         run: pnpm type-check
+
+  # Lento (~15-30 min): la suite e2e corre contra Postgres de verdad.
+  #
+  # Va en un job aparte a propósito: si fuera parte de `ci`, media hora de tests
+  # taparía el feedback de lint y build, que llega en dos minutos.
+  #
+  # Por qué existe: al 2026-09-03 la suite tenía 62 tests en rojo que nadie
+  # había visto, porque NADA la corría automáticamente. La mitad ni siquiera
+  # eran bugs del producto — eran suites pisándose entre sí. Un suite que sólo
+  # se ejecuta cuando alguien se acuerda se degrada hasta que deja de
+  # significar algo, y esto toca el camino de la plata.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: platform_control
+        ports:
+          - 5432:5432
+        # Sin el healthcheck, los pasos arrancan antes de que Postgres acepte
+        # conexiones y el setup falla por una carrera, no por un bug.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      # Mismo Redis que `docker-compose.yml`. No lo exige el setup de jest, pero
+      # sin él `RedisService` queda deshabilitado y CI probaría un camino
+      # distinto al de desarrollo y producción. Divergencias así son las que
+      # hacen que algo pase en CI y falle en el server.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # `global-setup.ts` carga `apps/api/.env.local`, que está gitignoreado y
+      # acá no existe. dotenv no pisa lo que ya está en el entorno, así que
+      # estas mandan.
+      DATABASE_URL_CONTROL: postgresql://postgres:postgres@localhost:5432/platform_control
+      DATABASE_URL_TENANT_TEMPLATE: postgresql://postgres:postgres@localhost:5432/<tenant_db>
+      REDIS_URL: redis://localhost:6379
+      # Namespace propio: que una corrida de CI no pueda pisar ninguna otra cosa.
+      # Entre comillas SÍ O SÍ: termina en `:` y sin comillas YAML lo lee como
+      # un mapeo anidado y el archivo entero deja de parsear.
+      REDIS_KEY_PREFIX: 'casino-ci:'
+      NODE_ENV: test
+      JWT_ACCESS_SECRET: ci-only-not-a-real-secret
+      JWT_REFRESH_SECRET: ci-only-not-a-real-secret
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_ROOT: ./storage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `apps/api` consume `@casino/db` desde `dist/`.
+      - name: Build @casino/db
+        run: pnpm --filter @casino/db build
+
+      # La DB de control tiene que existir, estar migrada y tener el plan
+      # `basic` seedeado: el helper de tests lo busca y falla sin él. La DB del
+      # tenant de test la crea y destruye el propio globalSetup.
+      - name: Preparar base de control
+        run: |
+          pnpm --filter @casino/db db:migrate:control
+          pnpm --filter @casino/db db:seed:control
+
+      - name: Tests
+        run: pnpm --filter @casino/api test
