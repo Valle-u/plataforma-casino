@@ -118,7 +118,15 @@ export class AxiomTransport {
     }
 
     try {
-      const r = await fetch(`https://${this.domain}/v1/ingest/${this.dataset}`, {
+      // La ruta es `/v1/datasets/<dataset>/ingest`.
+      //
+      // ⚠️ La documentación de Axiom muestra en algún lado `/v1/ingest/<dataset>`
+      // y **esa no existe**: devuelve 404 "path not found". Se verificó contra la
+      // API real el 2026-09-03 — con la ruta buena el 404 dice "dataset not
+      // found", que es otra cosa. Si algún día deja de ingerir, distinguir esos
+      // dos mensajes es lo primero que ahorra tiempo.
+      const url = `https://${this.domain}/v1/datasets/${encodeURIComponent(this.dataset)}/ingest`;
+      const r = await fetch(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.token}`,
