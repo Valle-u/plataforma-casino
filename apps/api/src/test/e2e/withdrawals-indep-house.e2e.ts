@@ -297,7 +297,27 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     // El padre directo (socio independiente) aprueba y paga — NO el admin.
     // Modelo descentralizado: solo el padre directo ve y acepta la solicitud.
     await approveWithdrawal(withdrawalId, socioToken);
-    await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
+
+    // ⚠️ Concilia el SOCIO INDEPENDIENTE, no el admin. En una red independiente
+    // cada operador concilia lo suyo (decisión del dueño, 2026-09-03), y desde
+    // `c189a60` el match valida que el dueño de la solicitud caiga en el scope
+    // del actor: con el token del admin devuelve 404.
+    //
+    // Los dos permisos de `bank_tx` son delegables y **ningún rol de operador
+    // los trae por default** (ver `tenant-seed.ts`), así que el admin se los
+    // otorga — que es el modelo previsto.
+    //
+    // Y la cuenta va en `null` (o sea, no se manda): un indep sólo puede subir
+    // transferencias a la suya, y el backend la resuelve solo.
+    for (const permissionCode of ['bank_tx.upload', 'bank_tx.match']) {
+      const g = await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: socio.id, permissionCode, reason: 'e2e: concilia su red' });
+      expect([200, 201]).toContain(g.status);
+    }
+    await matchOutgoingBankTxForWithdrawal(ctx.request, socioToken, withdrawalId, null);
 
     // Snapshot ANTES de markPaid.
     const casaBefore = await getCasaBalance();
@@ -440,7 +460,19 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     // markPaid corre DESPUÉS de degradar a JUAN → ahí el player ya es de la
     // red centralizada y lo puede marcar pagado el admin.
     await approveWithdrawal(withdrawalId, juanToken);
-    await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
+
+    // ⚠️ Concilia JUAN, no el admin: en este punto **todavía es
+    // independiente** — la degradación viene más abajo. Con el token del admin
+    // el match devuelve 404 por scope. Ver T-W1 para el modelo completo.
+    for (const permissionCode of ['bank_tx.upload', 'bank_tx.match']) {
+      const g = await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: juan.id, permissionCode, reason: 'e2e: concilia su red' });
+      expect([200, 201]).toContain(g.status);
+    }
+    await matchOutgoingBankTxForWithdrawal(ctx.request, juanToken, withdrawalId, null);
 
     // Confirmar snapshot ANTES de degradar: apunta a JUAN.
     const snapBefore = await getWithdrawalSnapshot(withdrawalId);

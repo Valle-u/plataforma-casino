@@ -107,6 +107,31 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     });
   }
 
+  /**
+   * Habilita a un operador a conciliar sus propias transferencias.
+   *
+   * ⚠️ Hace falta porque **ningún rol de operador trae `bank_tx.*` por
+   * default**: en `tenant-seed.ts` ni `socio`, ni `distribuidor`, ni `cajero`
+   * los tienen — sólo el admin. Los dos permisos son `isDelegatable: true`,
+   * así que el modelo previsto es que el admin los otorgue a quien concilia.
+   *
+   * En una red independiente **cada operador concilia lo suyo** (decisión del
+   * dueño, 2026-09-03): el cajero sus transferencias, el distribuidor
+   * independiente las suyas, el socio las suyas. El admin no toca esa sub-red
+   * — desde `c189a60` el match valida el scope del dueño de la solicitud y
+   * devuelve 404 si el actor queda afuera.
+   */
+  async function allowBankTx(userId: string): Promise<void> {
+    for (const permissionCode of ['bank_tx.upload', 'bank_tx.match']) {
+      const r = await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId, permissionCode, reason: 'e2e: concilia su propia red' });
+      expect([200, 201]).toContain(r.status);
+    }
+  }
+
   async function setParent(childId: string, parentId: string): Promise<void> {
     const r = await ctx.request
       .put(`/tenant/user-hierarchy/${childId}/parent`)
@@ -267,16 +292,26 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
 
     const playerToken = await loginAs(ctx.request, player.username, player.password);
     const depositId = await createDeposit(playerToken, '100', socioMethod);
-    await matchBankTxForDeposit(ctx.request, adminToken, depositId);
+
+    // ⚠️ Concilia el SOCIO INDEPENDIENTE, no el admin.
+    //
+    // En una red independiente **cada operador concilia lo suyo**: el cajero sus
+    // transferencias, el distribuidor independiente las suyas, el socio las
+    // suyas (decisión del dueño, 2026-09-03). El admin no toca esa sub-red.
+    //
+    // El test ya lo hacía bien para el approve —"el padre directo aprueba, NO el
+    // admin"— pero seguía matcheando con el token del admin. Desde el arreglo
+    // `c189a60` (2026-08-25) eso devuelve 404: el match valida que el dueño de
+    // la solicitud caiga en el scope del actor, no sólo la bank_tx. El 404 es
+    // deliberado, para no filtrar si el recurso existe.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+    await allowBankTx(socio.id);
+    await matchBankTxForDeposit(ctx.request, socioToken, depositId, null);
 
     // Snapshot ANTES.
     const casaBefore = await getCasaBalance();
     const socioBefore = await getBalance(socio.id);
     const playerBefore = await getBalance(player.id);
-
-    // El padre directo (socio independiente) aprueba — NO el admin. Modelo
-    // descentralizado: solo el padre directo ve y acepta la solicitud.
-    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const r = await ctx.request
       .post(`/tenant/deposits/${depositId}/approve`)
       .set('Host', TEST_TENANT.host)
@@ -330,14 +365,17 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
 
     const playerToken = await loginAs(ctx.request, player.username, player.password);
     const depositId = await createDeposit(playerToken, '100', socioMethod);
-    await matchBankTxForDeposit(ctx.request, adminToken, depositId);
+
+    // Concilia el socio independiente, no el admin — ver T-D1.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+    await allowBankTx(socio.id);
+    await matchBankTxForDeposit(ctx.request, socioToken, depositId, null);
 
     const casaBefore = await getCasaBalance();
     const socioBefore = await getBalance(socio.id);
     const playerBefore = await getBalance(player.id);
 
     // El padre directo (socio independiente) intenta aprobar — NO el admin.
-    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const r = await ctx.request
       .post(`/tenant/deposits/${depositId}/approve`)
       .set('Host', TEST_TENANT.host)
@@ -501,13 +539,16 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
 
     const playerToken = await loginAs(ctx.request, player.username, player.password);
     const depositId = await createDeposit(playerToken, '100', socioMethod);
-    await matchBankTxForDeposit(ctx.request, adminToken, depositId);
+
+    // Concilia el socio independiente, no el admin — ver T-D1.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+    await allowBankTx(socio.id);
+    await matchBankTxForDeposit(ctx.request, socioToken, depositId, null);
 
     const socioBefore = await getBalance(socio.id);
     const playerBefore = await getBalance(player.id);
 
     // El padre directo (socio independiente) aprueba — NO el admin.
-    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const r = await ctx.request
       .post(`/tenant/deposits/${depositId}/approve`)
       .set('Host', TEST_TENANT.host)
@@ -587,7 +628,14 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
 
     // APROBAR: abuelo y admin quedan fuera de scope (403) pese a tener el
     // permiso deposits.approve. Solo el padre directo puede.
-    await matchBankTxForDeposit(ctx.request, adminToken, depositId);
+    //
+    // ⚠️ Concilia el CAJERO, que acá es el padre directo. Antes esto matcheaba
+    // con el token del admin — tres líneas después de que el propio test
+    // afirmara `detailStatus(adminToken) === 404`. Si el admin no puede ni ver
+    // la solicitud, tampoco puede conciliarla: desde `c189a60` el match valida
+    // el scope del dueño y devuelve el mismo 404.
+    await allowBankTx(cajero.id);
+    await matchBankTxForDeposit(ctx.request, cajeroToken, depositId, null);
     const approveStatus = async (token: string): Promise<number> => {
       const r = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)

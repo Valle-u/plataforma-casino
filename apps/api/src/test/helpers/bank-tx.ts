@@ -16,10 +16,20 @@ import { TEST_TENANT } from '../setup/test-tenant';
 
 let seq = 0;
 
+/**
+ * @param bankAccount Cuenta de la transferencia. `null` = **no mandarla**, para
+ *   que el backend resuelva la del propio actor.
+ *
+ *   ⚠️ Hay que omitirla cuando concilia un **operador de una red
+ *   independiente**: `bank-transactions.controller` rechaza con
+ *   `BANK_TX_WRONG_ACCOUNT` si un indep manda una cuenta que no es la suya. El
+ *   campo es opcional desde Sprint 53 justamente para esto.
+ */
 export async function matchBankTxForDeposit(
   request: supertest.Agent,
   adminToken: string,
   depositId: string,
+  bankAccount: string | null = '0000000000000000000000',
 ): Promise<void> {
   // Idempotente: si el depósito ya tiene una bank_tx matcheada, no hacemos
   // nada (seguro llamarlo antes de cada approve sin importar el orden).
@@ -41,7 +51,7 @@ export async function matchBankTxForDeposit(
     .set('Host', TEST_TENANT.host)
     .set('Authorization', adminToken)
     .send({
-      bankAccount: '0000000000000000000000',
+      ...(bankAccount === null ? {} : { bankAccount }),
       amount: '1.00',
       currency: 'ARS',
       reference: ref,
@@ -79,6 +89,8 @@ export async function matchOutgoingBankTxForWithdrawal(
   request: supertest.Agent,
   adminToken: string,
   withdrawalId: string,
+  /** `null` = no mandar la cuenta. Ver `matchBankTxForDeposit`. */
+  bankAccount: string | null = '0000000000000000000000',
 ): Promise<void> {
   const cur = await request
     .get(`/tenant/withdrawals/${withdrawalId}`)
@@ -103,7 +115,7 @@ export async function matchOutgoingBankTxForWithdrawal(
     .set('Host', TEST_TENANT.host)
     .set('Authorization', adminToken)
     .send({
-      bankAccount: '0000000000000000000000',
+      ...(bankAccount === null ? {} : { bankAccount }),
       amount: '1.00',
       currency: 'ARS',
       reference: ref,
