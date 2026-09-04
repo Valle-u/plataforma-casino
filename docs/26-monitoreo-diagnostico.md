@@ -164,10 +164,11 @@ propio cron: **si el disco se llena, Postgres deja de escribir.**
 Limpiar a mano no arregla nada: sin la limpieza programada, cada deploy vuelve a
 dejar basura.
 
-> **⚠️ Verificar el tamaño real del disco.** Si a 80% quedaban 18,7 GB libres, el
-> total da **~93,5 GB**. Pero `docs/23-migracion-vps.md` dice que el VPS es un
-> KVM 4 con **~200 GB NVMe**. Uno de los dos datos está mal, y cambia todo el
-> cálculo de margen. Confirmar con `df -h` en el host.
+> **✅ Verificado: el disco es de 95,82 GB, no de ~200.** Lo dice el banner del
+> servidor al entrar (*"Usage of /: 14.1% of 95.82GB"*), y coincide con lo que
+> daba la cuenta desde la alerta (18,7 GB libres al 80% → ~93,5 GB).
+> `docs/23` tenía el número del plan de compra, no de la máquina; ya está
+> corregido. **El margen real es la mitad de lo que se creía.**
 
 ---
 

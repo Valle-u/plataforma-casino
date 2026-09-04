@@ -8,8 +8,19 @@
 
 ## Decisiones tomadas (2026-08-23)
 
-1. **VPS**: Hostinger **KVM 4** (4 vCPU, 16 GB RAM, ~200 GB NVMe). Headroom para
+1. **VPS**: Hostinger **KVM 4** (4 vCPU, 16 GB RAM, **~96 GB** de disco).
    Postgres + API + web + Traefik + Redis + el propio Dokploy. Se puede escalar.
+
+   > **⚠️ Corregido el 2026-09-04: son 95,82 GB, no los ~200 GB que decía acá.**
+   > Lo dice el banner del propio servidor al entrar por SSH
+   > (*"Usage of /: 14.1% of 95.82GB"*). El número viejo salió del plan de
+   > compra, no de mirar la máquina, y **el margen real es la mitad de lo que
+   > se creía**.
+   >
+   > Importa más de lo que parece: el disco se llena con imágenes y caché de
+   > Docker de **cada build** (ver `docs/26` §4.6), y **si se llena, Postgres
+   > deja de escribir**.
+
 2. **Arranque = atajo de dominio fijo**: 1 solo casino (**MIAMI HUB**) en un
    dominio fijo + subdominios. Traefik se configura a mano por dominio y se
    **difiere toda la automatización de TLS multi-tenant** (el bloqueante mayor).

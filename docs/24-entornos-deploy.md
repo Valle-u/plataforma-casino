@@ -261,7 +261,7 @@ instalado en el repo. Mientras tanto, los logs se bajan desde el panel.
 
 ## Referencia rápida
 
-- **VPS**: Hostinger KVM 4 (4 vCPU, 16 GB RAM, ~200 GB NVMe), IP `147.93.32.111`.
+- **VPS**: Hostinger KVM 4 (4 vCPU, 16 GB RAM, **~96 GB** de disco), IP `147.93.32.111`.
   Dokploy en `https://dokploy.miamihub.vip` (token en `CASINO_DOKPLOY_TOKEN`,
   header `x-api-key`).
 - Prod buildea de **`main`**, staging de **`staging`**, las dos por Dockerfile

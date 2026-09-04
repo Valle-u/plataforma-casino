@@ -604,9 +604,11 @@ Nada de esto depende de las mediciones erradas.
    los jugadores. **Deployar en horario pico degrada el casino.** Es lo más
    accionable de toda la lista, y explica el CPU que va a 100 y vuelve a 0 que
    se ve en el panel de Dokploy.
-2. **El VPS es la mitad de lo planeado**: Hostinger KVM 4 (**4 vCPU / 16 GB**)
-   contra los 8 vCPU / 32 GB que dice §3 para MVP. Ahí adentro conviven
-   Postgres, Redis, la API, la web, Dokploy, Traefik y los builds.
+2. **El VPS es la mitad de lo planeado**: Hostinger KVM 4 (**4 vCPU / 16 GB /
+   ~96 GB de disco**) contra los 8 vCPU / 32 GB / 200 GB que dice §3 para MVP.
+   El disco también se creyó del doble hasta verificarlo el 2026-09-04. Ahí
+   adentro conviven Postgres, Redis, la API, la web, Dokploy, Traefik y los
+   builds — más las imágenes y el caché que deja cada uno de esos builds.
 3. **Una sola réplica de la API** = un proceso Node = **un core para JS**, con
    `cpuLimit` y `memoryLimit` sin definir en ningún contenedor.
 4. **Sin monitoreo**: `application.readAppMonitoring` devuelve todo vacío. No
