@@ -99,14 +99,41 @@ app ya tiene. **Cada redeploy del api aplica lo pendiente** — no hay paso manu
 
 ### Manual (fallback / si `MIGRATE_ON_BOOT` está OFF)
 
-1. Abrir el puerto externo del Postgres temporalmente (Dokploy API):
-   `POST /api/postgres.saveExternalPort {postgresId, externalPort: 5433}` + `POST /api/postgres.deploy`.
-2. Desde local, con `DATABASE_URL_CONTROL` apuntando a `147.93.32.111:5433`:
-   - `pnpm --filter @casino/db db:migrate:control`
-   - `pnpm --filter @casino/db db:migrate:tenants` (corre contra cada tenant registrado).
-3. **Cerrar el puerto** de nuevo: `saveExternalPort {externalPort: null}` + `postgres.deploy`.
+> ## 🛑 El método de "abrir el puerto externo" NO FUNCIONA
+>
+> Probado el 2026-09-04 contra el Postgres de staging: se abrió el puerto por
+> API (`saveExternalPort` + `deploy`, ambos 200, `externalPort` confirmado en
+> `postgres.one`) y **la conexión desde afuera igual da `ETIMEDOUT`**. Se probó
+> con 5433 y 5434. **Lo bloquea el firewall del VPS**, que no se administra desde
+> Dokploy sino desde el panel de Hostinger.
+>
+> El procedimiento que estaba escrito acá era teórico: nunca se había ejecutado.
+
+**Lo que sí funciona: entrar al contenedor.** La imagen de la API es de una sola
+etapa, así que adentro está **todo el workspace** — `packages/db`, sus
+`node_modules`, `pnpm` y `tsx` — y las env vars con las URLs de las DBs ya
+resueltas. Desde una terminal en el VPS:
+
+```bash
+docker exec -it $(docker ps -q -f name=casino-api-staging) \
+  sh -c 'cd /app && pnpm --filter @casino/db db:migrate:control'
+```
+
+Cambiar `casino-api-staging` por `casino-api-hnwmew` para producción.
 
 > ⚠️ Área sensible (corre contra todas las DB de tenants). Probar en staging primero.
+
+### Los "Schedules" de Dokploy tampoco sirvieron
+
+Se intentó correr el seed con `schedule.create` + `schedule.runManually`
+(`scheduleType: application`, con y sin `serviceName`). Devuelve
+`{"status":"error"}` a los ~110 ms, **sin `errorMessage`**, y el log queda en un
+archivo del host (`/etc/dokploy/schedules/…`) que **no se puede leer por la API**
+(`settings.readFile` y `settings.getLogFile` dan 404; `settings.readDirectories`
+sólo lista `/etc/dokploy/traefik`).
+
+O sea: falla y no dice por qué. **No perder tiempo ahí** — usar `docker exec`.
+
 
 ---
 
@@ -233,14 +260,29 @@ instalado en el repo. Mientras tanto, los logs se bajan desde el panel.
 
 ### Con qué datos arranca staging
 
-La DB de staging existe y está migrada, pero **sin tenants**. Las opciones:
+La DB de staging existe y está migrada, pero **sin tenants**. Se decidió sembrar
+un **tenant nuevo y vacío** con `db:seed:pilot` (crea tenant + admin, nada más:
+ni métodos de pago, ni bonos, ni saldos falsos).
 
-| | Qué implica |
-|---|---|
-| **Tenant nuevo, vacío** | Lo más limpio y lo más seguro. Hay que crear el tenant y un usuario admin a mano. |
-| **Seed de datos falsos** | Cómodo para probar flujos completos. Hay que escribir el seed. |
-| **Copia de producción** | Lo más realista **y lo más peligroso**: mete datos reales de jugadores en un entorno con menos protecciones. Si se hace, hay que anonimizar. |
+**No se copia producción.** Es lo más realista y lo más peligroso: son datos
+reales de jugadores en un entorno con menos protecciones. Si algún día hace
+falta, hay que anonimizar primero.
 
-⚠️ **No copiar producción tal cual.** Staging comparte el proxy y el host con
-prod, pero no sus cuidados; y datos de jugadores reales ahí adentro es un problema
-de privacidad, no de comodidad.
+El comando, desde una terminal en el VPS (elegir una contraseña propia):
+
+```bash
+docker exec -it $(docker ps -q -f name=casino-api-staging) sh -c 'cd /app && pnpm --filter @casino/db db:seed:pilot -- --slug=staging --name=Staging --host=staging.miamihub.vip --admin-user=admin --admin-email=admin@staging.miamihub.vip --admin-pass=PONER_UNA'
+```
+
+Es idempotente: si ya existe, refresca los datos y re-setea el password.
+
+Después hay que agregar el dominio del panel, porque el seed inserta uno solo:
+
+```bash
+docker exec -i $(docker ps -q -f name=casino-postgres-staging) psql -U postgres -d platform_control -c "INSERT INTO tenant_domains (id, tenant_id, domain, is_primary, verified_at) SELECT gen_random_uuid(), id, 'admin-staging.miamihub.vip', false, now() FROM tenants WHERE slug='staging' ON CONFLICT (domain) DO NOTHING;"
+```
+
+> Ojo con dos cosas del schema de `tenant_domains`, que es fácil errarle:
+> **`id` no tiene default en la DB** (Drizzle lo genera del lado JS), así que hay
+> que pasarlo explícito; y **la verificación es `verified_at` (timestamp), no un
+> booleano `verified`**.

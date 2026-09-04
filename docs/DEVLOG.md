@@ -10011,3 +10011,58 @@ toca `docs/`. Se vio en vivo: la API de prod se reinició por un commit de
 documentación. Once deploys de prod en un día, varios de ellos por docs. Ahora
 que existe staging, el flujo correcto es trabajar ahí y **mergear a `main` a
 propósito**.
+
+---
+
+## 2026-09-04 (cont.) — No se puede correr nada dentro del VPS por la API
+
+Al ir a sembrar el tenant de staging se chocó con esto, y vale documentarlo
+porque **dos caminos que los docs daban por buenos no funcionan**.
+
+### 🛑 Abrir el puerto externo de Postgres: NO funciona
+
+`docs/24` describía: `postgres.saveExternalPort` + `postgres.deploy`, conectarse
+desde local, cerrar. Se hizo tal cual contra el Postgres de staging — los dos
+endpoints devolvieron 200 y `postgres.one` confirmó `externalPort: 5433` — y la
+conexión desde afuera igual da **`ETIMEDOUT`**. Se probó con 5433 y con 5434.
+
+**Lo bloquea el firewall del VPS**, que no se administra desde Dokploy sino desde
+el panel de Hostinger. El procedimiento estaba escrito pero **nunca se había
+ejecutado**: era teórico.
+
+### 🛑 Los "Schedules" de Dokploy: fallan mudos
+
+`schedule.create` + `schedule.runManually` (`scheduleType: application`, con y
+sin `serviceName`) devuelven `{"status":"error"}` a los **~110 ms**, **sin
+`errorMessage`**. El log queda en `/etc/dokploy/schedules/…` en el host y **no se
+puede leer por la API**: `settings.readFile` y `settings.getLogFile` dan 404, y
+`settings.readDirectories` sólo lista `/etc/dokploy/traefik`.
+
+Falla y no dice por qué. No vale la pena insistir por ahí.
+
+### ✅ Lo que sí sirve: `docker exec`
+
+La imagen de la API es **de una sola etapa**, así que adentro está todo el
+workspace: `packages/db`, sus `node_modules`, `pnpm` y `tsx`, más las env vars
+con las URLs de las DBs ya resueltas. Cualquier script del repo se corre así:
+
+```bash
+docker exec -it $(docker ps -q -f name=casino-api-staging) \
+  sh -c 'cd /app && pnpm --filter @casino/db <script>'
+```
+
+Eso vale para el seed, para las migraciones manuales y para cualquier script de
+mantenimiento. **Es el fallback real**, no el del puerto.
+
+### Decisión sobre los datos de staging
+
+**Tenant nuevo y vacío** (`db:seed:pilot`), no una copia de producción. Copiar
+prod es lo más realista y lo más peligroso: son datos reales de jugadores en un
+entorno con menos protecciones. Si algún día hace falta, se anonimiza primero.
+
+### Detalle del schema que es fácil errarle
+
+En `tenant_domains`, **`id` no tiene default en la DB** — Drizzle lo genera del
+lado JS con `$defaultFn`, así que un `INSERT` a mano tiene que pasar
+`gen_random_uuid()`. Y la verificación es **`verified_at` (timestamp)**, no un
+booleano `verified`.
