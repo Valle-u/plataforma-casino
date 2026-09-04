@@ -16004,3 +16004,59 @@ existía** — el caché remoto de Turbo nunca se configuró y los builds corren
 4. **`notifications › fraud_link_suspected`** — el único test que falla en la
    suite completa (pasa aislado).
 5. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.
+
+---
+
+## Addendum 9 — Cierre de la sesión del 2026-09-04
+
+Sesión larga. Los addenda 1-8 tienen el detalle; esto es el estado final y lo
+que queda.
+
+### Lo que se hizo, en orden
+
+1. **Backup restaurado y verificado** — primera vez. El invariante del ledger se
+   cumple. Y aparecieron tres cosas que el runbook decía mal.
+2. **Limpieza de Railway** — el backup que corría respaldaba la producción
+   *vieja*. Workflow apagado, dump final a salvo, bucket limpio (133 → 27
+   objetos), Railway y Vercel dados de baja, 13 secrets borrados.
+3. **Staging montado en Dokploy** — mismo runtime que producción, con Postgres y
+   Redis propios, tenant sembrado y aislamiento verificado.
+4. **`staging` primero, `main` después** — regla 11 de `AGENTS.md`, con el
+   procedimiento en §4.1.
+5. **Detalle de ronda** — `GET /tenant/game-stats/rounds/:id` + drawer.
+6. **Icono de la app** y **layout en modo PWA** — arreglados.
+
+### Lo que enseñó la sesión
+
+**Cinco bugs, todos de configuración, ninguno de lógica de negocio:** el guion de
+`admin-` en el middleware, ese mismo guion en los links de referido, los
+`buildArgs` que faltaban, el icono de Turborepo y el `apple-mobile-web-app-title`
+fijo. Todos venían del andamiaje o del montaje, no del código del casino.
+
+**Staging encontró tres de los cinco antes que producción**, el mismo día en que
+se montó.
+
+**Tres comentarios del repo describían cosas que no existían:** el
+`apple-touch-icon` "inyectado dinámicamente", el procedimiento del puerto de
+Postgres y el runbook de backups. Un comentario que describe una intención se
+lee igual que uno que describe la realidad. **Verificar antes de confiar.**
+
+### ⚠️ Lo que queda abierto
+
+1. **`notifications › fraud_link_suspected`** — falla de forma **no
+   determinista** (contaminación cruzada): rojo en `682bb91`, verde en
+   `5509994`, sin cambios de por medio. Mientras siga así, cada merge obliga a
+   comparar contra `main` para descartar regresión. Es lo más molesto que queda.
+2. **Turnstile no se puede probar en staging** — el sitekey está atado a los
+   dominios de producción. Falta crear uno para los de staging.
+3. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.
+4. **`scripts/deploy-checklist.md`** sigue describiendo Railway y Vercel.
+5. **El backup de R2/uploads no existe** — sólo se respaldan las bases. Los
+   comprobantes no tienen copia.
+6. **Fase 2 del monitoreo** (`docs/26`): alertas de negocio y runbook de
+   diagnóstico.
+
+### Estado
+
+`main` = `5509994` (código). `staging` va adelante sólo con documentación, para
+no reiniciar producción por un `.md`. Producción y staging verificados sanos.
