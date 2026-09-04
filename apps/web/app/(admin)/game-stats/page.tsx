@@ -35,6 +35,7 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
+import { RoundDetailDrawer } from '@/components/admin/round-detail-drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
@@ -796,6 +797,8 @@ function RoundsTab({
   onPage: (offset: number) => void;
 }) {
   const { data, isLoading, isError, refetch, isFetching } = useGameRounds(filters);
+  // Ronda abierta en el drawer de detalle. null = cerrado.
+  const [rondaAbierta, setRondaAbierta] = useState<string | null>(null);
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
   const limit = data?.limit ?? PAGE_SIZE;
@@ -851,7 +854,11 @@ function RoundsTab({
             </THead>
             <TBody>
               {rows.map((r) => (
-                <RoundRowComp key={r.id} row={r} />
+                <RoundRowComp
+                  key={r.id}
+                  row={r}
+                  onOpen={() => setRondaAbierta(r.id)}
+                />
               ))}
             </TBody>
           </Table>
@@ -881,15 +888,30 @@ function RoundsTab({
           </div>
         </>
       )}
+
+      <RoundDetailDrawer
+        roundId={rondaAbierta}
+        onClose={() => setRondaAbierta(null)}
+      />
     </div>
   );
 }
 
-function RoundRowComp({ row }: { row: RoundRow }) {
+function RoundRowComp({
+  row,
+  onOpen,
+}: {
+  row: RoundRow;
+  onOpen: () => void;
+}) {
   const net = Number(row.netAmount);
   const isWin = net > 0;
   return (
-    <TR>
+    <TR
+      onClick={onOpen}
+      className="cursor-pointer"
+      title="Ver el detalle de la ronda"
+    >
       <TD className="num text-[11px] text-[var(--color-fg-muted)]">
         {new Date(row.placedAt).toLocaleString('es-AR', {
           timeZone: 'America/Argentina/Buenos_Aires',

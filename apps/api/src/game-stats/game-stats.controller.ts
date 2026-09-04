@@ -8,13 +8,23 @@
  *
  * Endpoints:
  *   - GET /tenant/game-stats/rounds        list paginada filtrable
+ *   - GET /tenant/game-stats/rounds/:id    detalle de UNA ronda (auditoría)
  *   - GET /tenant/game-stats/summary       totales GGR + RTP real
  *   - GET /tenant/game-stats/by-game       breakdown por juego + flag RTP
  *   - GET /tenant/game-stats/by-player     top players por volumen
  *   - GET /tenant/game-stats/export        CSV de rounds
  */
 
-import { Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   buildCsv,
@@ -96,6 +106,28 @@ export class GameStatsController {
       offset: offset ? Number(offset) : undefined,
       restrictToUserIds,
     });
+  }
+
+  /**
+   * Detalle de una ronda: todo lo que se guarda, incluido el payload crudo del
+   * proveedor y su id de transacción — que es lo que piden para reclamar.
+   *
+   * Mismo permiso y **mismo scope de red** que el listado. Fuera de scope
+   * devuelve 404 y no 403: un 403 confirmaría que la ronda existe, y eso ya es
+   * información que un operador de otra red no debería poder deducir.
+   */
+  @Get('rounds/:id')
+  @RequirePermissions('game_stats.view_own_network')
+  async roundDetail(
+    @CurrentTenantUser() actor: { id: string },
+    @Req() req: RequestWithTenantContext,
+    @Param('id') id: string,
+  ) {
+    const db = this.requireDb(req);
+    const restrictToUserIds = await this.resolveScope(db, actor.id);
+    const detail = await this.stats.getRoundDetail(db, id, restrictToUserIds);
+    if (!detail) throw new NotFoundException('Ronda no encontrada.');
+    return detail;
   }
 
   @Get('summary')

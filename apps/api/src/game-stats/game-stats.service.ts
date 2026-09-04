@@ -15,7 +15,16 @@
 
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
-import { gameRounds, games, users, walletTransactions } from '@casino/db';
+import {
+  foreverTransactions,
+  gameRounds,
+  games,
+  gameSessions,
+  gregmornTransactions,
+  palaceTransactions,
+  users,
+  walletTransactions,
+} from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 export type RoundStatus = 'placed' | 'settled' | 'rolled_back';
@@ -57,6 +66,66 @@ export interface RoundRow {
   settledAt: Date | null;
   rolledBackAt: Date | null;
   outcome: 'win' | 'loss' | 'zero';
+}
+
+/** Un movimiento de fichas ligado a la ronda (apuesta, premio o reversa). */
+export interface RoundWalletTx {
+  id: string;
+  type: string;
+  amount: string;
+  balanceAfter: string;
+  bonusBalanceAfter: string | null;
+  source: string | null;
+  reason: string | null;
+  idempotencyKey: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Fila cruda de la tabla del proveedor. Es lo que el proveedor mandó, tal cual
+ * quedó guardado — incluido **su** id de transacción, que es lo que piden
+ * cuando hay que reclamar una jugada.
+ */
+export interface ProviderTxRow {
+  /** Nombre del id según el proveedor: trans_guid, transaction_id, txn_code. */
+  idLabel: string;
+  externalId: string;
+  amount: string | null;
+  kind: string | null;
+  createdAt: Date;
+  /** El resto de las columnas, sin normalizar. */
+  extra: Record<string, unknown>;
+}
+
+export interface RoundDetail {
+  round: RoundRow & {
+    /** spin | bonus_buy | free_spins | null (proveedor que no informa). */
+    action: string | null;
+    /** Resultado del spin que mandó el proveedor: RNG, rodillos, multiplicador. */
+    payload: unknown;
+    /**
+     * NULL = la cerró el proveedor. No NULL = la cerramos nosotros, y acá está
+     * con qué criterio. En una disputa la diferencia importa.
+     */
+    autoSettledReason: string | null;
+    betWalletTxId: string | null;
+    winWalletTxId: string | null;
+    rollbackWalletTxId: string | null;
+  };
+  session: {
+    id: string;
+    providerSessionId: string | null;
+    startedAt: Date;
+    endedAt: Date | null;
+    openedFromIp: string | null;
+  } | null;
+  walletTxs: {
+    bet: RoundWalletTx | null;
+    win: RoundWalletTx | null;
+    rollback: RoundWalletTx | null;
+  };
+  /** Filas del proveedor que matchean el round id externo. */
+  providerTxs: ProviderTxRow[];
 }
 
 export interface RoundsPage {
@@ -546,4 +615,213 @@ export class GameStatsService {
     if (diffDays <= 30) return '30d';
     return 'custom';
   }
+
+  /**
+   * Detalle completo de UNA ronda, para auditar o reclamarle al proveedor.
+   *
+   * Devuelve lo que hasta ahora se guardaba y no se veía por ningún lado:
+   * `action` (giro común vs compra de tiradas gratis), el `payload` crudo del
+   * proveedor, el motivo de cierre automático, los tres movimientos de fichas y
+   * **las filas de la tabla del proveedor con SU id de transacción**.
+   *
+   * ⚠️ `restrictToUserIds` NO es opcional de hecho: sin él, cualquier operador
+   * podría pedir una ronda ajena sabiendo su id, y eso es una fuga entre redes
+   * independientes (LEYES E8/P3). Devuelve `null` —no un 403— cuando la ronda
+   * existe pero está fuera del scope: un 403 confirmaría que existe.
+   */
+  async getRoundDetail(
+    db: TenantDb,
+    roundId: string,
+    restrictToUserIds?: string[],
+  ): Promise<RoundDetail | null> {
+    const rows = await db
+      .select({
+        id: gameRounds.id,
+        sessionId: gameRounds.sessionId,
+        gameCode: games.code,
+        gameName: games.name,
+        providerCode: games.providerCode,
+        userId: gameRounds.userId,
+        username: users.username,
+        displayName: users.displayName,
+        status: gameRounds.status,
+        betAmount: gameRounds.betAmount,
+        winAmount: gameRounds.winAmount,
+        netAmount: gameRounds.netAmount,
+        roundExternalId: gameRounds.roundExternalId,
+        balanceAfter: walletTransactions.balanceAfter,
+        placedAt: gameRounds.placedAt,
+        settledAt: gameRounds.settledAt,
+        rolledBackAt: gameRounds.rolledBackAt,
+        action: gameRounds.action,
+        payload: gameRounds.payload,
+        autoSettledReason: gameRounds.autoSettledReason,
+        betWalletTxId: gameRounds.betWalletTxId,
+        winWalletTxId: gameRounds.winWalletTxId,
+        rollbackWalletTxId: gameRounds.rollbackWalletTxId,
+      })
+      .from(gameRounds)
+      .innerJoin(games, eq(gameRounds.gameId, games.id))
+      .innerJoin(users, eq(gameRounds.userId, users.id))
+      .leftJoin(
+        walletTransactions,
+        eq(gameRounds.betWalletTxId, walletTransactions.id),
+      )
+      .where(eq(gameRounds.id, roundId))
+      .limit(1);
+
+    const r = rows[0];
+    if (!r) return null;
+    // Scope de red: fuera de alcance se comporta igual que "no existe".
+    if (restrictToUserIds && !restrictToUserIds.includes(r.userId)) return null;
+
+    const sessionRows = await db
+      .select({
+        id: gameSessions.id,
+        providerSessionId: gameSessions.providerSessionId,
+        startedAt: gameSessions.startedAt,
+        endedAt: gameSessions.endedAt,
+        openedFromIp: gameSessions.openedFromIp,
+      })
+      .from(gameSessions)
+      .where(eq(gameSessions.id, r.sessionId))
+      .limit(1);
+
+    const txIds = [
+      r.betWalletTxId,
+      r.winWalletTxId,
+      r.rollbackWalletTxId,
+    ].filter((x): x is string => Boolean(x));
+
+    const txRows = txIds.length
+      ? await db
+          .select({
+            id: walletTransactions.id,
+            type: walletTransactions.type,
+            amount: walletTransactions.amount,
+            balanceAfter: walletTransactions.balanceAfter,
+            bonusBalanceAfter: walletTransactions.bonusBalanceAfter,
+            source: walletTransactions.source,
+            reason: walletTransactions.reason,
+            idempotencyKey: walletTransactions.idempotencyKey,
+            createdAt: walletTransactions.createdAt,
+          })
+          .from(walletTransactions)
+          .where(inArray(walletTransactions.id, txIds))
+      : [];
+
+    const porId = new Map(txRows.map((x) => [x.id, x as RoundWalletTx]));
+    const pick = (id: string | null): RoundWalletTx | null =>
+      id ? (porId.get(id) ?? null) : null;
+
+    return {
+      round: {
+        ...r,
+        status: r.status,
+        outcome: this.outcomeOf(r.netAmount),
+      },
+      session: sessionRows[0] ?? null,
+      walletTxs: {
+        bet: pick(r.betWalletTxId),
+        win: pick(r.winWalletTxId),
+        rollback: pick(r.rollbackWalletTxId),
+      },
+      providerTxs: await this.providerTxsOf(
+        db,
+        r.providerCode,
+        r.roundExternalId,
+      ),
+    };
+  }
+
+  /**
+   * Filas crudas de la tabla del proveedor para un round id externo.
+   *
+   * Cada proveedor nombra distinto lo mismo, así que se normaliza el envoltorio
+   * (`idLabel` + `externalId`) y el resto se devuelve tal cual vino en `extra`.
+   * Un proveedor desconocido devuelve lista vacía en vez de romper: el detalle
+   * de la ronda sigue sirviendo aunque no haya tabla propia.
+   */
+  private async providerTxsOf(
+    db: TenantDb,
+    providerCode: string,
+    roundExternalId: string,
+  ): Promise<ProviderTxRow[]> {
+    const envolver = (
+      idLabel: string,
+      externalId: string | null,
+      amount: string | null,
+      kind: string | null,
+      createdAt: Date,
+      extra: Record<string, unknown>,
+    ): ProviderTxRow => ({
+      idLabel,
+      externalId: externalId ?? '',
+      amount,
+      kind,
+      createdAt,
+      extra,
+    });
+
+    if (providerCode === 'palace') {
+      const rows = await db
+        .select()
+        .from(palaceTransactions)
+        .where(eq(palaceTransactions.roundId, roundExternalId));
+      return rows.map((x) =>
+        envolver(
+          'trans_guid',
+          x.transGuid,
+          x.amount,
+          // `sort` (BET/WIN/CANCEL) dice mucho más en pantalla que el `type`
+          // numérico del callback.
+          x.sort,
+          x.createdAt,
+          { gameCode: x.gameCode, gameType: x.gameType, account: x.account },
+        ),
+      );
+    }
+
+    if (providerCode === 'gregmorn') {
+      const rows = await db
+        .select()
+        .from(gregmornTransactions)
+        .where(eq(gregmornTransactions.roundId, roundExternalId));
+      return rows.map((x) =>
+        envolver(
+          'transaction_id',
+          x.transactionId,
+          x.bet ?? x.win,
+          x.roundFinished ? 'round_finished' : null,
+          x.createdAt,
+          { gameId: x.gameId, login: x.login, bet: x.bet, win: x.win, info: x.info },
+        ),
+      );
+    }
+
+    if (providerCode === 'forever') {
+      const rows = await db
+        .select()
+        .from(foreverTransactions)
+        .where(eq(foreverTransactions.gameRoundId, roundExternalId));
+      return rows.map((x) =>
+        envolver(
+          'txn_code',
+          x.txnCode,
+          x.amount,
+          String(x.txnType),
+          x.createdAt,
+          {
+            gameCode: x.gameCode,
+            wagerId: x.wagerId,
+            isFreeRound: x.isFreeRound,
+            vendorCode: x.vendorCode,
+          },
+        ),
+      );
+    }
+
+    return [];
+  }
+
 }

@@ -3,6 +3,7 @@
  *
  * Endpoints read-only:
  *   - GET /tenant/game-stats/rounds       (game_stats.view_own_network)
+ *   - GET /tenant/game-stats/rounds/:id   detalle de una ronda
  *   - GET /tenant/game-stats/summary
  *   - GET /tenant/game-stats/by-game
  *   - GET /tenant/game-stats/by-player
@@ -77,6 +78,65 @@ export function useGameRounds(filters: RoundsFilters = {}) {
     queryFn: () =>
       apiGet<RoundsPage>(`/tenant/game-stats/rounds${buildQuery(filters)}`),
     staleTime: 30_000,
+  });
+}
+
+/** Un movimiento de fichas ligado a la ronda. */
+export interface RoundWalletTx {
+  id: string;
+  type: string;
+  amount: string;
+  balanceAfter: string;
+  bonusBalanceAfter: string | null;
+  source: string | null;
+  reason: string | null;
+  idempotencyKey: string | null;
+  createdAt: string;
+}
+
+/** Fila cruda del proveedor, con SU id de transacción. */
+export interface ProviderTxRow {
+  idLabel: string;
+  externalId: string;
+  amount: string | null;
+  kind: string | null;
+  createdAt: string;
+  extra: Record<string, unknown>;
+}
+
+export interface RoundDetail {
+  round: RoundRow & {
+    action: string | null;
+    payload: unknown;
+    autoSettledReason: string | null;
+    betWalletTxId: string | null;
+    winWalletTxId: string | null;
+    rollbackWalletTxId: string | null;
+  };
+  session: {
+    id: string;
+    providerSessionId: string | null;
+    startedAt: string;
+    endedAt: string | null;
+    openedFromIp: string | null;
+  } | null;
+  walletTxs: {
+    bet: RoundWalletTx | null;
+    win: RoundWalletTx | null;
+    rollback: RoundWalletTx | null;
+  };
+  providerTxs: ProviderTxRow[];
+}
+
+export function useRoundDetail(id: string | null) {
+  return useQuery({
+    queryKey: ['game-stats-round-detail', id],
+    queryFn: () => apiGet<RoundDetail>(`/tenant/game-stats/rounds/${id ?? ''}`),
+    enabled: Boolean(id),
+    // Una ronda cerrada no cambia; una abierta puede settlearse. 30s alcanza
+    // para no re-pedirla al navegar y sigue reflejando un settle reciente.
+    staleTime: 30_000,
+    retry: false,
   });
 }
 
