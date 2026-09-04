@@ -9567,3 +9567,104 @@ está tomada**; queda anotado el trade-off, no una objeción.
 
 El reverso de bonos (`removeManual`, LEYES E3/B4), el ancla al
 `funded_by_user_id` y el cupo del empleado (R7) son ajenos al orden de consumo.
+
+---
+
+## 2026-09-03 — Cada operador con su propio CBU y su propio scope bancario
+
+> ⚠️ **DECISIÓN DEL DUEÑO — diseñada, NO implementada.** Toca `user-hierarchy` y
+> el aislamiento de extractos bancarios entre redes: el mismo código que
+> `c189a60` blindó en agosto. Se deja el diseño escrito en vez de improvisarlo al
+> final de una sesión larga.
+
+**Pedido (Uriel, 2026-09-03)**: *"Cada cajero, distribuidor independiente, debe
+tener su propio CBU, así que sólo puede ver y subir transferencias de su banco,
+de nadie más."*
+
+### El problema que lo motivó
+
+Un depósito de un jugador cuyo **padre directo es un cajero** dentro de una red
+independiente **no lo puede conciliar nadie**:
+
+| Actor | ¿Ve el depósito? | ¿Puede conciliar? |
+|---|---|---|
+| Cajero (padre directo) | ✅ | ❌ |
+| Socio indep (abuelo) | ❌ 404 | ✅ |
+| Admin | ❌ 404 | ❌ |
+
+Lo detectó el e2e `T-D6` de `deposits-indep-house`, que queda en rojo a propósito
+hasta que esto se implemente.
+
+### Por qué pasa
+
+`UserHierarchyService.getIndepBankScope` devuelve **dos cosas pegadas** y ambas
+dependen del mismo flag:
+
+```ts
+if (!row || !row.isIndep) return { independent: false, account: null };
+```
+
+- **`independent`** decide el scope de visibilidad (`getBankTxScope`).
+- **`account`** decide a qué cuenta puede subir.
+
+Un cajero *dentro* de una red independiente **no tiene `isIndependentBranch`**,
+así que cae en la rama "red central", que usa
+`excludeUploadedBy = getIndependentSubtreeIds` — y eso **excluye su propia
+transferencia**, porque él está en ese subárbol.
+
+⚠️ **Y por eso no alcanza con marcarlo `independent` a secas**: entraría también
+al check de cuenta, y como no tiene CBU propio quedaría bloqueado con
+`BANK_TX_NO_CBU`. Se le daría el scope y se le sacaría la capacidad de subir.
+
+### La regla que queda
+
+> **Ves y subís las transferencias de TU banco. De nadie más.**
+
+Aplica a cada operador de una red independiente: cajero, distribuidor
+independiente y socio. Cada uno con su propio CBU.
+
+### Lo que hay que tocar
+
+Casi toda la infraestructura ya existe:
+
+1. **`syncBranchBankAccountFromPaymentMethods`** — hoy hace *no-op* salvo para
+   socios independientes (`if (!isIndep) return`). Debe sincronizar el CBU de
+   **cualquier operador** que cargue su método de pago. La columna
+   `users.branch_bank_account` ya existe para todos y el sync ya se dispara desde
+   `NodePaymentMethodsService` al crear/editar/archivar.
+2. **`getIndepBankScope`** — resolver *"¿pertenece a un subárbol
+   independiente?"* en vez de exigir el flag propio, y devolver **el CBU del
+   propio usuario**, no el del socio.
+3. **`getBankTxScope`** — para esos usuarios, `onlyUploadedBy: [su propio id]`.
+   Hoy el socio recibe `getUserIdsInSubnetwork`; con esta regla pasa a ver sólo
+   lo suyo.
+4. **UI** — los operadores necesitan dónde cargar su CBU. El mensaje de error ya
+   apunta al lugar (*"Cargá tu CBU/alias en Mis métodos de pago"*), así que hay
+   que confirmar que esa pantalla esté disponible para cajeros y distribuidores,
+   no sólo para socios.
+
+### ⚠️ Un punto a confirmar antes de codear
+
+**El socio independiente, ¿pierde la visibilidad de las transferencias de sus
+cajeros?** Con la regla literal —*"de tu banco, de nadie más"*— sí: pasaría de
+ver toda su sub-red a ver sólo lo suyo.
+
+Es coherente con lo pedido y es **más aislante**, pero **cambia el comportamiento
+actual de un rol que hoy funciona** y le saca supervisión sobre su red. Vale
+confirmarlo explícitamente antes de tocarlo: quitarle visibilidad a alguien es
+fácil de hacer y difícil de notar hasta que la necesita.
+
+### Migración
+
+Los cajeros y distribuidores existentes **no tienen CBU cargado**. Al activar
+esto quedarían bloqueados para subir transferencias hasta cargarlo
+(`BANK_TX_NO_CBU`). Hay que decidir si se hace un backfill, si se avisa antes, o
+si se activa por tenant.
+
+### Por qué no se hizo en el momento
+
+Este código decide **quién ve los movimientos bancarios de quién**. Un error acá
+no rompe: filtra. `c189a60` existió justamente para cerrar una fuga de ese tipo,
+y `START_HERE.md §7` marca esta área como "preguntar siempre, aunque parezca
+trivial". Con un punto de diseño sin cerrar y una migración pendiente, se
+documenta y se hace con la cabeza fresca.
