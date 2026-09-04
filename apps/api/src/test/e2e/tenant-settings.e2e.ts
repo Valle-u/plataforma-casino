@@ -147,6 +147,23 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
   });
 
   afterAll(async () => {
+    // ⚠️ Limpiar TAMBIÉN al final, no sólo en `beforeEach`.
+    //
+    // El `beforeEach` deja la casa limpia para el próximo test **de esta
+    // suite**, pero lo que escriba el último test queda puesto en la DB
+    // compartida para todas las que corran después. Y acá se escriben settings
+    // que cambian el comportamiento del producto: esta misma suite llega a
+    // dejar `fraud.suspected_threshold` en 100, y con ese valor un score de 70
+    // deja de ser sospechoso — el scan de fraude de `notifications.e2e.ts`
+    // devolvería 0 links y fallaría sin que se le pueda echar la culpa a nada
+    // suyo.
+    //
+    // Como el orden de las suites lo decide jest y varía, un test así falla de
+    // a ratos. Limpiar acá corta el problema de raíz.
+    //
+    // Va ANTES de `ctx.close()`: `deleteAllSettings` necesita `ctx.app`.
+    await deleteAllSettings(ctx);
+    await deleteAllFraudLinks();
     await ctx.close();
   });
 

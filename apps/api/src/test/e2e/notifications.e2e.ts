@@ -1601,13 +1601,26 @@ describe('Notifications (E2E)', () => {
             ],
           );
         }
-        // Emails similares (diff 1 char) → similar_email weight 40.
+        // Emails similares (distancia Levenshtein 1) → similar_email weight 40.
+        //
+        // ⚠️ La base se calcula UNA vez. Antes cada email llamaba a su propio
+        // `Date.now()`, y como entre los dos UPDATE hay un round-trip a la DB,
+        // bastaba con que corriera **1 ms** para que los timestamps difirieran
+        // y la distancia se fuera a 3 — arriba del umbral del scanner (2). Ahí
+        // `similar_email` no dispara, el score del par queda en 30 (solo
+        // shared_ip) contra un threshold de 70, y el scan devuelve
+        // `newSuspectedLinks: 0`.
+        //
+        // Por eso el test pasaba aislado (DB tibia, los dos UPDATE en el mismo
+        // milisegundo) y fallaba en la suite completa (más carga, el
+        // milisegundo corre). Era la única falla no determinista que quedaba.
+        const baseEmail = `fraudo${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
         await sqlConn.unsafe(`UPDATE users SET email = $1 WHERE id = $2`, [
-          `fraudo${Date.now()}@example.test`,
+          `${baseEmail}@example.test`,
           pA.id,
         ]);
         await sqlConn.unsafe(`UPDATE users SET email = $1 WHERE id = $2`, [
-          `fraudo${Date.now()}1@example.test`,
+          `${baseEmail}1@example.test`,
           pB.id,
         ]);
       } finally {
