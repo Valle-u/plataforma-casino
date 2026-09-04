@@ -521,16 +521,47 @@ bien y ya manda offsite. Mal negocio.
 si el VPS muere no se generan backups *nuevos*. Los viejos siguen en R2, que es
 lo que importa.
 
+**Historial verificado** (`gh run list --workflow=backup.yml`): **20 de 20
+corridas en verde**, todas disparadas por `schedule`. O sea que Railway estuvo
+respondiendo sin fallar hasta el último minuto — no es una instancia moribunda
+que se pueda ignorar, hay que darla de baja a propósito.
+
 **⚠️ Todavía abierto — dos cosas destructivas, sin hacer:**
 
 1. **Los objetos `YYYY/MM/DD/` siguen en el bucket.** Ya no crecen, pero siguen
-   ahí para que alguien apurado los agarre. Conviene borrarlos o moverlos a un
+   ahí para que alguien apurado los agarre. 4 corridas por día × 2 archivos desde
+   el 2026-08-20 dan **~130 objetos** — y el bucket tenía 131 en total, así que
+   **casi todo lo que hay bajo `YYYY/MM/DD/` es basura**. Los buenos son los de
+   Dokploy, bajo `casino-postgres-ribula/`. Conviene borrarlos o moverlos a un
    prefijo `_obsoleto/`.
 2. **Railway sigue prendido.** El dump de hoy salió bien (2,77 MB), o sea que esa
    Postgres está viva con la copia de la producción vieja adentro.
    `docs/23-migracion-vps.md` decía apagarla "cuando esté confirmado, dejar en
    standby unos días" — y ningún log registra que se haya hecho. Antes de darla
-   de baja, decidir si se guarda un dump final de `demo_casino`.
+   de baja, decidir si se guarda un dump final de `demo_casino`. Ojo: con el
+   workflow apagado, ese dump final **ya no sale solo** — hay que dispararlo a
+   mano (`workflow_dispatch`) antes de tocar Railway.
+
+### ⚠️ El cron de GitHub Actions llega tarde — hasta 5 horas
+
+Encontrado al revisar el historial de este workflow. El cron era `0 */6 * * *`
+(00/06/12/18 UTC) y las corridas reales caían así:
+
+| Cron | Real | Retraso |
+|---|---|---|
+| 00:00 UTC | ~03:24 | +3h24 |
+| 06:00 UTC | ~10:48 | +4h48 |
+| 12:00 UTC | ~15:56 | +3h56 |
+| 18:00 UTC | ~20:39 | +2h39 |
+
+GitHub encola el cron de los runners compartidos y lo despacha cuando puede; dos
+a cinco horas tarde es normal en horas pico. Esto costó un rato de diagnóstico:
+el archivo de las 15:55 no coincidía con ningún slot y parecía disparo manual.
+
+**Regla para el futuro:** un cron de GitHub Actions **no sirve para nada que
+dependa de correr a una hora**. Para backups da igual. Para cierres contables,
+cortes de comisión o cualquier cosa atada a un corte horario del negocio, ese
+retraso es un problema real — eso va en el host, no en Actions.
 
 ### Lo que sigue sin probarse
 

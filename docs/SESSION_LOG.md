@@ -15671,10 +15671,34 @@ guarda datos de producción vieja.
 2. **Dar de baja Railway.** Antes, decidir si se guarda un dump final de
    `demo_casino`.
 
-### Cabo suelto
+### Cabo suelto, ya resuelto: el cron de Actions llega hasta 5 horas tarde
 
-El archivo de hoy es de las **15:55 UTC** y el cron era 00/06/12/18 — no cierra.
-No se pudo mirar el historial de corridas porque **`gh` no está autenticado** en
-esta máquina (se reautenticó `git push`, que usa otro credential). Con
-`gh auth login && gh run list --workflow=backup.yml -L 20` se ve si eran
-programadas con retraso o disparos manuales. No cambia nada de lo de arriba.
+El archivo de hoy era de las **15:55 UTC** y el cron `0 */6 * * *` (00/06/12/18)
+no cerraba — parecía disparo manual. El historial dice que no: **20 de 20
+corridas en verde, todas `schedule`**, sólo que despachadas tardísimo.
+
+| Cron | Real | Retraso |
+|---|---|---|
+| 00:00 UTC | ~03:24 | +3h24 |
+| 06:00 UTC | ~10:48 | +4h48 |
+| 12:00 UTC | ~15:56 | +3h56 |
+| 18:00 UTC | ~20:39 | +2h39 |
+
+GitHub encola el cron de los runners compartidos y lo despacha cuando puede. Dos
+a cinco horas tarde es normal en horas pico.
+
+**Regla para el futuro (anotada también en el runbook):** un cron de GitHub
+Actions **no sirve para nada que dependa de correr a una hora**. Para backups da
+igual; para cierres contables o cortes de comisión, ese retraso es un problema
+real — eso va en el host, no en Actions.
+
+Dos cosas más que confirmó el historial:
+
+- **Railway respondió sin fallar hasta el último minuto.** No es una instancia
+  moribunda que se apague sola: hay que darla de baja a propósito.
+- **Volumen de basura en el bucket:** 4 corridas/día × 2 archivos desde el
+  2026-08-20 ≈ **130 objetos**, y el bucket tenía 131 en total. O sea que **casi
+  todo lo que hay bajo `YYYY/MM/DD/` no sirve**.
+
+Nota de shell: el usuario corre **PowerShell 5.1**, donde `A && B` es un error de
+parseo. Los comandos van de a uno, o `A; if ($?) { B }`.
