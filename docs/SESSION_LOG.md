@@ -15702,3 +15702,24 @@ Dos cosas más que confirmó el historial:
 
 Nota de shell: el usuario corre **PowerShell 5.1**, donde `A && B` es un error de
 parseo. Los comandos van de a uno, o `A; if ($?) { B }`.
+
+### Dump final de `demo_casino` — hecho (2026-09-04 18:07 UTC)
+
+Disparado a mano con `gh workflow run backup.yml` (run `33904179080`, exit 0),
+para tener la última copia de la producción vieja antes de dar de baja Railway:
+
+- `2026/09/04/tenant_demo_casino_20260904_1807.dump` — 2.903.555 B
+- `2026/09/04/control_20260904_1807.dump` — 15.841 B
+
+De paso confirmó el diagnóstico **desde adentro**: el script enumeró los tenants
+de ese `platform_control` y dumpeó **uno solo**, `demo_casino`. Ya no es
+inferencia, es el propio backup diciéndolo.
+
+**🚨 Trampa anotada en el runbook:** estos dos archivos cayeron en `2026/09/04/`,
+o sea **adentro del prefijo que hay que purgar**. Si se borra `YYYY/MM/DD/`
+entero se borra el dump final — justo lo que se guardó para poder apagar Railway
+tranquilo. Hay que moverlos antes a un prefijo propio (ej. `_final-railway/`).
+
+Con esto, **Railway ya no tiene nada esperando**: se puede dar de baja. Si
+alguna vez hiciera falta otro dump, hay que dispararlo a mano **mientras siga
+viva**.

@@ -526,6 +526,27 @@ corridas en verde**, todas disparadas por `schedule`. O sea que Railway estuvo
 respondiendo sin fallar hasta el último minuto — no es una instancia moribunda
 que se pueda ignorar, hay que darla de baja a propósito.
 
+#### 📦 Dump final de `demo_casino` — hecho el 2026-09-04 18:07 UTC
+
+Disparado a mano (`gh workflow run backup.yml`, run `33904179080`, exit 0) para
+tener una última copia de la producción vieja **antes de dar de baja Railway**:
+
+| Archivo | Tamaño |
+|---|---|
+| `2026/09/04/tenant_demo_casino_20260904_1807.dump` | 2.903.555 B (2,77 MB) |
+| `2026/09/04/control_20260904_1807.dump` | 15.841 B |
+
+De paso confirma el diagnóstico desde adentro: el script enumeró los tenants de
+ese `platform_control` y dumpeó **uno solo**, `demo_casino`.
+
+> ### 🚨 ESTOS DOS ARCHIVOS NO SE BORRAN
+>
+> Cayeron en `2026/09/04/`, o sea **dentro del prefijo que hay que purgar**. Si
+> se borra `YYYY/MM/DD/` entero, se borra también el dump final —
+> justo lo que se guardó para poder apagar Railway tranquilo.
+>
+> **Antes de purgar: moverlos a un prefijo propio** (ej. `_final-railway/`).
+
 **⚠️ Todavía abierto — dos cosas destructivas, sin hacer:**
 
 1. **Los objetos `YYYY/MM/DD/` siguen en el bucket.** Ya no crecen, pero siguen
@@ -533,14 +554,14 @@ que se pueda ignorar, hay que darla de baja a propósito.
    el 2026-08-20 dan **~130 objetos** — y el bucket tenía 131 en total, así que
    **casi todo lo que hay bajo `YYYY/MM/DD/` es basura**. Los buenos son los de
    Dokploy, bajo `casino-postgres-ribula/`. Conviene borrarlos o moverlos a un
-   prefijo `_obsoleto/`.
+   prefijo `_obsoleto/` — **salvo los dos `*_20260904_1807.dump` de arriba**.
 2. **Railway sigue prendido.** El dump de hoy salió bien (2,77 MB), o sea que esa
    Postgres está viva con la copia de la producción vieja adentro.
    `docs/23-migracion-vps.md` decía apagarla "cuando esté confirmado, dejar en
-   standby unos días" — y ningún log registra que se haya hecho. Antes de darla
-   de baja, decidir si se guarda un dump final de `demo_casino`. Ojo: con el
-   workflow apagado, ese dump final **ya no sale solo** — hay que dispararlo a
-   mano (`workflow_dispatch`) antes de tocar Railway.
+   standby unos días" — y ningún log registra que se haya hecho. **El dump final
+   ya está hecho** (arriba), así que no queda nada esperando: se puede dar de
+   baja. Con el workflow apagado, si hiciera falta otro hay que dispararlo a mano
+   (`workflow_dispatch`) **mientras Railway siga viva**.
 
 ### ⚠️ El cron de GitHub Actions llega tarde — hasta 5 horas
 
