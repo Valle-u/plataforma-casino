@@ -9859,3 +9859,92 @@ Las corridas de ese workflow llegaban **entre 2h39 y 4h48 tarde** respecto del
 cron. GitHub encola el cron de los runners compartidos. Para backups da igual;
 para un cierre contable o un corte de comisiones, no. **Eso va en el host, no en
 Actions.**
+
+---
+
+## 2026-09-04 (cont.) — Staging montado en Dokploy
+
+Implementada la decisión de la entrada anterior. **Staging y producción ahora
+corren el mismo software**: misma imagen, mismo Postgres, mismo Redis, mismo
+proxy. Se acabó la clase de bugs que sólo aparecía en prod porque staging
+buildeaba distinto.
+
+### Qué se creó
+
+Dokploy tiene **entornos** dentro de un proyecto, así que no hizo falta un
+proyecto aparte: `staging` (`ylHvTv-aGH_qIhvENgxIu`) es hermano de `production`
+dentro de `casino`.
+
+| Servicio | Contenedor |
+|---|---|
+| api | `casino-api-staging-ss8ssp` → `api-staging.miamihub.vip`, `ws-staging…` |
+| web | `casino-web-staging-3d2ikw` → `staging.miamihub.vip`, `admin-staging…` |
+| postgres | `casino-postgres-staging-7qarjo` (propio, volumen propio) |
+| redis | `casino-redis-staging-n61anc` (propio) |
+
+Más 4 registros A en Cloudflare (proxied, como los de prod) y 2 webhooks nuevos
+en GitHub. Todo por API; el panel no se tocó.
+
+### Postgres y Redis propios, no compartidos
+
+Se evaluó compartir el Postgres de prod con otro nombre de DB. **No.** El VPS es
+un KVM 4 con 16 GB, así que la RAM no era la restricción — y compartir instancia
+significa que una migración que traba tablas, o una prueba de carga en staging,
+le pega a producción por CPU, WAL y conexiones. El aislamiento vale más que los
+~100 MB que ahorraba.
+
+### Lo que NO se copió de prod, y por qué
+
+Copiar el env de producción tal cual hubiera sido lo rápido y lo peligroso:
+
+- **`JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` nuevos.** La separación más
+  importante de todas: un token emitido en staging **no puede valer en
+  producción**. Compartirlos convierte al entorno de pruebas en una puerta de
+  entrada a la plata real.
+- **`STORAGE_DRIVER=local`.** Con la config de prod, los comprobantes de prueba
+  irían al bucket `casino-uploads`, mezclados con los reales — que son documentos
+  financieros. En staging los archivos son efímeros y no salen del contenedor.
+- **Sin `TELEGRAM_*`.** Staging no despierta al dueño a las 3 AM. Si hay que
+  probar alertas, se agregan con otro `chat_id`.
+- **`AXIOM_DATASET=casino-api-staging`**, `SENTRY_ENVIRONMENT=staging`,
+  `LOG_LEVEL=debug`.
+
+### La rama `staging` estaba 213 commits atrás
+
+Y sin nada propio. Un staging que buildea código de hace tres semanas no prueba
+nada, así que se adelantó a `main` (fast-forward limpio, cero divergencia). Vale
+como recordatorio: **el entorno nuevo no sirve si la rama que lo alimenta está
+muerta.**
+
+### Detalles de la API de Dokploy que costaron tiempo
+
+- **`/api/openapi.json` da 404**, pero los endpoints de creación existen igual.
+- **Truco:** `POST` con `{}` devuelve un 400 con `zodError.fieldErrors` listando
+  exactamente los campos que faltan. Mucho más rápido que adivinar.
+- **`application.create` NO configura el repo.** Deja la app creada y muda; hay
+  que seguirla con `application.update` seteando `sourceType`, `customGitUrl`,
+  `customGitBranch`, `buildType`, `dockerfile` y `dockerContextPath`.
+- El campo de rama para source `git` es **`customGitBranch`**, no `branch`
+  (`branch` queda en `null` y es para los providers nativos).
+
+### Verificado, no asumido
+
+Los 4 contenedores `running`; `https://api-staging.miamihub.vip/health` responde
+`{"status":"ok","db":"connected","redis":"connected"}` con TLS válido; la web
+sirve `/play` en 200. O sea: **la app levantó, migró su DB sola
+(`MIGRATE_ON_BOOT=1`) y se conectó a sus propios Postgres y Redis.**
+
+### ⚠️ Queda pendiente
+
+1. **Rotar la contraseña de Redis de producción.** Al inspeccionar los env para
+   armar los de staging, quedó expuesta en texto plano en un log de trabajo. No
+   hay indicio de uso indebido y Redis no está publicado a internet, pero una
+   credencial que se vio se rota.
+2. **`JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` de producción son de 20
+   caracteres.** Es poco para firmar tokens: lo recomendado son ≥32 bytes de
+   entropía. Los de staging se generaron de 64. **Conviene rotar los de prod**
+   (invalida las sesiones abiertas, así que hacerlo en una ventana tranquila).
+3. **Crear el dataset `casino-api-staging` en Axiom**, si no staging no manda logs.
+4. **Decidir con qué datos arranca staging** — hoy el control está migrado pero
+   sin tenants. Ver `docs/24-entornos-deploy.md`. **No copiar prod tal cual**:
+   son datos reales de jugadores en un entorno con menos cuidados.

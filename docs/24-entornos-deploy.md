@@ -1,67 +1,82 @@
 # 24 · Entornos y deploy (staging + producción)
 
 > Dos entornos, dos ramas. **Staging** para probar, **producción** para los usuarios.
+> **Los dos viven en el mismo VPS con Dokploy** desde el 2026-09-04.
 > Ver también `docs/23-migracion-vps.md` (cómo se montó el VPS).
 
 ---
-
-> ### 🔄 Decidido el 2026-09-04: el staging se muda a Dokploy
->
-> **No se usan más Railway ni Vercel para probar.** El staging pasa al VPS, al
-> lado de producción. Motivo de fondo: hoy staging y prod **no corren el mismo
-> software** — Railway/Vercel ignoran los Dockerfiles y buildean a su manera,
-> el VPS buildea por Dockerfile. Probar en un runtime y publicar en otro deja
-> bugs invisibles hasta producción.
->
-> **Todavía no está montado.** Hasta que lo esté, lo de abajo describe la
-> realidad. Ver `docs/DEVLOG.md` (entrada 2026-09-04) para qué implica la mudanza.
 
 ## Los dos entornos
 
 | | **Staging (prueba)** | **Producción** |
 |---|---|---|
 | **Rama** | `staging` | `main` |
-| **Infra** | Railway (API) + Vercel (web) | **VPS Hostinger + Dokploy** |
-| **Deploy** | GitHub Actions (`.github/workflows/deploy.yml`) | **Dokploy** (autoDeploy via webhook) |
-| **Casino (web)** | `plataforma-casino-web-ur4.vercel.app` | **`miamihub.vip`** |
-| **Panel** | `admin.plataforma-casino-web-ur4.vercel.app` | **`admin.miamihub.vip`** |
-| **API** | `plataforma-casino-production.up.railway.app` | **`api.miamihub.vip`** |
-| **Migraciones** | automáticas (job `migrate` del Action) | **manuales** (ver abajo) |
+| **Infra** | **VPS + Dokploy**, entorno `staging` | **VPS + Dokploy**, entorno `production` |
+| **Deploy** | Dokploy (autoDeploy via webhook) | Dokploy (autoDeploy via webhook) |
+| **Casino (web)** | `staging.miamihub.vip` | `miamihub.vip` |
+| **Panel** | `admin-staging.miamihub.vip` | `admin.miamihub.vip` |
+| **API** | `api-staging.miamihub.vip` | `api.miamihub.vip` |
+| **WebSocket** | `ws-staging.miamihub.vip` | `ws.miamihub.vip` |
+| **Postgres** | `casino-postgres-staging-7qarjo` | `casino-postgres-ribula` |
+| **Redis** | `casino-redis-staging-n61anc` | `casino-redis-32f1iv` |
+| **Migraciones** | automáticas (`MIGRATE_ON_BOOT=1`) | automáticas (`MIGRATE_ON_BOOT=1`) |
+| **Backups** | ninguno (a propósito) | Dokploy → R2, `0 6 * * *` |
+
+> **Railway y Vercel salieron de escena** el 2026-09-04. El staging viejo corría en
+> otro runtime que producción (ignoraban los Dockerfiles), así que había una clase
+> entera de bugs que no podía aparecer hasta prod. Ahora los dos entornos usan la
+> **misma imagen, el mismo Postgres, el mismo Redis y el mismo proxy**.
+
+### Lo que staging NO comparte con producción
+
+Aislado **a propósito**, no por omisión:
+
+| | Por qué |
+|---|---|
+| **Postgres y Redis propios** | Contenedores y volúmenes separados. Una migración que traba tablas o una prueba de carga no puede tocar prod. |
+| **`JWT_ACCESS_SECRET` / `REFRESH` distintos** | Un token emitido en staging **no debe valer en producción**. Es la separación más importante de todas. |
+| **`STORAGE_DRIVER=local`** | Si apuntara a `casino-uploads`, los comprobantes de prueba se mezclarían con los reales (que son documentos financieros). En staging los archivos son efímeros. |
+| **Sin `TELEGRAM_*`** | Staging no despierta al dueño a las 3 AM. Si algún día hay que probar las alertas, se agregan con **otro** `chat_id`. |
+| **`AXIOM_DATASET=casino-api-staging`** | Para no ensuciar los logs de prod. ⚠️ **Falta crear ese dataset en Axiom**: hasta entonces staging no envía logs (no rompe nada, sólo no llegan). |
+| **`SENTRY_ENVIRONMENT=staging`** | Mismo DSN, pero los errores quedan separados. |
+| **`LOG_LEVEL=debug`** | En prod es `info`. |
 
 ---
 
 ## Flujo de trabajo
 
 ```
-  programás  →  push a `staging`  →  se deploya a Railway/Vercel  →  probás
-                                                                        │
-                                                              todo OK   ▼
-                        merge `staging` → `main`  →  se deploya al VPS (prod)
+  programás  →  push a `staging`  →  Dokploy deploya staging  →  probás
+                                                                     │
+                                                           todo OK   ▼
+                     merge `staging` → `main`  →  Dokploy deploya producción
 ```
 
-1. Trabajás y pusheás a **`staging`**. El Action buildea + migra + deploya a Railway/Vercel.
-2. Probás en el entorno de staging.
-3. Cuando está OK: **`git checkout main && git merge staging && git push`**. El push a `main` dispara los webhooks de Dokploy → el VPS rebuildeaa API + web.
-4. Si el merge incluye **cambios de schema (migraciones)**, correlas a mano en el VPS (ver abajo) — el autoDeploy NO corre migraciones.
+1. Trabajás y pusheás a **`staging`**. El webhook dispara el build del entorno staging.
+2. Probás en `staging.miamihub.vip` / `admin-staging.miamihub.vip`.
+3. Cuando está OK: **`git checkout main && git merge staging && git push`**.
+4. Las migraciones corren solas en los dos entornos (`MIGRATE_ON_BOOT=1`).
 
-> Ambas ramas tienen los Dockerfiles (los ignora Railway/Vercel, los usa el VPS). `main` es la fuente de verdad de producción.
+> **`ci.yml` corre en las dos ramas** (`main` y `staging`): lint, build, type-check
+> y la suite de tests con Postgres y Redis reales.
 
 ---
 
 ## Cómo deploya cada uno
 
-### Staging → Railway/Vercel (GitHub Actions)
-- `.github/workflows/deploy.yml` se dispara con **push a `staging`**.
-- Jobs: `ci` (build+type-check) → `migrate` (control + tenants contra la DB de Railway) → `deploy` (Railway GraphQL + Vercel deploy hook) → `healthcheck`.
-- Secrets/env: en Railway (API) y Vercel (web). Ver [[deploy-infra]].
+Los dos igual: **Dokploy autoDeploy**. Cada app tiene `autoDeploy: true`, un
+`refreshToken` propio y un webhook registrado en GitHub. **Dokploy filtra por
+rama** — compara la rama del payload con el `customGitBranch` de la app, así que
+un push a `staging` no toca producción y viceversa (los que no matchean quedan
+como "Branch Not Match" y se ignoran).
 
-### Producción → VPS (Dokploy autoDeploy)
-- Cada app en Dokploy tiene `autoDeploy: true` + una **URL de webhook** con su `refreshToken`. Dokploy chequea la rama del payload: solo deploya si el push es a **`main`** (un push a `staging` da "Branch Not Match" y se ignora).
-- **Webhooks (registrados en GitHub → Settings → Webhooks):**
-  - API: `http://147.93.32.111:3000/api/deploy/<API_REFRESH_TOKEN>`
-  - Web: `http://147.93.32.111:3000/api/deploy/<WEB_REFRESH_TOKEN>`
-  - (Los tokens se obtienen de cada app en Dokploy → settings de Git, campo "Webhook URL", o via API `application.one`.)
-- **Deploy manual** (sin push): en el panel de Dokploy, botón "Deploy" de cada app. O via API: `POST /api/application.deploy {applicationId}`.
+**4 webhooks** en GitHub → Settings → Webhooks, todos a
+`https://dokploy.miamihub.vip/api/deploy/<refreshToken>`: api-prod, web-prod,
+api-staging, web-staging. El `refreshToken` de cada uno sale de
+`application.one?applicationId=…`, campo `refreshToken`.
+
+**Deploy manual** (sin push): botón "Deploy" en el panel, o
+`POST /api/application.deploy {applicationId}`.
 
 ---
 
@@ -128,8 +143,15 @@ curl -s -H "x-api-key: $CASINO_DOKPLOY_TOKEN" \
 
 ### IDs del proyecto
 
-Proyecto `casino` = `H6XsenvgAOoSaDbruVFyW` · entorno `production` =
-`myIey9qLleUjGJbMacObN`.
+Proyecto `casino` = `H6XsenvgAOoSaDbruVFyW`.
+Entornos: `production` = `myIey9qLleUjGJbMacObN` · `staging` = `ylHvTv-aGH_qIhvENgxIu`.
+
+> **Los servicios cuelgan del ENTORNO, no del proyecto.** En
+> `project.one?projectId=…` hay que mirar `environments[].applications`,
+> `environments[].postgres`, etc. Buscarlos en la raíz del proyecto da vacío y
+> parece que no hay nada.
+
+**Producción** (`myIey9qLleUjGJbMacObN`):
 
 | Servicio | ID | `appName` (contenedor) |
 |---|---|---|
@@ -137,6 +159,37 @@ Proyecto `casino` = `H6XsenvgAOoSaDbruVFyW` · entorno `production` =
 | web | `nhixQ81wm-GcO1UOSeZom` | `casino-web-0rym78` |
 | postgres | `9x70ajiK4nG_IiJIznaLd` | `casino-postgres-ribula` |
 | redis | `Cb9em-JqPrDxOhJPZDJQd` | `casino-redis-32f1iv` |
+
+**Staging** (`ylHvTv-aGH_qIhvENgxIu`, creado 2026-09-04):
+
+| Servicio | ID | `appName` (contenedor) |
+|---|---|---|
+| api | `6_TpWKImdtRCCrewRL2mF` | `casino-api-staging-ss8ssp` |
+| web | `PdF0IrGKk-rEm-rGI8ghU` | `casino-web-staging-3d2ikw` |
+| postgres | `TuNmz8cDDJFc3-5hQ5jRo` | `casino-postgres-staging-7qarjo` |
+| redis | `v5TKmV0ZS-v5FoaT6fxLu` | `casino-redis-staging-n61anc` |
+
+### Crear servicios por API (verificado 2026-09-04)
+
+Todo el staging se armó por API. Los endpoints de creación existen aunque no
+figuren en ningún `openapi.json` (`/api/openapi.json` da 404).
+
+| Endpoint | Campos obligatorios |
+|---|---|
+| `environment.create` | `name`, `projectId` |
+| `postgres.create` | `name`, `databaseName`, `databaseUser`, `databasePassword`, `environmentId` |
+| `redis.create` | `name`, `databasePassword`, `environmentId` |
+| `application.create` | `name`, `environmentId` |
+| `application.update` | `applicationId` + los campos a cambiar |
+| `domain.create` | `host` (+ `applicationId`, `port`, `https`, `certificateType`) |
+
+**Truco para descubrir campos:** mandar `POST` con `{}`. El 400 devuelve un
+`zodError.fieldErrors` con exactamente lo que falta. Más rápido que adivinar.
+
+⚠️ **`application.create` no configura el repo.** Hay que seguirlo con un
+`application.update` que setee `sourceType: 'git'`, `customGitUrl`,
+`customGitBranch`, `buildType`, `dockerfile` y `dockerContextPath`. Sin eso la app
+queda creada pero sin nada que buildear.
 
 ### Los logs NO salen por la API REST
 
@@ -155,15 +208,39 @@ instalado en el repo. Mientras tanto, los logs se bajan desde el panel.
 
 ## Referencia rápida
 
-- **VPS**: IP `147.93.32.111`, Dokploy en `https://dokploy.miamihub.vip` (token en
-  env var `CASINO_DOKPLOY_TOKEN`, header `x-api-key` — ver arriba).
-- Apps buildean de **`main`** por Dockerfile (API: `Dockerfile` raíz; Web: `apps/web/Dockerfile`; context `.` los dos). Git source = HTTPS con `CASINO_GITHUB_TOKEN`.
-- **Secrets de prod (VPS)**: en Dokploy (env de cada app). Se reusaron los de Railway. `STORAGE_PUBLIC_BASE_URL` quedó fuera (re-agregar si falla el storage).
-- Más detalle e IDs en [[vps-migration-plan]] (memoria) y `docs/23-migracion-vps.md`.
+- **VPS**: Hostinger KVM 4 (4 vCPU, 16 GB RAM, ~200 GB NVMe), IP `147.93.32.111`.
+  Dokploy en `https://dokploy.miamihub.vip` (token en `CASINO_DOKPLOY_TOKEN`,
+  header `x-api-key`).
+- Prod buildea de **`main`**, staging de **`staging`**, las dos por Dockerfile
+  (API: `Dockerfile` raíz; Web: `apps/web/Dockerfile`; context `.`). Git source =
+  HTTPS con un PAT embebido en la URL del repo.
+- **Secrets**: en Dokploy, en el env de cada app. Dokploy es la fuente de verdad —
+  no hay copia de esas contraseñas en ningún otro lado.
+- **DNS**: Cloudflare, zona `miamihub.vip` (`c22276d0757c66b8c450c9af7ceeadfa`).
+  Todos los registros son `A → 147.93.32.111` **proxied** (nube naranja).
+- Más detalle en `docs/23-migracion-vps.md`.
 
 ---
 
-## Setup manual pendiente (una sola vez)
+## Pendientes
 
-1. **Agregar los 2 webhooks en GitHub** (el PAT no tiene permiso para crearlos por API): Repo → Settings → Webhooks → Add webhook, pegar cada URL de arriba, Content type = `application/json`, evento = `push`. Con eso, el auto-deploy a prod queda activo.
-2. Cuando el VPS esté confirmado como prod, **apagar Railway/Vercel** (o dejarlos como staging).
+1. **Crear el dataset `casino-api-staging` en Axiom.** Hasta entonces staging no
+   manda logs. No rompe nada, sólo no llegan.
+2. **Decidir con qué datos arranca staging.** Hoy el `platform_control` de staging
+   está **migrado pero vacío**: no hay ningún tenant. Ver más abajo.
+3. **Dar de baja Railway y Vercel**, y borrar los secrets huérfanos de GitHub
+   (`BACKUP_PG*`, `DATABASE_URL_CONTROL`). Ver `docs/runbooks/disaster-recovery.md`.
+
+### Con qué datos arranca staging
+
+La DB de staging existe y está migrada, pero **sin tenants**. Las opciones:
+
+| | Qué implica |
+|---|---|
+| **Tenant nuevo, vacío** | Lo más limpio y lo más seguro. Hay que crear el tenant y un usuario admin a mano. |
+| **Seed de datos falsos** | Cómodo para probar flujos completos. Hay que escribir el seed. |
+| **Copia de producción** | Lo más realista **y lo más peligroso**: mete datos reales de jugadores en un entorno con menos protecciones. Si se hace, hay que anonimizar. |
+
+⚠️ **No copiar producción tal cual.** Staging comparte el proxy y el host con
+prod, pero no sus cuidados; y datos de jugadores reales ahí adentro es un problema
+de privacidad, no de comodidad.

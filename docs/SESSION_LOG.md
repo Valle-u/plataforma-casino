@@ -15812,3 +15812,47 @@ no falla al pushear: falla en silencio y el workflow simplemente no corre.
    Railway/Vercel. **Un secret vivo apuntando a infra muerta es exactamente la
    trampa que causó todo esto.**
 3. **Montar el staging en Dokploy** (decisión del 2026-09-04, todavía sin hacer).
+
+---
+
+## Addendum 5 — Staging montado en Dokploy (2026-09-04)
+
+Ya está arriba y andando. Detalle técnico completo en `docs/DEVLOG.md`; acá lo
+que hace falta saber para retomar.
+
+**URLs:** `staging.miamihub.vip` (casino) · `admin-staging.miamihub.vip` (panel) ·
+`api-staging.miamihub.vip` · `ws-staging.miamihub.vip`.
+
+**Flujo:** push a `staging` → deploya staging. Merge a `main` → deploya prod.
+Dokploy filtra por rama, así que no se pisan. `ci.yml` corre en las dos.
+
+**Verificado, no asumido:** 4 contenedores running, `/health` devuelve
+`db: connected, redis: connected` con TLS válido, la web sirve `/play` en 200. La
+app levantó, migró su DB sola y se conectó a sus propios Postgres y Redis.
+
+**La rama `staging` estaba 213 commits atrás** y sin nada propio. Se adelantó a
+`main`. Un staging que buildea código de hace tres semanas no prueba nada.
+
+### 🚨 Dos cosas de seguridad, las dos de PRODUCCIÓN
+
+1. **Rotar la contraseña de Redis de prod.** Al inspeccionar los env para armar
+   los de staging, la enmascaré mal y **quedó en texto plano en un log de
+   trabajo**. Redis no está publicado a internet y no hay indicio de uso
+   indebido, pero una credencial que se vio se rota. Es mi error, no un problema
+   preexistente.
+2. **`JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` de prod son de 20 caracteres.**
+   Esto sí es preexistente y lo encontré de paso. Es poco para firmar tokens
+   (recomendado: ≥32 bytes de entropía). Los de staging se generaron de 64.
+   Rotarlos invalida las sesiones abiertas, así que conviene una ventana tranquila.
+
+### Lo que sigue abierto
+
+1. **Con qué datos arranca staging.** El control está migrado pero **sin
+   tenants**. Opciones y riesgos en `docs/24-entornos-deploy.md`. **No copiar
+   producción tal cual**: son datos reales de jugadores.
+2. **Crear el dataset `casino-api-staging` en Axiom** (sin eso, staging no manda
+   logs; no rompe nada).
+3. **Dar de baja Railway y Vercel** + borrar los secrets huérfanos de GitHub.
+4. **`notifications › fraud_link_suspected`** — sigue siendo el único test que
+   falla en la suite completa (pasa aislado).
+5. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.
