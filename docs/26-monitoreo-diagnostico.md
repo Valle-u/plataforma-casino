@@ -121,17 +121,53 @@ nada avisara, sobre el camino de la plata.
 Probablemente se dejó afuera porque los tests necesitan Postgres. GitHub Actions
 soporta contenedores de servicio: es un problema resuelto.
 
-### 4.5 No hay dónde reproducir
+### 4.5 No hay dónde reproducir — ✅ **RESUELTO el 2026-09-04**
 
-`docs/24-entornos-deploy.md` dice *"Dos entornos, dos ramas"*, pero **Dokploy
-tiene un solo proyecto (`casino`) con un solo entorno (`production`)**,
-verificado por su API el 2026-09-03. Existe la rama `staging` en git, pero nada
-la despliega.
+Decía que Dokploy tenía un solo entorno (`production`) y que la rama `staging`
+no la desplegaba nada, así que **el único lugar donde reproducir un bug era
+producción**.
 
-Para diagnosticar, eso significa que **el único lugar donde reproducir un bug es
-producción**. Y para prevenir, que cualquier push a `main` va directo al casino
-en vivo: `autoDeploy: true` en las dos apps, incluso para cambios que sólo tocan
-`docs/`.
+Ya no: hay un entorno `staging` completo en Dokploy, con su propio Postgres y
+Redis, en `staging.miamihub.vip`. Detalle en `docs/24-entornos-deploy.md`.
+
+> **⚠️ Lo que NO se resolvió: cualquier push a `main` reconstruye y reinicia
+> producción**, incluso si sólo toca `docs/`. Verificado el 2026-09-04: 11
+> deploys de prod en un día, varios por commits de documentación — cada uno
+> reinicia el contenedor de la API.
+>
+> Ahora que existe staging, el flujo correcto es trabajar ahí y **mergear a
+> `main` a propósito**, no pushear suelto. Si el reinicio por cambios de docs
+> molesta, se puede filtrar por `paths` — pero eso es config de Dokploy, no del
+> repo.
+
+---
+
+### 4.6 El disco se llena solo, y nadie lo limpiaba ⚠️ (2026-09-04)
+
+**Lo que pasó:** el cron de host-health avisó *"disco 80%, quedan 18,7 GB"*. El
+susto inicial fue "¿ya tenemos problemas de almacenamiento sin haber abierto?".
+
+**No era eso.** Los datos de la plataforma son diminutos — el backup comprimido
+de toda la producción pesa **1,4 MB**. Lo que llenaba el disco eran **imágenes y
+caché de build de Docker**: 26 builds ese día (11 de prod-api, 11 de prod-web, 2
+y 2 de staging), y Docker conserva cada imagen anterior más sus capas de caché.
+Había **18 contenedores en el servidor y sólo 8 vivos**; los otros 10 eran
+cadáveres de deploys viejos.
+
+**La lección para diagnosticar:** el disco crece con la cantidad de **deploys**,
+no con la de jugadores. Una alerta de disco no dice nada sobre la capacidad de
+aguantar tráfico. Pero sí es peligrosa igual, y por lo que dice el encabezado del
+propio cron: **si el disco se llena, Postgres deja de escribir.**
+
+**El arreglo:** se activó la **limpieza automática de Docker** de Dokploy
+(`settings.updateDockerCleanup {enableDockerCleanup:true}`, respondió `true`).
+Limpiar a mano no arregla nada: sin la limpieza programada, cada deploy vuelve a
+dejar basura.
+
+> **⚠️ Verificar el tamaño real del disco.** Si a 80% quedaban 18,7 GB libres, el
+> total da **~93,5 GB**. Pero `docs/23-migracion-vps.md` dice que el VPS es un
+> KVM 4 con **~200 GB NVMe**. Uno de los dos datos está mal, y cambia todo el
+> cálculo de margen. Confirmar con `df -h` en el host.
 
 ---
 

@@ -15856,3 +15856,50 @@ app levantó, migró su DB sola y se conectó a sus propios Postgres y Redis.
 4. **`notifications › fraud_link_suspected`** — sigue siendo el único test que
    falla en la suite completa (pasa aislado).
 5. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.
+
+---
+
+## Addendum 6 — Alerta de disco al 80% (2026-09-04)
+
+Llegó el aviso *"disco 80%, quedan 18,7 GB"* diez minutos después de montar el
+staging. **No eran datos de la plataforma: era basura de Docker.**
+
+| | |
+|---|---|
+| Backup comprimido de TODA la producción | **1,4 MB** |
+| Builds ese día | **26** |
+
+Docker conserva cada imagen anterior más su caché. Había **18 contenedores y
+sólo 8 vivos**. El disco crece con los **deploys**, no con los jugadores — la
+alerta no dice nada sobre aguantar tráfico. Pero es peligrosa igual: **si el
+disco se llena, Postgres deja de escribir**, que es para lo que se escribió ese
+cron.
+
+### 🔴 Error mío, anotado para que no se repita
+
+Probé los endpoints de limpieza **mandándoles `POST {}`**, y para las rutas
+`clean*` eso no es una prueba: **es ejecutarlas**. Corrieron las seis. El
+resultado fue el deseado (18 → 8 contenedores, los 8 corriendo, los 4 servicios
+verificados sanos), pero no fue una decisión, fue un accidente.
+
+**Regla:** `POST {}` sólo sirve para descubrir el esquema de endpoints que
+**requieren** argumentos. Y `GET` no sirve para saber si una ruta existe: acá una
+ruta POST-only devuelve 404 por GET, así que el 404 no distingue "no existe" de
+"no es GET".
+
+### Arreglado
+
+Activada la limpieza automática de Docker
+(`settings.updateDockerCleanup {"enableDockerCleanup":true}` → `true`). Limpiar a
+mano no arregla nada; sin la programada, cada deploy vuelve a ensuciar.
+
+⚠️ **No se pudo leer el flag de vuelta por API.** Confirmar el switch en el panel
+de Dokploy (Settings → Server).
+
+### Dos cosas que aparecieron de paso
+
+1. **El disco parece de ~93 GB, no de 200.** 18,7 GB libres al 80% dan ~93,5 GB
+   totales, pero `docs/23` dice KVM 4 con ~200 GB NVMe. Confirmar con `df -h`.
+2. **Cualquier push a `main` reconstruye y reinicia producción**, aunque sólo
+   toque `docs/`. Se vio en vivo. Ahora que hay staging, trabajar ahí y mergear a
+   `main` a propósito.

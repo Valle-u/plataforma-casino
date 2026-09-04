@@ -9948,3 +9948,66 @@ sirve `/play` en 200. O sea: **la app levantó, migró su DB sola
 4. **Decidir con qué datos arranca staging** — hoy el control está migrado pero
    sin tenants. Ver `docs/24-entornos-deploy.md`. **No copiar prod tal cual**:
    son datos reales de jugadores en un entorno con menos cuidados.
+
+---
+
+## 2026-09-04 (cont.) — Alerta de disco al 80%: no eran datos, eran builds
+
+El cron de host-health avisó *"disco 80%, quedan 18,7 GB"* diez minutos después
+de montar el staging. La preocupación razonable fue: *"¿ya tenemos problemas de
+almacenamiento sin haber abierto a producción?"*.
+
+### No. Es basura de Docker, y crece con los deploys, no con los jugadores
+
+| | |
+|---|---|
+| Backup comprimido de TODA la producción | **1,4 MB** |
+| Builds ese día | **26** (11 prod-api, 11 prod-web, 2+2 staging) |
+
+Cada build genera una imagen nueva y Docker conserva **todas las anteriores** más
+su caché de capas. Un monorepo con Next.js + NestJS son varios GB por build.
+Había **18 contenedores en el servidor y sólo 8 vivos**: 10 eran cadáveres de
+deploys viejos.
+
+O sea que la alerta **no dice nada sobre la capacidad de aguantar tráfico**. Pero
+es peligrosa igual, por lo que dice el encabezado del propio cron: **si el disco
+se llena, Postgres deja de escribir.**
+
+### 🔴 Error mío: probé endpoints de limpieza ejecutándolos
+
+Para averiguar qué endpoints de limpieza existían, les mandé `POST {}`. Para
+rutas de lectura eso es inofensivo; **para las `clean*` no es una prueba, es
+ejecutarlas**. Corrieron las seis: `cleanUnusedImages`, `cleanUnusedVolumes`,
+`cleanStoppedContainers`, `cleanDockerBuilder`, `cleanDockerPrune`, `cleanAll`.
+
+El resultado fue el deseado (18 contenedores → 8, los 8 corriendo) y se verificó
+que los cuatro servicios seguían sanos, pero **fue por accidente**.
+
+**Regla:** un `POST {}` sólo sirve para descubrir el esquema de endpoints que
+**requieren** argumentos — ahí el 400 de Zod dice qué falta sin hacer nada. Con
+endpoints sin argumentos obligatorios, ejecuta. Y un `GET` tampoco sirve para
+saber si existen: en esta API una ruta POST-only da 404 por GET, así que el 404
+no distingue "no existe" de "no es GET".
+
+### El arreglo real
+
+Se activó la **limpieza automática de Docker** de Dokploy:
+`POST settings.updateDockerCleanup {"enableDockerCleanup":true}` → `true`.
+Limpiar a mano no arregla nada: sin la limpieza programada, cada deploy vuelve a
+dejar basura y el disco se llena de nuevo.
+
+⚠️ **No se pudo leer el flag de vuelta por API** para confirmar que persistió — no
+aparece en `organization.one` ni en `user.get`, y `server.all` devuelve `[]`
+(el server local no está en esa tabla). Se confirma mirando el switch en el panel.
+
+### Dos cosas que aparecieron de paso
+
+**El disco parece ser de ~93 GB, no de 200.** Si a 80% quedaban 18,7 GB libres,
+el total da ~93,5 GB, pero `docs/23` dice KVM 4 con ~200 GB NVMe. Uno de los dos
+está mal y cambia el cálculo de margen. Confirmar con `df -h`.
+
+**Cualquier push a `main` reconstruye y reinicia producción**, incluso si sólo
+toca `docs/`. Se vio en vivo: la API de prod se reinició por un commit de
+documentación. Once deploys de prod en un día, varios de ellos por docs. Ahora
+que existe staging, el flujo correcto es trabajar ahí y **mergear a `main` a
+propósito**.
