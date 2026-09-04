@@ -15949,3 +15949,58 @@ mensaje de error actual empuja a hacer lo inseguro.
 GitHub quedaron sin uso** — el único workflow activo (`ci.yml`) sólo referencia
 `TURBO_TOKEN` y `TURBO_TEAM`, y **ninguna de las dos existe** (el caché remoto de
 Turbo nunca se configuró; los workflows corren igual). Falta borrarlos.
+
+---
+
+## Addendum 8 — `db:seed:plans` en producción de verdad (2026-09-04)
+
+Probado en staging después de deployar. Salida:
+
+```
+[seed-plans] insertados: 0 de 2.
+[seed-plans] (ya existían todos — no se tocó nada)
+  - basic   Plan Basico   comisión 15.00%  fee 0.00
+  - pro     Plan Pro      comisión 10.00%  fee 500.00
+```
+
+O sea: **corre e es idempotente de verdad**, no sólo en teoría. Con eso un
+entorno nuevo se arranca sin tocar `db:seed:control`.
+
+Además se le puso a `seed-control` un seguro que **sólo lo deja correr contra
+localhost** (`SEED_CONTROL_ALLOW_REMOTE=1` para forzarlo). Los tres casos
+verificados en local: rechaza un host remoto **antes de conectarse**, deja pasar
+localhost, y con el override avisa y sigue.
+
+### Detalle cosmético, sin corregir
+
+Los planes de staging dicen `Plan Basico` **sin tilde**, porque se insertaron a
+mano con SQL (se sacó la tilde para evitar problemas de codificación al pegar).
+El script canónico pone `Plan Básico`. Como usa `ON CONFLICT DO NOTHING`,
+re-correrlo **no lo corrige**. No afecta comisiones ni nada funcional.
+
+### ⏳ Dokploy buildea de a UNA app por vez
+
+Al principio pareció que el webhook de la API de staging había fallado: la web
+deployó y la API no. **No era eso.** Las dos entregas llegaron con **200 en el
+mismo segundo** (verificado en GitHub) — la API estaba **en cola** y arrancó
+cuatro minutos después, al terminar la web.
+
+**Un push que toca las dos apps tarda la suma de los dos builds.** Antes de
+declarar roto un webhook, mirar Recent Deliveries.
+
+### Secrets de GitHub: los 13, borrados
+
+`gh secret list` devuelve vacío. Ninguno estaba en uso: el único workflow activo
+(`ci.yml`) referencia `TURBO_TOKEN` y `TURBO_TEAM`, y **ninguna de las dos
+existía** — el caché remoto de Turbo nunca se configuró y los builds corren igual.
+
+### Lo que queda abierto
+
+1. **`docs/23-migracion-vps.md` dice ~200 GB de disco; son 95,82 GB.** Lo confirma
+   el banner del propio servidor.
+2. **Rotar la contraseña de Redis de prod** (la expuse en un log, error mío) y
+   **los JWT secrets de prod**, que son de 20 caracteres.
+3. **Cambiar la contraseña del admin de staging**, que quedó en el chat.
+4. **`notifications › fraud_link_suspected`** — el único test que falla en la
+   suite completa (pasa aislado).
+5. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.

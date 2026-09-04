@@ -78,6 +78,18 @@ api-staging, web-staging. El `refreshToken` de cada uno sale de
 **Deploy manual** (sin push): botón "Deploy" en el panel, o
 `POST /api/application.deploy {applicationId}`.
 
+### ⏳ Dokploy buildea de a UNA app por vez
+
+Verificado el 2026-09-04: un push a `staging` disparó los dos webhooks (las dos
+entregas con **200 en el mismo segundo**, chequeado en GitHub), pero la web
+arrancó a las 19:46 y **la API recién a las 19:50**, cuando la otra terminó.
+
+> **Un push que toca las dos apps tarda la SUMA de los dos builds, no el más
+> largo.** Si después de pushear ves una app todavía con la versión vieja,
+> esperá antes de asumir que se rompió el webhook — probablemente está en cola.
+> Para descartarlo de verdad, mirar las entregas en GitHub → Settings →
+> Webhooks → Recent Deliveries, o `gh api repos/OWNER/REPO/hooks/ID/deliveries`.
+
 ---
 
 ## Migraciones en producción (VPS)
