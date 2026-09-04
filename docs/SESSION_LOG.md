@@ -15903,3 +15903,49 @@ de Dokploy (Settings → Server).
 2. **Cualquier push a `main` reconstruye y reinicia producción**, aunque sólo
    toque `docs/`. Se vio en vivo. Ahora que hay staging, trabajar ahí y mergear a
    `main` a propósito.
+
+---
+
+## Addendum 7 — Staging con datos y funcionando de punta a punta (2026-09-04)
+
+Sembrado el tenant y **verificada la cadena completa**: dominio → tenant → DB
+propia → login del admin (emite token). Las cuatro URLs responden 200.
+
+| | |
+|---|---|
+| Tenant | `staging`, DB `tenant_staging` migrada |
+| Dominios | `staging.miamihub.vip` + `admin-staging.miamihub.vip` |
+| Admin | `admin` — login probado contra la API |
+
+**El aislamiento quedó demostrado, no supuesto:** pedirle a la API de staging el
+host de producción (`miamihub.vip`) devuelve **404 "no se encontró tenant"**. Su
+control DB no conoce el tenant de prod.
+
+### ⚠️ Casi se corre `db:seed:control` en un servidor público
+
+El seed del piloto falla con *"Plan basic no existe"* y **sugiere correr
+`db:seed:control`**. Seguir esa sugerencia habría creado, en un entorno expuesto
+a internet, un **super-admin de plataforma con credenciales hardcodeadas en el
+repo** (`superadmin@plataforma-casino.local` / `dev-superadmin-2026`), más un
+tenant `demo-casino` de más.
+
+Se insertaron **sólo los dos planes** con un INSERT directo. **Hueco del repo,
+sin resolver:** hace falta un `db:seed:plans` que no arrastre datos de dev — el
+mensaje de error actual empuja a hacer lo inseguro.
+
+### Tres cosas menores confirmadas
+
+1. **El disco es de ~96 GB, no de ~200.** Lo dice el banner del propio servidor:
+   *"Usage of /: 14.1% of 95.82GB"*. Confirma que la limpieza funcionó (venía de
+   80%) y que **`docs/23-migracion-vps.md` tiene mal la especificación del VPS**.
+2. Los `WARNING: there is already a transaction in progress` del migrate son
+   ruido conocido del runner de Drizzle, no un fallo.
+3. Al pegar heredocs (`<<'SQL'`) en una terminal, si no entra el salto de línea
+   final bash queda esperando. Para pegar conviene `psql -c "..."` en una línea.
+
+### Estado de la limpieza de Railway
+
+**Railway y Vercel dados de baja por el dueño.** Con eso, **los 13 secrets de
+GitHub quedaron sin uso** — el único workflow activo (`ci.yml`) sólo referencia
+`TURBO_TOKEN` y `TURBO_TEAM`, y **ninguna de las dos existe** (el caché remoto de
+Turbo nunca se configuró; los workflows corren igual). Falta borrarlos.

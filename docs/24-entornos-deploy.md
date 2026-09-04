@@ -272,31 +272,43 @@ instalado en el repo. Mientras tanto, los logs se bajan desde el panel.
 3. **Dar de baja Railway y Vercel**, y borrar los secrets huérfanos de GitHub
    (`BACKUP_PG*`, `DATABASE_URL_CONTROL`). Ver `docs/runbooks/disaster-recovery.md`.
 
-### Con qué datos arranca staging
+### ✅ Con qué datos arranca staging — HECHO el 2026-09-04
 
-La DB de staging existe y está migrada, pero **sin tenants**. Se decidió sembrar
-un **tenant nuevo y vacío** con `db:seed:pilot` (crea tenant + admin, nada más:
-ni métodos de pago, ni bonos, ni saldos falsos).
+Tenant **nuevo y vacío**, sembrado con `db:seed:pilot`. **No es copia de
+producción**: eso sería lo más realista y lo más peligroso, datos reales de
+jugadores en un entorno con menos protecciones.
 
-**No se copia producción.** Es lo más realista y lo más peligroso: son datos
-reales de jugadores en un entorno con menos protecciones. Si algún día hace
-falta, hay que anonimizar primero.
+| | |
+|---|---|
+| Tenant | `staging` (id `01a06de9-f78d-716e-82c9-78502f3cbd28`) |
+| DB | `tenant_staging`, migrada |
+| Dominios | `staging.miamihub.vip` + `admin-staging.miamihub.vip` |
+| Admin | `admin` — login verificado, emite token |
 
-El comando, desde una terminal en el VPS (elegir una contraseña propia):
+**Aislamiento verificado:** pedirle a la API de staging el host de producción
+(`miamihub.vip`) devuelve **404 "no se encontró tenant"**. Su control DB no
+conoce el tenant de prod, que es exactamente lo que se busca.
+
+#### ⚠️ NO correr `db:seed:control` en un entorno público
+
+El seed del piloto falla con *"Plan basic no existe"* y sugiere correr
+`db:seed:control`. **No hacerlo en staging ni en prod:** ese script crea un
+super-admin de plataforma con credenciales **hardcodeadas en el repo**
+(`superadmin@plataforma-casino.local` / `dev-superadmin-2026`) más un tenant
+`demo-casino` de más. El propio script avisa que es sólo para local/dev.
+
+Lo único que falta de verdad son los dos planes. Insertarlos solos:
 
 ```bash
-docker exec -it $(docker ps -q -f name=casino-api-staging) sh -c 'cd /app && pnpm --filter @casino/db db:seed:pilot -- --slug=staging --name=Staging --host=staging.miamihub.vip --admin-user=admin --admin-email=admin@staging.miamihub.vip --admin-pass=PONER_UNA'
+docker exec -i $(docker ps -q -f name=casino-postgres-staging) psql -U postgres -d platform_control -c "INSERT INTO tenant_plans (id, code, name, commission_pct, monthly_fee, features) VALUES (gen_random_uuid(), 'basic', 'Plan Basico', 0.1500, 0, '{\"max_socios\": 10}'), (gen_random_uuid(), 'pro', 'Plan Pro', 0.1000, 500, '{\"max_socios\": 100}') ON CONFLICT (code) DO NOTHING;"
 ```
 
-Es idempotente: si ya existe, refresca los datos y re-setea el password.
+> **Hueco del repo, sin resolver:** que un entorno nuevo no pueda arrancar sin
+> correr un seed de desarrollo con credenciales hardcodeadas invita al error.
+> Haría falta un `db:seed:plans` que inserte sólo los planes.
 
-Después hay que agregar el dominio del panel, porque el seed inserta uno solo:
+#### Al pegar comandos con heredoc
 
-```bash
-docker exec -i $(docker ps -q -f name=casino-postgres-staging) psql -U postgres -d platform_control -c "INSERT INTO tenant_domains (id, tenant_id, domain, is_primary, verified_at) SELECT gen_random_uuid(), id, 'admin-staging.miamihub.vip', false, now() FROM tenants WHERE slug='staging' ON CONFLICT (domain) DO NOTHING;"
-```
-
-> Ojo con dos cosas del schema de `tenant_domains`, que es fácil errarle:
-> **`id` no tiene default en la DB** (Drizzle lo genera del lado JS), así que hay
-> que pasarlo explícito; y **la verificación es `verified_at` (timestamp), no un
-> booleano `verified`**.
+Los `<<'SQL'` se cuelgan si al pegar no entra el salto de línea final: bash
+espera una línea que diga exactamente `SQL`. Para pegar, conviene la versión de
+una sola línea con `psql -c "..."`.
