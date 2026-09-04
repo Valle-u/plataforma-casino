@@ -16043,10 +16043,11 @@ lee igual que uno que describe la realidad. **Verificar antes de confiar.**
 
 ### ⚠️ Lo que queda abierto
 
-1. **`notifications › fraud_link_suspected`** — falla de forma **no
-   determinista** (contaminación cruzada): rojo en `682bb91`, verde en
-   `5509994`, sin cambios de por medio. Mientras siga así, cada merge obliga a
-   comparar contra `main` para descartar regresión. Es lo más molesto que queda.
+1. ~~`notifications › fraud_link_suspected`~~ — **✅ ARREGLADO** más tarde ese
+   mismo día. No era contaminación cruzada como se creía acá: era una **carrera
+   contra el reloj dentro del propio test** (dos `Date.now()` separados por un
+   round-trip a la DB). Suite completa **77/77, 951/951 en verde**, el primer
+   verde completo. Detalle en el DEVLOG.
 2. **Turnstile no se puede probar en staging** — el sitekey está atado a los
    dominios de producción. Falta crear uno para los de staging.
 3. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.
