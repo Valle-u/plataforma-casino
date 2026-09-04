@@ -433,3 +433,76 @@ Cuando algo falla, **antes de tocar nada**:
 7. [ ] Procedimiento elegido (ver escenarios arriba).
 8. [ ] Smoke test post-recovery.
 9. [ ] Post-mortem escrito en `docs/SESSION_LOG.md` (mismo día).
+
+---
+
+## ✅ Restauración probada — 2026-09-04
+
+**Primera restauración real desde que existen los backups.** Antes nunca se había
+probado ninguno, y un backup no probado no es un backup.
+
+### Resultado
+
+Se restauró el backup de producción del **2026-09-04 06:00 UTC** en bases
+temporales locales (Postgres 18.6, las mismas versiones):
+
+| | |
+|---|---|
+| `control` | 5 tablas · 1 tenant (`miamihub`, active) |
+| `tenant_miamihub` | 67 tablas · 18 users · 2.743 wallet_tx · 1.884 rondas · 572 audit |
+| `pg_restore` | exit 0, **sin errores ni warnings** |
+| **Invariante del ledger** | ✅ **todas las wallets cuadran con su último `balance_after`** |
+| Supply total | 286.128,67 fichas |
+| Último movimiento | 2026-09-03 17:24 AR |
+
+Lo importante no es que **cargue** sino que sea **consistente**: se verificó el
+invariante, no sólo el conteo de filas.
+
+### ⚠️ Tres cosas que este doc decía mal
+
+**1. El backup que corre NO es `backup-all.sh`.** Son los **backups nativos de
+Dokploy**, configurados sobre el servicio `casino-postgres-ribula`:
+
+| Base | Prefijo | Schedule | Retención |
+|---|---|---|---|
+| `platform_control` | `control/` | `0 6 * * *` | 14 |
+| `tenant_miamihub` | `tenant_miamihub/` | `0 6 * * *` | 14 |
+
+Este runbook describía el script con cron a las 03:00 y retención 30. Eso no es
+lo que está corriendo.
+
+**2. ⚠️ Los archivos dicen `.sql.gz` pero NO son SQL.** Adentro son formato
+**custom de `pg_dump`** (empiezan con `PGDMP`). Se restauran con **`pg_restore`**,
+no con `psql`. Descubrirlo en medio de una caída cuesta minutos que no se tienen:
+
+```bash
+# Bajar de R2 (bucket casino-backups), descomprimir y restaurar:
+gunzip -k <archivo>.sql.gz
+createdb -h <host> -U postgres <db_destino>
+pg_restore -h <host> -U postgres -d <db_destino> --no-owner --no-privileges <archivo>.sql
+```
+
+**3. ⚠️ Hay un SEGUNDO juego de backups, y no cubre producción.** En el mismo
+bucket, bajo `YYYY/MM/DD/`, aparecen dumps con el formato de nombre de
+`backup-all.sh` — pero de **`tenant_demo_casino`**, no de `tenant_miamihub`:
+
+```
+2026/09/04/tenant_demo_casino_20260904_1555.dump   2.77 MB
+2026/09/04/control_20260904_1555.dump              0.02 MB
+```
+
+El control de producción tiene **un solo tenant, `miamihub`** (verificado en el
+backup restaurado), así que ese script **no está corriendo contra producción** —
+sale de otro lado con otra base.
+
+**Son más frecuentes y más grandes que los buenos**, así que a simple vista dan
+una sensación de cobertura que es falsa. Hay que averiguar de dónde salen y
+apagarlos o corregirlos: en una emergencia, agarrar el archivo equivocado es
+peor que no tener nada.
+
+### Lo que sigue sin probarse
+
+- **Restaurar sobre producción** (el swap real). Sólo se probó restaurar a una DB
+  temporal, que es el paso 4 del procedimiento de arriba.
+- **El backup de R2/uploads** (comprobantes, imágenes): sólo se respaldan las
+  bases de datos.
