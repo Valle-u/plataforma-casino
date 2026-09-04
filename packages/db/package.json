@@ -37,6 +37,7 @@
     "db:migrate:control": "drizzle-kit migrate --config=drizzle.control.config.ts",
     "db:studio:control": "drizzle-kit studio --config=drizzle.control.config.ts",
     "db:seed:control": "tsx src/scripts/seed-control.ts",
+    "db:seed:plans": "tsx src/scripts/seed-plans.ts",
     "db:gen:tenant": "drizzle-kit generate --config=drizzle.tenant.config.ts",
     "db:studio:tenant": "drizzle-kit studio --config=drizzle.tenant.config.ts",
     "db:migrate:tenants": "tsx src/scripts/migrate-existing-tenants.ts",

@@ -46,11 +46,50 @@ const DEMO_TENANT_ADMIN_PASSWORD = 'demo-admin-2026';
 const DEMO_TENANT_CASHIER_USERNAME = 'cajero1';
 const DEMO_TENANT_CASHIER_PASSWORD = 'cajero-2026';
 
+/**
+ * Seguro anti-pie-en-el-pie.
+ *
+ * Este script crea un super-admin de plataforma con credenciales **escritas en
+ * el repo**. En una máquina local es cómodo; en un servidor expuesto a internet
+ * es un agujero: cualquiera que lea el repo tiene las llaves.
+ *
+ * El 2026-09-04 estuvo a punto de correrse en staging, porque
+ * `seed-pilot-tenant` lo sugería en un mensaje de error. Ese mensaje ya apunta
+ * a `db:seed:plans`, que es lo que hace falta de verdad; esto es la segunda
+ * barrera.
+ *
+ * Sólo deja pasar conexiones locales. Para forzarlo (a sabiendas):
+ * `SEED_CONTROL_ALLOW_REMOTE=1`.
+ */
+function assertEsLocal(url: string): void {
+  if (process.env.SEED_CONTROL_ALLOW_REMOTE === '1') {
+    console.warn('⚠️  SEED_CONTROL_ALLOW_REMOTE=1 — corriendo contra una DB remota a propósito.');
+    return;
+  }
+
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    throw new Error('DATABASE_URL_CONTROL no es una URL válida.');
+  }
+
+  const locales = ['localhost', '127.0.0.1', '::1', 'host.docker.internal'];
+  if (locales.includes(host)) return;
+
+  throw new Error(
+    `seed-control NO corre contra '${host}': crea un super-admin con ` +
+      'credenciales hardcodeadas en el repo y un tenant demo. En staging o producción usá `db:seed:plans`, que inserta sólo los planes. ' +
+      'Si de verdad querés esto: SEED_CONTROL_ALLOW_REMOTE=1.',
+  );
+}
+
 async function seed(): Promise<void> {
   const url = process.env.DATABASE_URL_CONTROL;
   if (!url) {
     throw new Error('DATABASE_URL_CONTROL no está definido.');
   }
+  assertEsLocal(url);
 
   console.log('🌱 Conectando a control DB...');
   const db = createControlDb(url);

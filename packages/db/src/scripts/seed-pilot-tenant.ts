@@ -149,7 +149,7 @@ async function ensureControlRows(
   const plan = planRows[0];
   if (!plan) {
     throw new Error(
-      `Plan '${cfg.planCode}' no existe. Corré: pnpm --filter @casino/db db:seed:control`,
+      `Plan '${cfg.planCode}' no existe. Corré: pnpm --filter @casino/db db:seed:plans`,
     );
   }
 
