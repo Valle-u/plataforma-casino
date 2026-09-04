@@ -46,13 +46,13 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     categories: ['entertainment', 'games'],
     icons: [
       {
-        src: '/icons/tenant-icon?size=192',
+        src: '/icons/tenant-icon.png?size=192',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icons/tenant-icon?size=512',
+        src: '/icons/tenant-icon.png?size=512',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
@@ -61,7 +61,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
       // emblema va con `contain` sobre el fondo de marca, hay margen de sobra
       // y el recorte no se come nada.
       {
-        src: '/icons/tenant-icon?size=512',
+        src: '/icons/tenant-icon.png?size=512',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',

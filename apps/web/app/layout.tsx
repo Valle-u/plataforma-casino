@@ -73,7 +73,7 @@ export const metadata: Metadata = {
     // estático: el estático era la "T" de Turborepo del andamiaje. Relativa a
     // propósito — la ruta resuelve el tenant por el header Host.
     apple: [
-      { url: '/icons/tenant-icon?size=180', sizes: '180x180', type: 'image/png' },
+      { url: '/icons/tenant-icon.png?size=180', sizes: '180x180', type: 'image/png' },
     ],
   },
 };

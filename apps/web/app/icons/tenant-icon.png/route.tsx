@@ -24,6 +24,12 @@
  * relativa** y el manifest se mantiene simple: cada host pide su propio icono.
  *
  * `?size=` para los tamaños que pide cada plataforma (180 apple, 192/512 PWA).
+ *
+ * ⚠️ **El `.png` en la ruta NO es decorativo.** El matcher del middleware
+ * excluye las rutas con extensión (`.*\.[\w]+$`); sin él, esta ruta entra al
+ * middleware y en el host del jugador se la come el redirect a `/play` — el
+ * icono devolvía HTML en vez de PNG. Se resolvió por acá y no tocando el
+ * middleware, que ya tiene su historia de bugs sutiles.
  */
 
 import { ImageResponse } from 'next/og';
