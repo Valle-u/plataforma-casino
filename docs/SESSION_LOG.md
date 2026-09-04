@@ -15627,3 +15627,54 @@ Detalle completo en `docs/runbooks/disaster-recovery.md` (`0ac268b`).
 Los archivos temporales del test (dumps restaurados, `dest.json`, `pg.json` y
 los scripts de acceso a R2) tenían **datos de producción y credenciales del
 bucket**. Se borraron junto con las dos DBs temporales al terminar.
+
+---
+
+## Addendum 4 — los backups de demo salían de un GitHub Action (2026-09-04)
+
+Se rastreó el punto 3 del addendum anterior. **Salían de `.github/workflows/backup.yml`,
+de este mismo repo** — no del VPS.
+
+Escrito el **2026-08-20**, cuando producción era **Railway**. Su propio header
+decía *"al migrar al VPS, solo hay que apuntar los secrets `BACKUP_PG*`"*. **Eso
+nunca se hizo**, así que siguió corriendo cada 6 horas contra Railway.
+
+Lo que lo hace fácil de pasar por alto: **`backup-all.sh` no recibe la lista de
+bases, se la pregunta a la DB** (`SELECT slug FROM tenants`). El workflow no
+menciona `demo_casino` en ningún lado — dumpeaba lo que hubiera en el
+`platform_control` de `BACKUP_PGHOST`, y el de Railway tiene un solo tenant,
+`demo_casino` (DEVLOG 2026-08-14: *"único tenant en prod"*).
+
+### Se apagó, no se repuntó
+
+Schedule comentado, queda sólo `workflow_dispatch`. Lo intuitivo era repuntar los
+secrets al VPS, pero **ahí el puerto de Postgres está cerrado** y se abre a mano
+y temporalmente (`docs/24`). Repuntarlo exigiría dejarlo expuesto a internet 24/7
+para duplicar un backup que Dokploy ya hace bien y ya manda offsite a R2.
+
+**Lo que se pierde:** el scheduler ahora vive en el mismo host que la DB. Si el
+VPS muere no se generan backups *nuevos* — los viejos siguen en R2, que es lo que
+importa.
+
+### ⚠️ Lo que apareció de paso, y es más grande
+
+**Railway sigue prendido.** El dump de hoy salió bien (2,77 MB), o sea que esa
+Postgres está viva, respondiendo, con la copia de la producción vieja adentro.
+`docs/23-migracion-vps.md:126` decía apagarla *"cuando esté confirmado, dejar en
+standby unos días"*; ningún log registra que se haya hecho. Se está pagando, y
+guarda datos de producción vieja.
+
+### Dos cosas destructivas que quedaron sin hacer (decisión del dueño)
+
+1. **Borrar los objetos `YYYY/MM/DD/` del bucket.** Ya no crecen, pero siguen ahí
+   para que alguien apurado los agarre en una caída.
+2. **Dar de baja Railway.** Antes, decidir si se guarda un dump final de
+   `demo_casino`.
+
+### Cabo suelto
+
+El archivo de hoy es de las **15:55 UTC** y el cron era 00/06/12/18 — no cierra.
+No se pudo mirar el historial de corridas porque **`gh` no está autenticado** en
+esta máquina (se reautenticó `git push`, que usa otro credential). Con
+`gh auth login && gh run list --workflow=backup.yml -L 20` se ve si eran
+programadas con retraso o disparos manuales. No cambia nada de lo de arriba.

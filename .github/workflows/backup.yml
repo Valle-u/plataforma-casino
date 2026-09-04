@@ -1,6 +1,9 @@
-name: DB Backup (control + tenants)
+name: DB Backup (control + tenants) — APAGADO
 
-# Backup diario de la DB de control + todas las DBs de tenant, subido a R2.
+# ⛔ APAGADO el 2026-09-04. NO corre solo. Leer el "por qué" antes de
+#    reactivarlo, porque reactivarlo tal cual vuelve a hacer lo mismo mal.
+#
+# Backup de la DB de control + todas las DBs de tenant, subido a R2.
 # Corre en la infra de GitHub (independiente de Railway/VPS): al migrar al VPS,
 # solo hay que apuntar los secrets BACKUP_PG* al Postgres nuevo — el script
 # scripts/backup-all.sh se reutiliza tal cual.
@@ -12,11 +15,43 @@ name: DB Backup (control + tenants)
 #
 # Retención offsite: configurar una regla de lifecycle en el bucket R2 (borrar
 # objetos > N días). La purga local del script solo afecta al runner efímero.
+#
+# ---------------------------------------------------------------------------
+# ⛔ POR QUÉ ESTÁ APAGADO
+# ---------------------------------------------------------------------------
+# Ese "solo hay que apuntar los secrets" de arriba NUNCA SE HIZO. El workflow se
+# escribió el 2026-08-20, cuando producción era Railway, y después de mudar al
+# VPS siguió corriendo cada 6 horas contra Railway.
+#
+# El script no recibe una lista de bases: se la pregunta a la DB
+# (SELECT slug FROM tenants). Así que dumpeaba lo que hubiera en el
+# platform_control de BACKUP_PGHOST — o sea `tenant_demo_casino`, la producción
+# VIEJA. Producción hoy es `tenant_miamihub`.
+#
+# El daño no era perder backups (Dokploy respalda prod bien, y su restore se
+# probó el 2026-09-04): era que estos dumps caen en el MISMO bucket, son más
+# frecuentes y más grandes que los buenos, y en una caída alguien apurado agarra
+# el archivo equivocado. Un backup que engaña es peor que no tenerlo.
+#
+# ---------------------------------------------------------------------------
+# SI ALGÚN DÍA SE REACTIVA
+# ---------------------------------------------------------------------------
+# 1. Repuntar BACKUP_PGHOST/PORT/USER/PASSWORD al Postgres del VPS.
+# 2. OJO: en el VPS el puerto de Postgres está CERRADO y se abre a mano y
+#    temporalmente (docs/24-entornos-deploy.md). Reactivar esto exigiría dejarlo
+#    expuesto a internet 24/7 — por eso se apagó en vez de repuntarlo.
+# 3. Mandarlo a un prefijo propio del bucket, no a la raíz junto a Dokploy.
+#
+# Lo que se pierde con esto apagado: el scheduler ahora vive en el mismo host
+# que la DB (Dokploy), así que si el VPS muere no se generan backups NUEVOS. Los
+# viejos siguen en R2, que es lo que importa.
 
 on:
-  schedule:
-    - cron: '0 */6 * * *' # cada 6 horas (00/06/12/18 UTC = 21/03/09/15 AR)
-  workflow_dispatch: {} # correr a mano (para probar / hacer el restore test)
+  # ⛔ Schedule desactivado: apuntaba a la Postgres vieja de Railway.
+  #    Antes de reactivar, leer el bloque "SI ALGÚN DÍA SE REACTIVA" de arriba.
+  # schedule:
+  #   - cron: '0 */6 * * *' # cada 6 horas (00/06/12/18 UTC = 21/03/09/15 AR)
+  workflow_dispatch: {} # solo a mano, y solo después de repuntar los secrets
 
 concurrency:
   group: db-backup

@@ -496,9 +496,41 @@ backup restaurado), así que ese script **no está corriendo contra producción*
 sale de otro lado con otra base.
 
 **Son más frecuentes y más grandes que los buenos**, así que a simple vista dan
-una sensación de cobertura que es falsa. Hay que averiguar de dónde salen y
-apagarlos o corregirlos: en una emergencia, agarrar el archivo equivocado es
-peor que no tener nada.
+una sensación de cobertura que es falsa: en una emergencia, agarrar el archivo
+equivocado es peor que no tener nada.
+
+#### ✅ Resuelto el 2026-09-04 — salían de un GitHub Action
+
+Del workflow **`.github/workflows/backup.yml`** de este mismo repo, escrito el
+2026-08-20 cuando producción era **Railway**. Al mudar al VPS **nunca se
+repuntaron los secrets `BACKUP_PG*`**, así que siguió corriendo cada 6 horas
+contra Railway.
+
+La clave es que `scripts/backup-all.sh` **no recibe la lista de bases: se la
+pregunta a la DB** (`SELECT slug FROM tenants`). Dumpeaba lo que hubiera en el
+`platform_control` de `BACKUP_PGHOST` — y el de Railway tiene un solo tenant,
+`demo_casino` (DEVLOG 2026-08-14: *"único tenant en prod"*).
+
+**El workflow quedó apagado** (schedule comentado, sólo `workflow_dispatch`). No
+se repuntó al VPS a propósito: ahí el puerto de Postgres está **cerrado** y se
+abre a mano y temporalmente (`docs/24-entornos-deploy.md`), así que repuntarlo
+exigiría exponerlo a internet 24/7 para duplicar un backup que Dokploy ya hace
+bien y ya manda offsite. Mal negocio.
+
+**Lo que se pierde:** el scheduler ahora vive en el mismo host que la DB, así que
+si el VPS muere no se generan backups *nuevos*. Los viejos siguen en R2, que es
+lo que importa.
+
+**⚠️ Todavía abierto — dos cosas destructivas, sin hacer:**
+
+1. **Los objetos `YYYY/MM/DD/` siguen en el bucket.** Ya no crecen, pero siguen
+   ahí para que alguien apurado los agarre. Conviene borrarlos o moverlos a un
+   prefijo `_obsoleto/`.
+2. **Railway sigue prendido.** El dump de hoy salió bien (2,77 MB), o sea que esa
+   Postgres está viva con la copia de la producción vieja adentro.
+   `docs/23-migracion-vps.md` decía apagarla "cuando esté confirmado, dejar en
+   standby unos días" — y ningún log registra que se haya hecho. Antes de darla
+   de baja, decidir si se guarda un dump final de `demo_casino`.
 
 ### Lo que sigue sin probarse
 
