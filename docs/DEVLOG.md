@@ -10397,3 +10397,81 @@ defecto: hay que confirmarlo en el dispositivo. Si persistiera, la salida de
 fondo es cambiar `statusBarStyle` a `black` — iOS deja de extender la vista bajo
 la barra de estado y el problema desaparece de raíz, a costa del header
 full-bleed del jugador.
+
+---
+
+## 2026-09-04 (cont.) — El test flaky era una carrera contra el reloj, no contaminación
+
+`notifications › fraud_link_suspected` llevaba toda la sesión fallando de forma
+no determinista: verde aislado, rojo en la suite completa, y a veces verde en la
+suite completa también. Se venía asumiendo **contaminación cruzada entre
+suites**. No era eso.
+
+### La causa
+
+El test crea dos jugadores con emails parecidos para disparar `similar_email`, y
+cada email llamaba a su **propio** `Date.now()`, con un round-trip a la base en
+el medio:
+
+```ts
+`fraudo${Date.now()}@example.test`     // jugador A
+`fraudo${Date.now()}1@example.test`    // jugador B  ← otro Date.now()
+```
+
+El scanner acepta distancia Levenshtein ≤ 2 en la parte local. Medido:
+
+| Diferencia | Distancia | |
+|---|---|---|
+| 0 ms | 1 | ✅ dispara |
+| **1 ms** | **3** | ❌ |
+| 5 ms | 3 | ❌ |
+| 25 ms | 3 | ❌ |
+| 250 ms | 4 | ❌ |
+
+Basta **un milisegundo** para romperlo. Sin `similar_email` el par pierde 40
+puntos y queda en 30 —sólo `shared_ip`— contra un threshold de 70, así que el
+scan devuelve `newSuspectedLinks: 0`. Ese era exactamente el error.
+
+Y explica el patrón entero: **aislado** la base está tibia y los dos `UPDATE`
+caen en el mismo milisegundo; **en la suite completa**, con carga, el
+milisegundo corre. No hacía falta ninguna otra suite.
+
+La base ahora se calcula una sola vez → distancia siempre 1, sin reloj de por
+medio.
+
+### Lección de método
+
+Se perdió tiempo persiguiendo la hipótesis de contaminación —que era plausible y
+tenía precedentes en este repo (el caché de permisos, la regla 10 de
+`AGENTS.md`)— antes de leer el test. **La hipótesis con precedente no es la
+hipótesis correcta por defecto.** Lo que la descartó fue reproducir: correr
+`tenant-settings` y después `notifications` juntas, y ver que pasaban.
+
+Y lo que la confirmó no fue leer más código, sino **medir**: calcular la
+distancia Levenshtein para gaps reales de milisegundos.
+
+### Una mina que sí era real, encontrada de paso
+
+Investigando la hipótesis descartada apareció otra cosa: `tenant-settings.e2e.ts`
+limpiaba en `beforeEach` **pero no en `afterAll`**. El `beforeEach` deja la casa
+limpia para el próximo test *de esa suite*; lo que escriba el último test queda
+puesto en la DB compartida para todas las demás.
+
+Y ahí no se escriben datos cualquiera: se escriben **settings que cambian el
+comportamiento del producto**. Esa suite llega a dejar
+`fraud.suspected_threshold` en 100, y con ese valor un score de 70 deja de ser
+sospechoso — habría hecho fallar a este mismo test por un motivo completamente
+distinto, sin nada en el test que lo delatara, y de forma intermitente porque el
+orden de las suites lo decide jest.
+
+Hoy no rompía nada (se verificó corriéndolas juntas), pero era cuestión de
+tiempo. Ahora limpia también al final.
+
+### Verificado
+
+**77/77 suites, 951/951 tests en verde** — el primer verde completo de la
+sesión. Más `tenant-settings` + `notifications` juntas: 85/85.
+
+> Dato útil: la DB de test se **destruye** en el teardown, así que las fugas
+> entre suites sólo afectan **dentro** de una corrida, nunca entre corridas. Por
+> eso no se puede inspeccionar la contaminación después de que jest termina.
