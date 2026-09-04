@@ -10123,3 +10123,63 @@ por qué existía la regla.
 **Encontró un bug real el primer día, antes de producción.** Y encontró uno que
 sólo se ve mirando: el de los links de referido no rompe nada visible — genera
 links equivocados en silencio.
+
+---
+
+## 2026-09-04 (cont.) — El 502 del login de staging: una URL horneada
+
+Con el panel ya accesible, el login devolvía **502**. La contraseña era correcta
+—la API daba token— y sin embargo desde el panel no entraba.
+
+### La causa
+
+Al crear la app web de staging se le cargó el **`env`** y **no los `buildArgs`**.
+Producción tenía seis; staging, ninguno.
+
+Los `NEXT_PUBLIC_*` **se hornean en el bundle al compilar** — el propio
+`apps/web/Dockerfile` lo dice en un comentario que estaba ahí desde el principio.
+Sin `NEXT_PUBLIC_API_URL` en el build, `auth-cookies.ts` cayó a su default:
+
+```ts
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+```
+
+Y dentro del contenedor **`localhost:3000` es el propio Next**. El servidor se
+llamaba a sí mismo en vez de llamar a la API.
+
+### Por qué costó encontrarlo
+
+**El síntoma no apuntaba a la causa en ningún momento.** Todo lo que se probó dio
+verde:
+
+- El contenedor de la web **sí** llega a la API (`fetch` desde adentro: `OK`).
+- La API **sí** acepta las credenciales (token emitido).
+- La página `/login` **sí** carga (200).
+- El contenedor **no** se reinicia.
+- El env de runtime era **idéntico** al de producción.
+
+Ese último punto fue la trampa: comparé `env` contra prod, vi que coincidía, y
+descarté la configuración. **El campo que faltaba no estaba en `env`.** La
+diferencia entre los dos entornos vivía en un campo que no se me ocurrió mirar,
+y el valor culpable se había horneado en una imagen semanas atrás.
+
+**Lección de método:** cuando dos entornos difieren, comparar **toda** la config,
+no la parte que uno cree relevante. Un `diff` completo de `application.one`
+habría mostrado `buildArgs: ""` contra seis líneas en el primer minuto.
+
+### Turnstile queda afuera de staging, a propósito
+
+El `NEXT_PUBLIC_TURNSTILE_SITEKEY` está atado a los dominios de producción en
+Cloudflare: usarlo en staging haría fallar la validación. Sin sitekey el widget
+no se renderiza y el login funciona.
+
+⚠️ **Consecuencia: el anti-bot no se puede probar en staging** hasta que se cree
+un sitekey para sus dominios. Es una diferencia real entre los entornos y está
+anotada en `docs/24`.
+
+### El patrón que se repite hoy
+
+Tres bugs de staging, los tres **de configuración, ninguno de código**: el guion
+en `admin-staging` (middleware), el mismo guion en los links de referido, y estos
+`buildArgs`. Los tres los introduje al montar el entorno, y **los tres los
+encontró staging antes que producción** — que es exactamente para lo que existe.

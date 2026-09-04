@@ -112,6 +112,51 @@ api-staging, web-staging. El `refreshToken` de cada uno sale de
 **Deploy manual** (sin push): botón "Deploy" en el panel, o
 `POST /api/application.deploy {applicationId}`.
 
+### 🚨 La web necesita `buildArgs`, no alcanza con `env`
+
+**Es el error más caro de esta migración.** Al crear la app de staging se le
+cargó el `env` y **no los `buildArgs`**. Resultado: el panel cargaba pero al
+apretar "Entrar" devolvía **502**.
+
+**Por qué.** Los `NEXT_PUBLIC_*` se **hornean en el bundle al compilar**
+(`apps/web/Dockerfile` lo dice en un comentario). Setearlos sólo como env de
+runtime **no actualiza el bundle ya compilado**. Sin `NEXT_PUBLIC_API_URL` en el
+build, `apps/web/lib/auth-cookies.ts` cae a su default:
+
+```ts
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+```
+
+Y dentro del contenedor, `localhost:3000` **es el propio Next**. O sea que el
+servidor se llamaba a sí mismo en vez de llamar a la API.
+
+**Lo que hizo difícil el diagnóstico:** el síntoma no apunta a la causa. El
+contenedor **sí** llega a la API (verificado con un `fetch` desde adentro), la
+API **sí** acepta las credenciales, la página `/login` **sí** carga. Lo único
+roto era una URL horneada tres semanas antes en un build.
+
+> **Regla: toda app web nueva se crea con `buildArgs`, y se comparan contra los
+> de producción antes del primer deploy.**
+>
+> ```bash
+> curl -s -H "x-api-key: $CASINO_DOKPLOY_TOKEN" >   "https://dokploy.miamihub.vip/api/application.one?applicationId=<id>" >   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).buildArgs))"
+> ```
+>
+> Se cargan con `application.saveEnvironment`, que exige **los cuatro** campos
+> (`env`, `buildArgs`, `buildSecrets`, `createEnvFile`) — si se manda sólo uno,
+> los otros se pisan.
+>
+> **Cambiar un `buildArg` exige rebuild**, no alcanza con reiniciar.
+
+**Los de staging**, a propósito distintos de producción:
+
+| | |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://api-staging.miamihub.vip` |
+| `NEXT_PUBLIC_TENANT_HOST` | `staging.miamihub.vip` |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `staging` |
+| `NEXT_PUBLIC_TURNSTILE_SITEKEY` | **omitido** — el sitekey está atado a los dominios de prod en Cloudflare; en staging fallaría la validación. Sin sitekey el widget no se renderiza y el login funciona. ⚠️ **El anti-bot no se puede probar en staging** hasta crear un sitekey para sus dominios. |
+
 ### ⏳ Dokploy buildea de a UNA app por vez
 
 Verificado el 2026-09-04: un push a `staging` disparó los dos webhooks (las dos
