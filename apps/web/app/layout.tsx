@@ -54,7 +54,11 @@ export const metadata: Metadata = {
   applicationName: 'Plataforma Casino',
   appleWebApp: {
     capable: true,
-    title: 'Plataforma Casino',
+    // SIN `title`, a propósito. `apple-mobile-web-app-title` le gana al
+    // manifest, así que un título fijo acá hacía que en la pantalla de inicio
+    // los dos accesos dijeran "Plataforma Casino" en vez del nombre del casino
+    // y "Panel · <casino>". Sin este campo, iOS usa el `short_name` del
+    // manifest, que sí es dinámico por host (ver app/manifest.ts).
     statusBarStyle: 'black-translucent',
   },
   icons: {

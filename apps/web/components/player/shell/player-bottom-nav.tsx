@@ -23,6 +23,22 @@ interface NavTab {
   onClick?: () => void;
 }
 
+/**
+ * Cuánto se reserva abajo de los iconos en iOS standalone (PWA).
+ *
+ * iOS informa `env(safe-area-inset-bottom)` ≈ 34px, que es la franja del
+ * indicador de inicio. Reservarla ENTERA deja los iconos flotando demasiado
+ * arriba —- se veía como si la barra no llegara al borde de la pantalla—, así
+ * que se reserva **la mitad**: el gesto de inicio sigue teniendo aire y los
+ * iconos bajan ~17px.
+ *
+ * El piso de 8px es para el resto de los dispositivos, donde el inset es 0 y
+ * si no la barra queda pegada al borde.
+ *
+ * 👉 Para subir o bajar la barra, tocar SOLO este número.
+ */
+const ESPACIO_INFERIOR = 'max(8px, calc(env(safe-area-inset-bottom, 0px) / 2))';
+
 const AUTH_TABS: NavTab[] = [
   {
     href: '/play/lobby',
@@ -86,7 +102,7 @@ export function PlayerBottomNav() {
     return (
       <nav
         className="fixed bottom-0 inset-x-0 z-30 mx-auto max-w-[480px] bg-[var(--color-bg-elevated)]/95 backdrop-blur border-t border-[var(--color-border)]"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        style={{ paddingBottom: ESPACIO_INFERIOR }}
         aria-label="Navegación principal"
       >
         <div className="grid grid-cols-3 h-16">
@@ -149,7 +165,7 @@ export function PlayerBottomNav() {
   return (
     <nav
       className="fixed bottom-0 inset-x-0 z-30 mx-auto max-w-[480px] bg-[var(--color-bg-elevated)]/95 backdrop-blur border-t border-[var(--color-border)]"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      style={{ paddingBottom: ESPACIO_INFERIOR }}
       aria-label="Navegación principal"
     >
       <div className={`grid ${cols} h-16`}>

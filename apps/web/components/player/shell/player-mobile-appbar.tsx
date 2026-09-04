@@ -79,8 +79,13 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   // se pega dentro de su padre y ese wrapper mide lo mismo que el header.
   //
   // Sin `transition-colors` a propósito — ver el aviso en `use-scrolled.ts`.
+  // En iOS standalone (PWA) la vista arranca DEBAJO de la barra de estado
+  // —`viewport-fit=cover` + `black-translucent`—, así que sin este padding el
+  // header queda tapado por el notch y no se puede tocar. Mismo patrón que
+  // `components/admin/header.tsx`. Fuera de standalone el inset es 0 y no
+  // cambia nada.
   const headerClass = cn(
-    'relative flex h-14 w-full items-center gap-2 px-3',
+    'relative flex h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] w-full items-center gap-2 px-3',
     floating
       ? 'bg-transparent'
       : 'border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur',
