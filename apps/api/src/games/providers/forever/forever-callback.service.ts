@@ -4,7 +4,7 @@
  * 2 métodos:
  *   - GetBalance   → devuelve el saldo jugable del jugador.
  *   - ChangeBalance → mueve el saldo según txnType:
- *       0 Debit  (apuesta) → burn (bonus-first)         [resta]
+ *       0 Debit  (apuesta) → burn (real primero, bono después)         [resta]
  *       1 Credit (premio)  → mint                        [suma]
  *       2 Cancel (reversa) → mint                        [suma]
  *
@@ -140,7 +140,7 @@ export class ForeverCallbackService {
 
     if (txnType === FOREVER_TXN_TYPE.DEBIT) {
       command = 'bet';
-      // Apuesta → burn (bonus-first). Insufficient → lo captura el handle().
+      // Apuesta → burn (real primero, bono después). Insufficient → lo captura el handle().
       if (toCents(amountStr) > 0) {
         const tx = await this.walletService.placeBetWithBonusExternal(db, {
           walletId: ctx.wallet.id,

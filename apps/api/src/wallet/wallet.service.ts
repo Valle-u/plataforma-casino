@@ -1432,7 +1432,7 @@ export class WalletService {
   // ──────────────────────────────────────────────────────────────────────
   // Dual Wallet — bonus_balance operations.
   // `bonus_credit` agrega al bonus_balance, `bonus_debit` lo descuenta.
-  // Las apuestas consumen bonus_balance PRIMERO, luego balance real.
+  // Las apuestas consumen balance real PRIMERO, luego bonus_balance (2026-09-03).
   // Los wins siempre van al balance real (nunca al bonus).
   // ──────────────────────────────────────────────────────────────────────
 
@@ -1499,7 +1499,7 @@ export class WalletService {
   }
 
   /**
-   * Apuesta que consume bonus_balance PRIMERO, luego balance real.
+   * Apuesta que consume balance real PRIMERO, luego bonus_balance.
    * Para el split: crea hasta 2 transacciones atómicas dentro de una
    * misma TX Postgres (bonus_debit + bet). Si el bonus cubre todo,
    * solo crea bonus_debit. Si no cubre nada, solo crea bet.
@@ -1555,10 +1555,16 @@ export class WalletService {
   }
 
   /**
-   * Núcleo compartido de la apuesta bonus-first: consume bonus_balance PRIMERO,
-   * luego balance real, en una sola TX Postgres con lock + version guard +
-   * idempotencia. Palace y otros proveedores seamless lo usan con su propio
-   * naming (key/source/reason). NO cambia la mecánica original.
+   * Núcleo compartido: consume **balance real PRIMERO, luego bonus_balance**,
+   * en una sola TX Postgres con lock + version guard + idempotencia. Palace y
+   * los demás proveedores seamless lo usan con su propio naming
+   * (key/source/reason).
+   *
+   * ⚠️ **El orden se invirtió el 2026-09-03** (decisión del dueño). Antes se
+   * gastaba el bono primero, así que el jugador conservaba más tiempo su plata
+   * retirable; ahora gasta primero lo suyo y le queda el bono, que **no se puede
+   * retirar**. Es un cambio de negocio, no una optimización: si alguien lo
+   * revierte "porque parece más justo", que sea a propósito.
    */
   private async placeBetWithBonusCore(
     db: TenantDb,
@@ -1601,17 +1607,32 @@ export class WalletService {
       const bonusCents = this.toCents(lockedRow.bonusBalance ?? '0');
       const balanceCents = this.toCents(lockedRow.balance);
 
-      // 3. Determine split: bonus first, then balance
-      const bonusDebit = bonusCents >= betAmountCents ? betAmountCents : bonusCents;
-      const balanceDebit = betAmountCents - bonusDebit;
+      // 3. Reparto: PRIMERO el saldo real, DESPUÉS el bono.
+      //
+      // Decisión del dueño (2026-09-03). Antes era al revés — se gastaba el
+      // regalo primero y el jugador conservaba más tiempo su plata retirable.
+      //
+      // Disponible = balance − locked: lo que está en hold (retiros pendientes)
+      // NO es apostable (LEY E6). Ese tope es lo que impide que invertir el
+      // orden deje apostar plata reservada, así que el débito real se capa acá
+      // y el resto sale del bono.
+      // Todo en `bigint`: los centavos lo son, así que nada de Math.min/max.
+      const lockedCents = this.toCents(lockedRow.lockedBalance ?? '0');
+      const rawAvailable = balanceCents - lockedCents;
+      const availableCents = rawAvailable > 0n ? rawAvailable : 0n;
 
-      // 4. Validate sufficient balance. Disponible = balance - locked: lo que
-      //    está en hold (retiros pendientes) no es apostable (LEYES E6). Si el
-      //    chequeo falla, el callback del proveedor responde saldo insuficiente.
-      const availableCents =
-        balanceCents - this.toCents(lockedRow.lockedBalance ?? '0');
-      if (balanceDebit > availableCents) {
-        throw new InsufficientBalanceError(this.fromCents(availableCents), params.amount);
+      const balanceDebit =
+        betAmountCents < availableCents ? betAmountCents : availableCents;
+      const bonusDebit = betAmountCents - balanceDebit;
+
+      // 4. Validar. Lo apostable es real disponible + bono: si entre los dos no
+      //    llegan, el callback del proveedor responde saldo insuficiente.
+      if (bonusDebit > bonusCents) {
+        throw new InsufficientBalanceError(
+          this.fromCents(availableCents + bonusCents),
+          params.amount,
+          this.fromCents(lockedCents),
+        );
       }
 
       // 5. Compute new balances

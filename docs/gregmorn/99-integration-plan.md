@@ -210,7 +210,7 @@ puede traer bet y win a la vez y cada pata necesita su propia idempotencia.
 **Los tres comandos:**
 - `getBalance` → saldo jugable = (balance − locked) + bonus. Sin jugador se
   responde **fail**, nunca 0: inventar saldo está prohibido por su doc.
-- `writeBet` → bet a burn (bonus-first) y/o win a mint con techo E7. Devuelve el
+- `writeBet` → bet a burn (real primero, bono después) y/o win a mint con techo E7. Devuelve el
   saldo **después** de aplicar. Fondos insuficientes → fail.
 - `rollback` → devuelve la apuesta una sola vez, y **por el monto que realmente
   cobramos** (el de `gregmorn_transactions`), no por el que dice el callback. Si

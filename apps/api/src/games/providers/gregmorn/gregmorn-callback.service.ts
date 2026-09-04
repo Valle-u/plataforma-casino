@@ -244,7 +244,7 @@ export class GregmornCallbackService {
     let betWalletTxId: string | null = null;
     let winWalletTxId: string | null = null;
 
-    // 1. Apuesta → burn (bonus-first). Si no alcanza, InsufficientBalanceError
+    // 1. Apuesta → burn (real primero, bono después). Si no alcanza, InsufficientBalanceError
     //    sube a handle() y se responde fail: ellos no reservan fondos.
     if (bet > 0) {
       const tx = await this.walletService.placeBetWithBonusExternal(db, {

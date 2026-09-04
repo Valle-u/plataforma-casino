@@ -159,7 +159,10 @@ describe('Palace + bonus (E2E)', () => {
     expect(res.body.data).toEqual({ account: PALACE_ACCOUNT, balance: 1500 });
   });
 
-  it('bet consume el BONO primero, no toca la real', async () => {
+  it('bet consume la REAL primero, no toca el bono', async () => {
+    // ⚠️ El orden se invirtió el 2026-09-03 (decisión del dueño): antes se
+    // gastaba el bono primero. El TOTAL jugable no cambia — lo que cambia es de
+    // dónde sale, y eso importa porque el bono **no se puede retirar**.
     const res = await palaceRequest(ctx.request, {
       command: 'bet',
       data: { account: PALACE_ACCOUNT, trans_guid: 'e2e-bet-100', amount: '100', game_code: 'vswaysdogs' },
@@ -167,12 +170,12 @@ describe('Palace + bonus (E2E)', () => {
     });
 
     expect(res.body.result).toBe(OK);
-    // Después del bet: 1000 real + 400 bono = 1400.
+    // Después del bet: 900 real + 500 bono = 1400 (mismo total que antes).
     expect(res.body.data).toEqual({ balance: 1400 });
 
     const wallet = await readWallet(playerUserId);
-    expect(wallet.balance).toBe('1000.00');
-    expect(wallet.bonusBalance).toBe('400.00');
+    expect(wallet.balance).toBe('900.00');
+    expect(wallet.bonusBalance).toBe('500.00');
   });
 
   it('win acredita SIEMPRE al balance real (nunca al bono)', async () => {
@@ -193,9 +196,9 @@ describe('Palace + bonus (E2E)', () => {
     expect(res.body.data).toEqual({ balance: 1700 });
 
     const wallet = await readWallet(playerUserId);
-    // El win va a la real: 1000 → 1300. El bono queda intacto.
-    expect(wallet.balance).toBe('1300.00');
-    expect(wallet.bonusBalance).toBe('400.00');
+    // El win va a la real: 900 → 1200. El bono queda intacto.
+    expect(wallet.balance).toBe('1200.00');
+    expect(wallet.bonusBalance).toBe('500.00');
   });
 
   it('win por encima del tope de sanidad → RECHAZADO (99), NO acredita', async () => {
@@ -216,13 +219,13 @@ describe('Palace + bonus (E2E)', () => {
 
     expect(res.body.status).toBe('ERROR');
     expect(res.body.result).toBe(INTERNAL_ERROR);
-    // No se acreditó nada: sigue 1300 real + 400 bono.
+    // No se acreditó nada: sigue 1200 real + 500 bono.
     const wallet = await readWallet(playerUserId);
-    expect(wallet.balance).toBe('1300.00');
-    expect(wallet.bonusBalance).toBe('400.00');
+    expect(wallet.balance).toBe('1200.00');
+    expect(wallet.bonusBalance).toBe('500.00');
   });
 
-  it('cancel de un bet que salió del bono revierte al balance REAL', async () => {
+  it('cancel de un bet revierte al balance REAL', async () => {
     const res = await palaceRequest(ctx.request, {
       command: 'cancel',
       data: {
@@ -234,10 +237,10 @@ describe('Palace + bonus (E2E)', () => {
     });
 
     expect(res.body.result).toBe(OK);
-    // El bet de 100 se revierte a la real: 1300 → 1400. Bono queda en 400.
+    // El bet de 100 se revierte a la real: 1200 → 1300. Bono queda en 500.
     const wallet = await readWallet(playerUserId);
-    expect(wallet.balance).toBe('1400.00');
-    expect(wallet.bonusBalance).toBe('400.00');
+    expect(wallet.balance).toBe('1300.00');
+    expect(wallet.bonusBalance).toBe('500.00');
   });
 
   it('bet mayor que real+bono → check 31 (insufficient balance)', async () => {
@@ -249,25 +252,29 @@ describe('Palace + bonus (E2E)', () => {
 
     expect(res.body.result).toBe(CHECK_INSUFFICIENT_BALANCE);
     expect(res.body.status).toBe('ERROR');
-    // Devuelve el total jugable actual: 1400 real + 400 bono = 1800.
+    // Devuelve el total jugable actual: 1300 real + 500 bono = 1800.
     expect(res.body.data).toEqual({ balance: 1800 });
   });
 
-  it('bet mixto: consume bono hasta agotarlo y luego la real', async () => {
-    // Estado actual: 1400 real + 400 bono. Apostamos 500 → 400 de bono
-    // + 100 de la real.
+  it('bet mixto: consume la real hasta agotarla y luego el bono', async () => {
+    // Estado actual: 1300 real + 500 bono.
+    //
+    // ⚠️ El monto se subió de 500 a 1500 al invertir el orden. Con 500 la
+    // apuesta salía **entera de la real** y este test dejaba de probar la
+    // mezcla, que es justamente lo que le da sentido. Con 1500: 1300 de la
+    // real (se agota) + 200 del bono.
     const res = await palaceRequest(ctx.request, {
       command: 'bet',
-      data: { account: PALACE_ACCOUNT, trans_guid: 'e2e-bet-mixed', amount: '500', game_code: 'vswaysdogs' },
+      data: { account: PALACE_ACCOUNT, trans_guid: 'e2e-bet-mixed', amount: '1500', game_code: 'vswaysdogs' },
       check: '21,22,41,31',
     });
 
     expect(res.body.result).toBe(OK);
-    // 1300 real + 0 bono = 1300.
-    expect(res.body.data).toEqual({ balance: 1300 });
+    // 0 real + 300 bono = 300.
+    expect(res.body.data).toEqual({ balance: 300 });
 
     const wallet = await readWallet(playerUserId);
-    expect(wallet.balance).toBe('1300.00');
-    expect(wallet.bonusBalance).toBe('0.00');
+    expect(wallet.balance).toBe('0.00');
+    expect(wallet.bonusBalance).toBe('300.00');
   });
 });

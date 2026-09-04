@@ -9733,3 +9733,64 @@ central — confirma que separar las fronteras no rompió el lado que no se toc�
    y distribuidores, no sólo para socios. **Sin verificar.**
 3. El socio pierde visibilidad sobre su red — conviene avisarle antes, no que lo
    descubra.
+
+---
+
+## 2026-09-03 (cont.) — Invertido el orden de consumo: implementado
+
+Actualiza la entrada de hoy que quedó como *"pedido del dueño, NO implementado"*.
+**Ya está hecho: primero el saldo real, después el bono.**
+
+### Cómo quedó el reparto
+
+```ts
+const availableCents = balance − locked        // nunca negativo
+const balanceDebit   = min(apuesta, disponible)   // primero lo real
+const bonusDebit     = apuesta − balanceDebit     // el resto, del bono
+```
+
+⚠️ **El riesgo del `locked_balance` quedó cubierto por construcción, no por una
+validación.** El débito real se capa contra `balance − locked`, así que la plata
+en hold (retiros pendientes, LEY E6) **nunca entra en el cálculo**. No hay un
+chequeo que pueda olvidarse de correr.
+
+La validación cambió de sentido: antes fallaba si el saldo real no alcanzaba;
+ahora falla si **entre el real disponible y el bono** no llegan — que es lo
+correcto, porque el jugador puede apostar la suma de los dos.
+
+### Dos cosas que atajaron los verificadores
+
+**El type-checker evitó un bug sobre plata.** Escribí el reparto con
+`Math.min`/`Math.max` y los centavos son `bigint`, no `number`. Habría fallado en
+runtime. Se reescribió con comparaciones de bigint.
+
+**Un test dejaba de probar lo suyo.** `palace-bonus` › *"bet mixto"* apostaba 500
+con 1300 de saldo real: con el orden nuevo eso sale **entero de la real** y ya no
+hay mezcla. Habría quedado en verde sin ejercitar nada. Se subió a 1500 — agota
+los 1300 reales y toma 200 del bono. **Invertir una regla puede dejar tests que
+pasan por la razón equivocada.**
+
+### El total jugable no cambia
+
+En todos los casos de `palace-bonus` el balance devuelto al proveedor es idéntico
+al de antes (1400, 1700, 1800). Lo único que cambia es de qué bolsillo sale. Para
+el jugador la diferencia no aparece al apostar sino **al retirar**: ahora le queda
+bono, que no es retirable, en vez de plata real.
+
+### Verificación
+
+`bonuses`, `hold-vs-gambling`, `gregmorn-callback`, `forever-callback`: 67/67.
+`palace-bonus`: 8/8. `hold-vs-gambling` es la que prueba que la plata en hold no
+se puede apostar — la relevante para el riesgo de arriba.
+
+Se actualizaron todos los comentarios que decían lo contrario: tres en
+`wallet.service.ts` y los *"burn (bonus-first)"* de los callbacks de Forever y
+Gregmorn.
+
+### Ya no hay migración pendiente
+
+La entrada anterior anotaba avisos y backfill para el CBU por operador. **No hace
+falta: la plataforma todavía no tiene operativa real** (dueño, 2026-09-03), así
+que no hay socios ni cajeros a los que avisar ni CBUs que backfillear. La
+pantalla para cargarlo ya existe en *Mi sucursal* y es visible para socio, cajero
+y distribuidor.
