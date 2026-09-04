@@ -45,6 +45,9 @@ Cualquier `.md` adicional según la tarea (ver tabla en `AGENTS.md` §3).
 - Nunca sobrescribir un archivo existente con `Write` si un `Edit` alcanza.
 
 ### Commits (cuando el usuario los pida)
+- **Rama `staging`, nunca `main` directo.** `main` es producción: cada push la
+  reconstruye y reinicia el casino en vivo, aunque el cambio sólo toque `docs/`.
+  El proceso completo está en `AGENTS.md` §4.1. Excepción: un hotfix, avisando.
 - Conventional Commits.
 - Mensaje en inglés, una línea ≤72 caracteres + cuerpo opcional.
 - Co-author footer estándar de Claude Code.

@@ -59,6 +59,22 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
 
 ---
 
+11. **Nunca pushear a `main` directo. Todo va a `staging` primero.**
+    `main` es producción: cada push lo reconstruye y **reinicia el casino en
+    vivo**, incluso si el cambio sólo toca `docs/`. El 2026-09-04 hubo **once
+    deploys de producción en un día**, varios por commits de documentación.
+
+    El orden es: trabajar en `staging` → probar en `staging.miamihub.vip` →
+    recién ahí `merge` a `main`. Ver el proceso completo en §4.1 y en
+    `docs/24-entornos-deploy.md`.
+
+    - **Vale para docs también.** Un cambio de `.md` no necesita test, pero sí
+      necesita no reiniciar producción para publicarse.
+    - **La excepción es un hotfix de producción**, y se dice en voz alta: "voy
+      directo a main porque X está caído".
+
+---
+
 ## 3. Cómo navegar la documentación
 
 **Carpeta `/docs`** contiene toda la documentación de diseño. Numerada para indicar orden de lectura cuando entrás de cero.
@@ -103,6 +119,37 @@ Cuando recibas una tarea:
 7. **Documentá en el `.md` correspondiente** los cambios de diseño que hagas.
 8. **Conventional Commits** para mensajes de commit.
 9. **Al cerrar sesión**: agregá entrada a `docs/SESSION_LOG.md`. Si tomaste decisiones técnicas no obvias, agregalas también a `docs/DEVLOG.md`.
+
+### 4.1 Staging primero, después `main` (obligatorio)
+
+```
+  trabajás  →  push a `staging`  →  Dokploy deploya staging  →  probás
+                                                                    │
+                                                          todo OK   ▼
+                        merge `staging` → `main`  →  Dokploy deploya PRODUCCIÓN
+```
+
+```bash
+git checkout staging
+git merge --ff-only origin/main    # arrancar al día con producción
+# ... trabajás, commiteás ...
+git push origin staging            # deploya staging (~4-8 min)
+```
+
+Probás en `staging.miamihub.vip` / `admin-staging.miamihub.vip`. Cuando está OK:
+
+```bash
+git checkout main
+git merge --ff-only staging
+git push origin main               # deploya PRODUCCIÓN
+```
+
+**Por qué `--ff-only`:** si falla, es que las ramas divergieron y hay que mirar
+por qué, en vez de dejar que git arme un merge que nadie revisó.
+
+> **Dokploy buildea de a una app por vez.** Si el push toca la API y la web, el
+> segundo build **espera** a que termine el primero: tarda la suma, no el
+> máximo. Antes de declarar roto un webhook, mirá Recent Deliveries en GitHub.
 
 ---
 

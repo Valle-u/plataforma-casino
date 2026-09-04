@@ -52,10 +52,44 @@ Aislado **a propósito**, no por omisión:
                      merge `staging` → `main`  →  Dokploy deploya producción
 ```
 
-1. Trabajás y pusheás a **`staging`**. El webhook dispara el build del entorno staging.
-2. Probás en `staging.miamihub.vip` / `admin-staging.miamihub.vip`.
-3. Cuando está OK: **`git checkout main && git merge staging && git push`**.
-4. Las migraciones corren solas en los dos entornos (`MIGRATE_ON_BOOT=1`).
+### Los comandos, tal cual
+
+```bash
+git checkout staging
+git merge --ff-only origin/main    # arrancar al día con producción
+```
+
+Trabajás, commiteás, y:
+
+```bash
+git push origin staging            # deploya STAGING (~4-8 min)
+```
+
+Probás en `staging.miamihub.vip` y `admin-staging.miamihub.vip`. Cuando está OK:
+
+```bash
+git checkout main
+git merge --ff-only staging
+git push origin main               # deploya PRODUCCIÓN
+```
+
+**Por qué `--ff-only`:** si falla, las ramas divergieron y hay que mirar por qué,
+en vez de dejar que git arme un merge que nadie revisó.
+
+Las migraciones corren solas en los dos entornos (`MIGRATE_ON_BOOT=1`).
+
+### Por qué es obligatorio y no una preferencia
+
+**Cada push a `main` reconstruye y reinicia el casino en vivo**, aunque el cambio
+sólo toque `docs/`. El 2026-09-04 hubo **once deploys de producción en un día**,
+varios por commits de documentación. Con staging, eso pasa una vez, cuando
+querés.
+
+Y lo otro: hasta el 2026-09-04 **no había dónde reproducir un bug que no fuera
+producción**. Ahora sí.
+
+> **La excepción es un hotfix**, y se dice en voz alta: *"voy directo a main
+> porque X está caído"*.
 
 > **`ci.yml` corre en las dos ramas** (`main` y `staging`): lint, build, type-check
 > y la suite de tests con Postgres y Redis reales.
