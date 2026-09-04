@@ -1,81 +1,154 @@
 # Checklist de deploy
 
+> Reescrito el **2026-09-04**. La versión anterior describía Railway, Vercel y
+> unos secrets de GitHub que ya no existen: los servicios se dieron de baja y
+> los 13 secrets se borraron ese mismo día. Nada de lo que decía aplicaba.
+
+Hoy **los dos entornos viven en el VPS con Dokploy**. Detalle completo en
+`docs/24-entornos-deploy.md`; esto es la versión corta para el momento de
+deployar.
+
+---
+
+## Antes de nada: no se pushea a `main`
+
+`main` **es** producción: cada push la reconstruye y **reinicia el casino en
+vivo**, aunque el cambio sólo toque `docs/`. El flujo obligatorio está en
+`AGENTS.md` §4.1 y es:
+
+```
+trabajás → push a `staging` → probás → merge a `main` → producción
+```
+
+La excepción es un hotfix, y se dice en voz alta.
+
+---
+
 ## Pre-requisitos
 
-Antes del primer deploy, configurar estos **secrets y variables en GitHub**
-(`Settings → Secrets and variables → Actions`):
+**Ninguno que haya que configurar antes de un deploy.** No hacen falta secrets
+en GitHub: el pipeline de deploy no existe más. Dokploy buildea solo, avisado
+por un webhook, con la config que ya tiene guardada.
 
-### Secrets (sensible — nunca se ven en logs)
+Lo único que hay que tener a mano para diagnosticar:
 
-| Secreto | Valor | Obtenido de |
-|---|---|---|
-| `DATABASE_URL_CONTROL` | `postgres://postgres:...@sakura.proxy.rlwy.net:34436/platform_control` | Railway dashboard → Variables |
-| `RAILWAY_API_TOKEN` | `abc123...` | Railway → Account Settings → Tokens → Create |
-| `VERCEL_DEPLOY_HOOK` | `https://api.vercel.com/v1/integrations/deploy/...` | Vercel → Project → Settings → Git → Deploy Hooks |
+| | |
+|---|---|
+| Panel | https://dokploy.miamihub.vip |
+| API | header `x-api-key`, token en `CASINO_DOKPLOY_TOKEN` |
+| IDs de apps y entornos | `docs/24-entornos-deploy.md` |
 
-### Variables (no sensible — visibles en logs)
+---
 
-| Variable | Valor | Obtenido de |
-|---|---|---|
-| _(ninguna por ahora — el pipeline no usa `vars.*`)_ | | |
+## 1. Antes de mergear a `main`
 
-> Nota (2026-08-10): `RAILWAY_SERVICE_ID` y `RAILWAY_ENVIRONMENT_ID` se guardan como **secrets** en GitHub (`Settings → Secrets and variables → Actions → Secrets`) y el workflow las lee con `${{ secrets.* }}`. Ver `.github/workflows/deploy.yml`.
+- [ ] **CI verde en `staging`.** `gh run list --branch staging -L 1`
+- [ ] **Probado en staging de verdad**, no sólo compilado:
+      `staging.miamihub.vip` y `admin-staging.miamihub.vip`.
+- [ ] Si el cambio toca **wallet, permisos o migraciones**, revisar `docs/LEYES.md`
+      y decir qué leyes aplica.
+- [ ] Si agrega una **variable `NEXT_PUBLIC_*`**, va como **build arg**, no como
+      env. Ver la trampa más abajo.
 
-## Cómo obtener cada uno
-
-### Railway API Token
-1. Ir a https://railway.app → click en tu avatar (arriba a la derecha) → **Account Settings**
-2. Pestaña **Tokens** → **Create New Token**
-3. Nombre: `github-actions-deploy`
-4. Copiar el token (se muestra una sola vez)
-
-### Railway Service ID + Environment ID
-1. Ir a Railway → Project `plataforma-casino`
-2. Hacer click en el servicio `plataforma-casino`
-3. Ir a **Settings** → **General**
-4. Ahí están **Service ID** y **Environment ID**
-5. Alternativa: mirá la URL del navegador:
-   `https://railway.app/project/{projectId}/service/{serviceId}?environmentId={environmentId}`
-
-### Vercel Deploy Hook
-1. Ir a Vercel → Project `plataforma-casino-web` → **Settings** → **Git**
-2. Sección **Deploy Hooks** → **Create Hook**
-3. Nombre: `CI/CD Pipeline`, Branch: `main`
-4. Copiar la URL generada
-
-### DATABASE_URL_CONTROL
-Ya está en Railway → Project → Variables. Es la URL de conexión a Postgres.
-
-## Cómo agregarlos en GitHub
-
-1. Ir a https://github.com/Valle-u/plataforma-casino/settings/secrets/actions
-2. **Secrets**: click "New repository secret" por cada uno
-3. **Variables**: click "New repository variable" por cada una (el pipeline actual no usa ninguna)
-
-## Flujo del deploy
-
-```
-git push → deploy.yml (GitHub Actions)
-  ├── ci (lint + build + type-check)
-  ├── migrate (db:migrate:control + db:migrate:tenants)
-  ├── deploy (Railway GraphQL API + Vercel hook)
-  └── healthcheck (API /health + Web frontpage)
+```bash
+git checkout main
+git merge --ff-only staging
+git push origin main
 ```
 
-Cada paso depende del anterior. Si `ci` falla, no migra ni deploya.
+`--ff-only` a propósito: si falla es que las ramas divergieron y hay que mirar
+por qué, en vez de dejar que git arme un merge que nadie revisó.
 
-## Railway auto-deploy
+---
 
-Railway actualmente tiene auto-deploy desde GitHub activado.
-Cuando configures el pipeline completo, **desactivá el auto-deploy** en
-Railway → Project → Settings → GitHub → "Auto Deploy" → OFF.
+## 2. Mientras deploya
 
-Esto evita que Railway deploye antes de que CI termine.
+El push dispara los webhooks. **Dokploy buildea de a UNA app por vez**: si el
+cambio toca API y web, el segundo build **espera** al primero — tarda la suma,
+no el máximo. Entre 4 y 8 minutos por app.
 
-## Rollback manual
+```bash
+curl -s -H "x-api-key: $CASINO_DOKPLOY_TOKEN" \
+  "https://dokploy.miamihub.vip/api/deployment.all?applicationId=<id>" \
+  | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s)[0];console.log(d.status, d.title)})"
+```
 
-Si el healthcheck falla:
+> **Si una app sigue con la versión vieja, no asumas que se rompió el webhook.**
+> Probablemente está en cola. Para descartarlo: GitHub → Settings → Webhooks →
+> Recent Deliveries, o `gh api repos/OWNER/REPO/hooks/<id>/deliveries`.
 
-1. **Railway**: Project → Deployments → deploy conocido bueno → "Redeploy"
-2. **Vercel**: Project → Deployments → deploy conocido bueno → ⋮ → "Promote to Production"
-3. Fixeá el bug en una branch → PR → merge → CI vuelve a deployar
+**Las migraciones corren solas** al arrancar (`MIGRATE_ON_BOOT=1`) en los dos
+entornos. No hay paso manual.
+
+---
+
+## 3. Después de deployar
+
+```bash
+curl -s https://api.miamihub.vip/health
+```
+
+Tiene que devolver `"db":"connected"` y `"redis":"connected"`. Después:
+
+- [ ] `https://miamihub.vip` → **307 a `/play`**
+- [ ] `https://admin.miamihub.vip` → **200**
+- [ ] Si tocaste el front: abrir y mirar, no sólo el status code.
+
+---
+
+## Rollback
+
+**El camino confiable es `git`:**
+
+```bash
+git revert <sha>
+git push origin main
+```
+
+Otro deploy completo (4-8 min), pero es el que se sabe que funciona y deja
+registro de qué se revirtió y por qué.
+
+**Deploy manual sin push**, para re-desplegar la misma rama:
+
+```bash
+curl -s -X POST -H "x-api-key: $CASINO_DOKPLOY_TOKEN" \
+  -H 'content-type: application/json' -d '{"applicationId":"<id>"}' \
+  "https://dokploy.miamihub.vip/api/application.deploy"
+```
+
+> ⚠️ Dokploy guarda historial de deploys y la API expone un campo `rollbackId`,
+> así que **probablemente** tenga rollback por deploy. **No se probó nunca.** No
+> lo uses por primera vez con producción caída: probalo antes en staging, y
+> cuando funcione, documentá acá cómo. Este archivo ya describió una vez
+> procedimientos que nadie había ejecutado — no repitamos eso.
+
+---
+
+## Trampas conocidas (todas costaron tiempo real)
+
+**`NEXT_PUBLIC_*` va en `buildArgs`, no en `env`.** Se hornean en el bundle al
+compilar; setearlas como env de runtime **no actualiza el bundle**. Faltaban en
+staging y el login devolvía 502 porque el servidor se llamaba a sí mismo.
+Cargarlas con `application.saveEnvironment`, que exige **los cuatro** campos
+(`env`, `buildArgs`, `buildSecrets`, `createEnvFile`) — si mandás uno solo, los
+otros se pisan. **Cambiar un buildArg exige rebuild.**
+
+**Rutas nuevas con extensión.** El matcher del middleware deja pasar las rutas
+con extensión; sin ella, en el host del jugador se las come el redirect a
+`/play`. Por eso `/icons/tenant-icon.png` termina en `.png`.
+
+**Hosts de panel.** El front reconoce `admin.` y `admin-`. Un host nuevo que no
+empiece así sirve la interfaz de jugador, no el panel.
+
+**No se puede ejecutar nada adentro del VPS por la API de Dokploy.** El puerto
+de Postgres lo bloquea el firewall y los Schedules fallan sin dejar log. Para
+seeds y mantenimiento: terminal del VPS y `docker exec`. Ver `docs/24`.
+
+---
+
+## Si algo se rompe
+
+1. `docs/26-monitoreo-diagnostico.md` — qué mirar y en qué orden.
+2. `docs/runbooks/disaster-recovery.md` — backups (restauración **probada** el
+   2026-09-04, invariante del ledger incluido).
+3. Los logs **no salen por la API REST** de Dokploy: se bajan del panel.
