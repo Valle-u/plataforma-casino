@@ -1,17 +1,45 @@
-name: CI + Migrate (STAGING)
+name: CI + Migrate (STAGING) — APAGADO
 
-# Entorno de PRUEBA (staging). Se dispara con push a la rama `staging`.
+# ⛔ APAGADO el 2026-09-04. NO corre solo.
 #
-# Este workflow SOLO corre CI (build/type-check) + migraciones contra la DB de
-# staging (Railway). Los DEPLOYS de staging los hace la INTEGRACIÓN NATIVA de
-# Railway y Vercel (ambos configurados para auto-deploy desde la rama `staging`
-# en sus dashboards) — por eso acá no hay pasos de deploy.
+# Este workflow NUNCA deployó nada: los deploys de staging los hacían las
+# integraciones NATIVAS de Railway y Vercel (auto-deploy desde `staging`,
+# configurado en sus dashboards). Acá sólo había CI + migraciones.
 #
-# PRODUCCIÓN vive en el VPS (Dokploy) y se deploya con push a `main` vía el
-# webhook de Dokploy (autoDeploy). Ver docs/24-entornos-deploy.md.
+# ---------------------------------------------------------------------------
+# ⛔ POR QUÉ ESTÁ APAGADO
+# ---------------------------------------------------------------------------
+# El job `migrate` corre las migraciones contra `DATABASE_URL_CONTROL`, que
+# apunta a la **Postgres de staging en Railway**. Al dar de baja Railway ese job
+# empieza a fallar en rojo en cada push a `staging`.
+#
+# Y de fondo: el 2026-09-04 se decidió que **el staging se muda a Dokploy** (no
+# se usan más Railway ni Vercel para probar), así que este workflow queda
+# obsoleto entero. Ver docs/DEVLOG.md y docs/24-entornos-deploy.md.
+#
+# ---------------------------------------------------------------------------
+# EL CI DE `staging` NO SE PERDIÓ
+# ---------------------------------------------------------------------------
+# Apagar esto dejaba a `staging` sin ningún chequeo. Para no meter esa regresión
+# se agregó `staging` a los triggers de **`ci.yml`**, que es estrictamente mejor
+# que el job `ci` de acá: además de lint/build/type-check corre la **suite de
+# tests** con Postgres y Redis de verdad.
+#
+# ---------------------------------------------------------------------------
+# CUANDO SE ARME EL STAGING EN DOKPLOY
+# ---------------------------------------------------------------------------
+# No reactivar esto tal cual. Lo que hace falta es otra cosa:
+# 1. Apps de staging en Dokploy con autoDeploy desde `staging` (webhooks propios:
+#    Dokploy filtra por rama, sin su propio refreshToken el push no dispara nada).
+# 2. DBs de staging SEPARADAS de producción.
+# 3. Las migraciones, decidir si por MIGRATE_ON_BOOT (como prod) o a mano.
+# 4. Borrar el secret `DATABASE_URL_CONTROL`, que apunta a Railway.
+
 on:
-  push:
-    branches: [staging]
+  # ⛔ Trigger desactivado: el job `migrate` apunta a la Postgres de Railway.
+  # push:
+  #   branches: [staging]
+  workflow_dispatch: {} # sólo a mano, y sólo si se repuntó DATABASE_URL_CONTROL
 
 concurrency:
   group: deploy-${{ github.ref }}

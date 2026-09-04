@@ -3,11 +3,16 @@ name: CI
 # ⚠️ Antes esto corría SÓLO en pull_request. Como el trabajo va derecho a `main`
 # —`autoDeploy` deploya cada push—, el CI no se ejecutaba nunca: era decorativo.
 # Ahora corre también en push a `main`, que es donde realmente hace falta.
+#
+# `staging` se agregó el 2026-09-04, al apagar `deploy.yml` (que era el único
+# chequeo de esa rama y murió con Railway). Sin esto, `staging` quedaba sin CI.
+# Se gana de paso: este workflow además corre la suite de tests, cosa que el
+# `ci` de `deploy.yml` no hacía.
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 concurrency:
   group: ci-${{ github.ref }}

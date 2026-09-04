@@ -15780,3 +15780,35 @@ Railway/Vercel en cada push a `staging`. Conviene apagarlo en la misma tanda —
 todas formas queda obsoleto por la mudanza del staging a Dokploy. Y borrar los
 secrets huérfanos (`BACKUP_PG*` y los de Railway/Vercel): **un secret vivo que
 apunta a infra muerta es exactamente la trampa que causó todo esto**.
+
+### `deploy.yml` apagado — y una corrección (2026-09-04)
+
+**Corrección a lo que dije antes:** `deploy.yml` **nunca deployó nada**. Lo leí
+antes de tocarlo y decía otra cosa que lo que yo había afirmado: los deploys de
+staging los hacían las integraciones **nativas** de Railway y Vercel (auto-deploy
+desde `staging`, configurado en sus dashboards). El workflow sólo corría CI +
+migraciones.
+
+Cambia qué se rompe al dar de baja Railway: no un deploy, sino el job `migrate`,
+que corre contra `DATABASE_URL_CONTROL` (la Postgres de staging en Railway).
+
+### `staging` no se quedó sin CI
+
+Apagar `deploy.yml` a secas dejaba a `staging` **sin ningún chequeo** — era su
+único workflow. Eso hubiera sido meter una regresión mientras se hacía otra cosa.
+
+Se agregó `staging` a los triggers de **`ci.yml`**, que es **mejor** que lo que se
+perdió: además de lint/build/type-check corre la **suite de tests** con Postgres y
+Redis de verdad, cosa que el job `ci` de `deploy.yml` no hacía.
+
+Los dos workflows quedaron validados con `js-yaml` antes de pushear. Un YAML roto
+no falla al pushear: falla en silencio y el workflow simplemente no corre.
+
+### Lo que queda para el dueño
+
+1. **Dar de baja Railway** (y Vercel). No hay credenciales acá.
+2. **Borrar los secrets huérfanos** de GitHub: `BACKUP_PGHOST`, `BACKUP_PGPORT`,
+   `BACKUP_PGUSER`, `BACKUP_PGPASSWORD`, `DATABASE_URL_CONTROL` y los de
+   Railway/Vercel. **Un secret vivo apuntando a infra muerta es exactamente la
+   trampa que causó todo esto.**
+3. **Montar el staging en Dokploy** (decisión del 2026-09-04, todavía sin hacer).

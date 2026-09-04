@@ -582,15 +582,22 @@ está hecho y a salvo**, así que no queda nada esperando: se puede dar de baja.
 Ojo: con el workflow apagado, si hiciera falta otro dump hay que dispararlo a
 mano (`workflow_dispatch`) **mientras Railway siga viva**.
 
-> **⚠️ Al apagar Railway se rompe `.github/workflows/deploy.yml`.** Ese workflow
-> deploya a Railway/Vercel en cada push a `staging`, así que va a empezar a
-> fallar en rojo. Conviene apagarlo **en la misma tanda**, no después — de todas
-> formas queda obsoleto por la mudanza del staging a Dokploy (2026-09-04).
+> **✅ Hecho el 2026-09-04: `.github/workflows/deploy.yml` apagado.**
 >
-> Y **borrar los secrets** que quedan sin uso: `BACKUP_PGHOST`, `BACKUP_PGPORT`,
-> `BACKUP_PGUSER`, `BACKUP_PGPASSWORD` (apuntan a Railway) más los de
-> Railway/Vercel del deploy. Un secret vivo que apunta a infra muerta es
-> exactamente la trampa que causó todo esto.
+> Corrección a lo que decía antes acá: ese workflow **nunca deployó nada**. Los
+> deploys de staging los hacían las integraciones **nativas** de Railway y Vercel
+> (auto-deploy desde `staging`, configurado en sus dashboards). El workflow sólo
+> corría CI + migraciones — y lo que se rompía al apagar Railway era el job
+> `migrate`, que apunta a `DATABASE_URL_CONTROL` (la Postgres de staging).
+>
+> **`staging` no se quedó sin CI:** se agregó a los triggers de `ci.yml`, que es
+> mejor que el job que se perdió — además de lint/build/type-check corre la suite
+> de tests con Postgres y Redis reales.
+>
+> **Todavía falta borrar los secrets huérfanos**: `BACKUP_PGHOST`,
+> `BACKUP_PGPORT`, `BACKUP_PGUSER`, `BACKUP_PGPASSWORD` y `DATABASE_URL_CONTROL`
+> (todos apuntan a Railway), más los de Railway/Vercel. Un secret vivo que apunta
+> a infra muerta es exactamente la trampa que causó todo esto.
 
 ### ⚠️ El cron de GitHub Actions llega tarde — hasta 5 horas
 
