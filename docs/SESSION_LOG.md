@@ -15582,3 +15582,48 @@ sucursal*, visible para socio, cajero y distribuidor
    describiendo Railway y Vercel, que ya no se usan.
 4. **Fase 2 del monitoreo** (`docs/26`): alertas de negocio y runbook de
    diagnóstico.
+
+---
+
+## Addendum 3 — se probó la restauración del backup (2026-09-04)
+
+**El punto 3 de arriba deja de estar abierto en su primera mitad.** Se restauró
+el backup de producción del **2026-09-04 06:00 UTC** en bases temporales locales:
+`pg_restore` sin un solo error, y —lo que realmente importa— **el invariante del
+ledger se cumple**: todas las wallets cuadran con su último `balance_after`.
+18 users, 2.743 `wallet_tx`, 1.884 rondas, 572 de auditoría, supply 286.128,67.
+
+No alcanzaba con ver que cargue: un dump puede cargar y estar económicamente
+roto. Por eso se corrió el chequeo de consistencia, no sólo el conteo de filas.
+
+Detalle completo en `docs/runbooks/disaster-recovery.md` (`0ac268b`).
+
+### ⚠️ Tres cosas que el runbook decía mal
+
+1. **El backup que corre no es `backup-all.sh`** sino los **backups nativos de
+   Dokploy** sobre `casino-postgres-ribula`: `0 6 * * *`, retención 14, para
+   `control` y `tenant_miamihub`. El doc hablaba de cron 03:00 y retención 30.
+
+2. **Los archivos dicen `.sql.gz` pero adentro son formato custom de `pg_dump`**
+   (empiezan con `PGDMP`). Van con `pg_restore`, no con `psql`. Descubrir eso en
+   medio de una caída cuesta minutos que no se tienen.
+
+3. **Hay un segundo juego de backups que NO cubre producción.** En el mismo
+   bucket, bajo `YYYY/MM/DD/`, hay dumps de **`tenant_demo_casino`** — y el
+   control de producción tiene un solo tenant, `miamihub` (verificado en el
+   backup restaurado). Son **más frecuentes y más grandes** que los buenos, así
+   que a simple vista dan una sensación de cobertura que es falsa. Hay que
+   averiguar de dónde salen y apagarlos o corregirlos: en una emergencia,
+   agarrar el archivo equivocado es peor que no tener nada.
+
+### Lo que sigue sin probarse
+
+- **El swap real sobre producción** (restaurar encima, no a una DB temporal).
+- **El backup de R2/uploads**: comprobantes e imágenes no se respaldan, sólo las
+  bases de datos.
+
+### Higiene
+
+Los archivos temporales del test (dumps restaurados, `dest.json`, `pg.json` y
+los scripts de acceso a R2) tenían **datos de producción y credenciales del
+bucket**. Se borraron junto con las dos DBs temporales al terminar.
