@@ -9668,3 +9668,68 @@ no rompe: filtra. `c189a60` existió justamente para cerrar una fuga de ese tipo
 y `START_HERE.md §7` marca esta área como "preguntar siempre, aunque parezca
 trivial". Con un punto de diseño sin cerrar y una migración pendiente, se
 documenta y se hace con la cabeza fresca.
+
+---
+
+## 2026-09-03 (cont.) — El CBU propio por operador, implementado
+
+Actualiza la entrada anterior, que quedó como *"diseñada, NO implementada"*.
+El dueño cerró el punto que faltaba: **"en la sección de transferencias
+bancarias, cada uno ve lo suyo únicamente"** — el socio incluido.
+
+### El obstáculo que apareció al codearlo
+
+`onlyUploadedBy` estaba haciendo **dos trabajos**:
+
+1. *¿Qué transferencias puedo tocar?* → filtra por **quién las subió**.
+2. *¿De quién puedo conciliar la solicitud?* → filtra por **de quién es**.
+
+Funcionaba de casualidad: como el socio independiente recibía toda su sub-red,
+la lista de "quién subió" **también contenía a los jugadores**. Al achicarla a
+"sólo lo mío", ese doble uso habría roto **todos** los match — un jugador nunca
+sube transferencias, así que ningún dueño de solicitud habría caído en scope.
+
+Se separaron en `onlyOwners` / `excludeOwners`. Ese fue el cambio de fondo; el
+resto salió detrás.
+
+### Cómo quedó
+
+| | |
+|---|---|
+| Transferencias que ve un operador indep | **sólo las que subió él** |
+| Solicitudes que puede conciliar | las de **su red** (él y quien cuelga de él) |
+| CBU | **propio**, en `users.branch_bank_account` |
+| Admin / red central | sin cambios: todo menos lo de las redes independientes |
+
+⚠️ **El socio perdió visibilidad**: antes veía toda su sub-red, ahora sólo lo
+suyo. Es lo pedido y es más aislante, pero es una pérdida de supervisión real
+sobre su propia red.
+
+### Qué se tocó
+
+- `getIndepBankScope` — "independiente" pasa a ser **estar dentro** de una red
+  independiente, no tener el flag propio. Devuelve el CBU **del usuario**.
+- `getBankTxScope` — `onlyUploadedBy: [uno mismo]` + `onlyOwners: [su red]`.
+- `assertRequestOwnerInScope` — usa la frontera de dueño, con fallback a la vieja
+  para llamadores que no la manden.
+- `syncBranchBankAccountFromPaymentMethods` — deja de ser exclusivo del socio.
+
+No se cambió ninguna firma de método ni el controller: sólo la **forma** del
+objeto de scope que ya circulaba. Menos superficie, menos riesgo.
+
+### Verificación
+
+`deposits-indep-house`, `withdrawals-indep-house`, `bank-transactions` y
+`bank-tx-match-manual`: **36/36**. La tercera es la que cubre al admin y la red
+central — confirma que separar las fronteras no rompió el lado que no se tocó.
+`T-D6` quedó en verde: el hueco está cerrado.
+
+### ⚠️ Antes de que esto llegue a producción
+
+1. **Los cajeros y distribuidores actuales NO tienen CBU cargado.** Al deployar
+   quedan bloqueados para subir transferencias (`BANK_TX_NO_CBU`) hasta que lo
+   carguen. Backfill, aviso previo, o activación por tenant: hay que decidirlo.
+2. **La pantalla "Mis métodos de pago"** tiene que estar disponible para cajeros
+   y distribuidores, no sólo para socios. **Sin verificar.**
+3. El socio pierde visibilidad sobre su red — conviene avisarle antes, no que lo
+   descubra.

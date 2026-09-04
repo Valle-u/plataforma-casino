@@ -152,6 +152,21 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     );
   }
 
+  /**
+   * Carga el CBU propio de un operador **sin** marcarlo como sucursal
+   * independiente.
+   *
+   * Desde 2026-09-03 cada cajero y distribuidor dentro de una red independiente
+   * opera contra SU banco: sin CBU cargado no puede subir transferencias
+   * (`BANK_TX_NO_CBU`). En producción el CBU sale de su método de pago, que
+   * dispara `syncBranchBankAccountFromPaymentMethods`; acá se setea directo.
+   */
+  async function setOwnBankAccount(userId: string, cbu: string): Promise<void> {
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET branch_bank_account = ${cbu} WHERE id = ${userId}`,
+    );
+  }
+
   async function getBalance(userId: string): Promise<number> {
     const rows = (await ctx.tenantDb.execute(
       sql`SELECT balance FROM wallets WHERE user_id = ${userId} LIMIT 1`,
@@ -635,6 +650,8 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     // la solicitud, tampoco puede conciliarla: desde `c189a60` el match valida
     // el scope del dueño y devuelve el mismo 404.
     await allowBankTx(cajero.id);
+    // El cajero opera contra SU banco, así que necesita su propio CBU.
+    await setOwnBankAccount(cajero.id, 'CBU-CAJERO-TD6');
     await matchBankTxForDeposit(ctx.request, cajeroToken, depositId, null);
     const approveStatus = async (token: string): Promise<number> => {
       const r = await ctx.request

@@ -708,7 +708,20 @@ export class UserHierarchyService {
       .where(eq(users.id, userId))
       .limit(1);
     const row = rows[0];
-    if (!row || !row.isIndep) return { independent: false, account: null };
+    if (!row) return { independent: false, account: null };
+
+    // ⚠️ No alcanza con el flag propio: un CAJERO o DISTRIBUIDOR *dentro* de una
+    // red independiente no tiene `isIndependentBranch`, y antes caía en la rama
+    // "red central" — que excluye lo subido por sub-redes independientes,
+    // **incluida la suya**. Resultado: no podía conciliar nada, y el depósito de
+    // un jugador colgado de él no lo podía conciliar nadie (e2e T-D6).
+    //
+    // Decisión del dueño (2026-09-03): cada cajero y distribuidor independiente
+    // tiene **su propio CBU** y ve sólo las transferencias de su banco.
+    const inside = row.isIndep || (await this.getIndependentSubtreeIds(db)).has(userId);
+    if (!inside) return { independent: false, account: null };
+
+    // La cuenta es la SUYA, no la del socio: cada uno opera contra su banco.
     const acct = (row.acct ?? '').trim();
     return { independent: true, account: acct === '' ? null : acct };
   }
@@ -728,14 +741,26 @@ export class UserHierarchyService {
   async getBankTxScope(
     db: TenantDb,
     actorId: string,
-  ): Promise<{ onlyUploadedBy?: string[]; excludeUploadedBy?: string[] }> {
+  ): Promise<{
+    onlyUploadedBy?: string[];
+    excludeUploadedBy?: string[];
+    onlyOwners?: string[];
+    excludeOwners?: string[];
+  }> {
     const { independent } = await this.getIndepBankScope(db, actorId);
     if (independent) {
+      // Transferencias: SÓLO las que subió él. "Cada uno ve lo suyo, de nadie
+      // más" (decisión del dueño, 2026-09-03). Antes acá iba toda su sub-red,
+      // así que un socio veía también las de sus cajeros.
+      //
+      // Solicitudes: las de SU red. Es otra frontera y por eso va aparte — un
+      // jugador nunca sube transferencias, así que reusar la lista de arriba
+      // dejaría fuera de scope a todos los dueños y rompería cada match.
       const ids = await this.getUserIdsInSubnetwork(db, actorId);
-      return { onlyUploadedBy: [...ids] };
+      return { onlyUploadedBy: [actorId], onlyOwners: [...ids] };
     }
     const indepIds = await this.getIndependentSubtreeIds(db);
-    return { excludeUploadedBy: [...indepIds] };
+    return { excludeUploadedBy: [...indepIds], excludeOwners: [...indepIds] };
   }
 
   /**
@@ -752,12 +777,18 @@ export class UserHierarchyService {
     db: TenantDb,
     ownerId: string,
   ): Promise<void> {
+    // Antes esto era sólo para el socio independiente. Ahora **cualquier
+    // operador dentro de una red independiente** tiene CBU propio: el cajero y
+    // el distribuidor también operan contra su banco (decisión del dueño,
+    // 2026-09-03). Fuera de esas redes sigue siendo no-op — la red central
+    // opera contra el banco del tenant.
     const uRows = await db
-      .select({ isIndep: users.isIndependentBranch })
+      .select({ id: users.id })
       .from(users)
       .where(eq(users.id, ownerId))
       .limit(1);
-    if (!uRows[0]?.isIndep) return; // solo el socio independiente tiene CBU de aislamiento.
+    if (!uRows[0]) return;
+    if (!(await this.getIndependentSubtreeIds(db)).has(ownerId)) return;
 
     const pmRows = await db
       .select({ config: paymentMethods.config })

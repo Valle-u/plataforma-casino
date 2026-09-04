@@ -134,6 +134,22 @@ export interface ListFilters {
    */
   onlyUploadedBy?: string[];
   excludeUploadedBy?: string[];
+  /**
+   * Aislamiento por DUEÑO DE LA SOLICITUD (2026-09-03). Responde otra pregunta
+   * que los dos de arriba: *¿de quién puedo conciliar el deposit/retiro?*
+   *
+   * ⚠️ **Antes esto no existía y se reusaban `onlyUploadedBy`/`excludeUploadedBy`
+   * para las dos cosas.** Funcionaba de casualidad: el socio independiente
+   * recibía toda su sub-red, así que la lista de "quién subió" también contenía
+   * a los jugadores. Al pasar a *"cada uno ve lo suyo"* —donde la lista de
+   * subidas es sólo el propio actor— esa reutilización rompía **todos** los
+   * match, porque un jugador nunca sube transferencias.
+   *
+   * Son dos fronteras distintas: la de la transferencia mira **quién la subió**;
+   * la de la solicitud mira **de quién es**.
+   */
+  onlyOwners?: string[];
+  excludeOwners?: string[];
 }
 
 export interface BankTxRow extends BankTransaction {
@@ -732,14 +748,26 @@ export class BankTransactionsService {
    * el mensaje del error.
    */
   private assertRequestOwnerInScope(
-    scope: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] } | undefined,
+    scope:
+      | {
+          onlyUploadedBy?: string[];
+          excludeUploadedBy?: string[];
+          onlyOwners?: string[];
+          excludeOwners?: string[];
+        }
+      | undefined,
     ownerUserId: string,
     bankTxId: string,
   ): void {
     if (!scope) return;
+    // Se usan los sets de DUEÑO si vienen. El fallback a los de uploader existe
+    // sólo para llamadores viejos que todavía no los mandan: mezclar las dos
+    // fronteras es lo que había que dejar de hacer (ver el tipo `BankTxScope`).
+    const only = scope.onlyOwners ?? scope.onlyUploadedBy;
+    const exclude = scope.excludeOwners ?? scope.excludeUploadedBy;
     const outOfScope =
-      (!!scope.onlyUploadedBy && !scope.onlyUploadedBy.includes(ownerUserId)) ||
-      (!!scope.excludeUploadedBy && scope.excludeUploadedBy.includes(ownerUserId));
+      (!!only && !only.includes(ownerUserId)) ||
+      (!!exclude && exclude.includes(ownerUserId));
     if (outOfScope) throw new BankTransactionNotFoundError(bankTxId);
   }
 
