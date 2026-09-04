@@ -10253,3 +10253,78 @@ ninguna ronda jugada.** Lo verificado es: los 5 e2e contra una DB real, y que la
 ruta quedó registrada en staging (401 sin token, contra 404 de una ruta
 inventada). El drawer con datos reales se ve recién al mergear a producción,
 que tiene 1.884 rondas.
+
+---
+
+## 2026-09-04 (cont.) — El icono de la app era el de Turborepo
+
+Al agregar el sitio a la pantalla de inicio del iPhone salía **la "T" rosa**: el
+placeholder del andamiaje del proyecto, que había quedado en
+`apps/web/public/icons/`. Pasaba en el panel y en la interfaz de jugador.
+
+**El favicon de la pestaña sí era el del tenant** (`lib/tenant-favicon.ts`, con
+bastante trabajo detrás). El de instalación no. Y el comentario de
+`app/manifest.ts` decía que el `apple-touch-icon` del tenant *"se inyecta
+dinámicamente desde el admin layout"*: **ese código nunca existió**. Es la
+segunda vez esta semana que un comentario describe algo que no está — la otra
+fue el procedimiento del puerto de Postgres en `docs/24`.
+
+### Por qué no alcanzaba con servir el logo
+
+iOS **deforma** lo que no es cuadrado, y ninguno de los dos assets de marca lo es:
+
+| | Tamaño | Qué es |
+|---|---|---|
+| `logoUrl` | 1949×807 (2.4:1) | wordmark apaisado — a 180px no se lee |
+| `faviconUrl` | 1024×1536 (0.67:1) | **el emblema**, vertical |
+
+Se usa el **emblema**, no el wordmark, encajado con `contain` en un cuadrado
+sobre el fondo de marca. `contain` y no `cover` a propósito: recortar este
+emblema le comería la estrella de arriba y la punta de abajo.
+
+### Cómo
+
+Ruta `app/icons/tenant-icon.png/route.tsx` que arma la imagen al vuelo con
+**`next/og`** — ya viene en Next, sin dependencias nuevas (`sharp` habría
+servido pero no es dependencia declarada del web y rompería el build standalone).
+
+Resuelve el tenant por el header `Host`, así que **la URL puede ser relativa**:
+cada host pide su propio icono y el manifest no necesita saber de tenants.
+
+### 🚨 El `.png` de la ruta no es decorativo
+
+Primer intento: `/icons/tenant-icon`, sin extensión. Devolvía **HTML con 200**.
+
+El matcher del middleware excluye las rutas **con extensión**
+(`.*\.[\w]+$`). Sin extensión, la ruta entra al middleware y en el host del
+jugador se la come el redirect a `/play`. El icono servía la página del casino
+con `content-type: text/html`, y ni iOS ni Chrome tenían de dónde sacar nada.
+
+Se resolvió poniéndole `.png` al path y **no** agregando una salida temprana al
+middleware, que ya lleva dos bugs sutiles esta misma semana (el favicon hoistado
+por React y el guion de `admin-`). Queda escrito en el archivo, porque es
+exactamente el tipo de detalle que alguien "limpia" después.
+
+### El manifest pasó a ser dinámico
+
+Por dos motivos. El nombre tiene que ser el del casino. Y **el panel y la
+interfaz de jugador son la misma app en hosts distintos**: sin distinguirlos,
+quien instale los dos termina con dos iconos idénticos y dos etiquetas iguales
+en la pantalla de inicio. Ahora el panel dice `Panel · <casino>`.
+
+Verificado en staging: `name="Staging"` en el host del jugador y
+`name="Panel · Staging"` en el del panel.
+
+### Lo que NO se pudo probar
+
+**El camino del emblema.** El tenant de staging no tiene marca cargada, así que
+lo verificado es el **fallback**: la inicial del tenant sobre el fondo (se ve
+bien, y es feo pero **propio** — cualquier cosa antes que el logo de otra
+empresa). El emblema real sólo se puede ver en producción, que sí lo tiene.
+
+Si fallara, degrada al fallback: no rompe la instalación.
+
+### Se borraron los tres PNG de Turborepo
+
+Era la causa raíz. Mientras estuvieran en el repo, cualquier referencia nueva
+volvía a traerlos.
