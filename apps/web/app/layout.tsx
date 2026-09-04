@@ -69,7 +69,12 @@ export const metadata: Metadata = {
     // <link rel="icon"> gestionado por React → el favicon del tenant es el
     // único y gana sin conflicto. Los iconos de instalación PWA vienen del
     // manifest (app/manifest.ts), no de estos links. Ver docs/DEVLOG.md.
-    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+    // Ruta generada por tenant (app/icons/tenant-icon/route.tsx), NO un PNG
+    // estático: el estático era la "T" de Turborepo del andamiaje. Relativa a
+    // propósito — la ruta resuelve el tenant por el header Host.
+    apple: [
+      { url: '/icons/tenant-icon?size=180', sizes: '180x180', type: 'image/png' },
+    ],
   },
 };
 

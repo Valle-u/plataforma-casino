@@ -23,8 +23,8 @@ let applyToken = 0;
 /**
  * Deja el <head> con UN SOLO <link rel="icon">: el que le pasamos. Borra
  * TODOS los icon links previos, incluidos los estáticos de la plataforma
- * (`/icons/icon-192.png`, `/icons/icon-512.png` que Next inyecta desde el
- * manifest/metadata). Es la corrección clave: cuando el favicon del tenant
+ * (los que Next inyectaba desde el manifest/metadata; esos PNG ya no existen,
+ * ver app/icons/tenant-icon). Es la corrección clave: cuando el favicon del tenant
  * convivía con esos estáticos —que declaran `sizes` explícito— Chrome elegía
  * los estáticos por sobre el inyectado (sin `sizes`), y la pestaña seguía
  * mostrando el favicon de la plataforma. Con un único icon link, Chrome no
