@@ -134,6 +134,20 @@ sólo lista `/etc/dokploy/traefik`).
 
 O sea: falla y no dice por qué. **No perder tiempo ahí** — usar `docker exec`.
 
+### 🛑 El campo `command` de la app: tampoco
+
+Tercer intento: setear `command` en la app por `application.update` para que el
+contenedor corriera el seed y después arrancara la API. **Dokploy lo guarda en su
+base pero no lo aplica al servicio de Swarm** — verificado en
+`docker.getConfig`: el `ContainerSpec` sale sin `Command` ni `Args`, y el
+contenedor arranca con el `CMD` del Dockerfile.
+
+> ⚠️ Peor: **queda guardado**. Si una versión futura de Dokploy sí lo aplicara,
+> se activaría solo. Si se prueba esto, **limpiarlo después** (`command: null`).
+
+**Conclusión: por la API de Dokploy no hay forma de ejecutar nada adentro de un
+contenedor.** Hace falta una terminal en el VPS (panel de Hostinger o SSH).
+
 
 ---
 
