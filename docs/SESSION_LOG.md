@@ -15450,3 +15450,79 @@ Ahora:                  2 fallas  (T-D6 + notifications/fraud_link_suspected)
 
 De 60 arregladas, **ninguna era un bug del producto**. La que queda de tesorería
 sí señala uno, y es el único hallazgo de producto de todo el día.
+
+---
+
+## 2026-09-03 (cont. 2) — Addendum 2: implementado el CBU por operador · la suite quedó en 945/946
+
+### Se implementó el pedido del dueño
+
+*"Cada cajero y distribuidor independiente con su propio CBU; en la sección de
+transferencias, cada uno ve lo suyo únicamente."* Detalle técnico en el DEVLOG de
+hoy. Commits: `3d7fd03` (implementación) y `3a2170c` (performance).
+
+**El obstáculo real** no era el scope sino que `onlyUploadedBy` hacía **dos
+trabajos**: filtrar transferencias por quién las subió **y** validar al dueño de
+la solicitud. Funcionaba de casualidad —el socio recibía toda su sub-red, así que
+la lista también contenía a los jugadores— y al achicarla a "sólo lo mío" habría
+roto **todos** los match. Se separaron en `onlyOwners`/`excludeOwners`.
+
+### ⚠️ Una regresión de performance propia, y cómo se encontró
+
+La primera versión resolvía *"¿está dentro de una red independiente?"* con
+`getIndependentSubtreeIds`: enumera todos los independientes y recorre el
+subárbol de cada uno. **La suite pasó de 26 minutos a no completar una sola suite
+en diez.**
+
+No era sólo un problema de tests: eso se llama en **cada operación bancaria y
+cada escritura de método de pago**, así que en producción el costo crecía con la
+cantidad de usuarios. Se cambió por subir la cadena de padres — una query
+recursiva contra la profundidad del árbol.
+
+### 💡 Tres corridas seguidas dieron resultados distintos, y ninguna servía
+
+5 fallas, después 2, después otras 2. Con esa varianza no se podía afirmar nada
+del cambio. Las causas resultaron ser **del entorno, no del código**:
+
+1. **El rate limiter vive en Redis**, que en local es Upstash — externo y
+   persistente. Correr la misma suite tres veces en diez minutos **agota la
+   cuota**: un test falló con 403 en un bloque llamado *"rate-limit sobre
+   bank_tx.upload"*.
+2. **La base de test desaparecía a mitad de corrida**
+   (`PostgresError: no existe la base de datos «tenant_jest_test»`), lo que
+   producía 500 en logins y saldos en cero. La hipótesis es el `globalTeardown`
+   de una corrida cortada disparando tarde; **no se pudo probar**.
+
+**Lo que sí sirvió**: apagar los servidores de desarrollo —llevaban horas
+compitiendo por CPU y conexiones— y usar un `REDIS_KEY_PREFIX` único. Con eso la
+corrida fue limpia y reproducible.
+
+⚠️ **Regla práctica**: correr la misma suite dos veces seguidas en local **no es
+idempotente**. Redis es externo y persiste. Si hay que repetir, cambiar el
+prefijo. Es lo que ya hace el CI.
+
+### Estado de la suite
+
+```
+Al empezar el día:  62 fallas · 13 suites
+Ahora:               1 falla  ·  1 suite     (945/946)
+```
+
+La única en rojo es `notifications › fraud_link_suspected`: pasa aislada (49/49)
+y falla en la suite completa. Contaminación cruzada, **sin resolver**.
+
+### ⚠️ Antes de que el CBU por operador llegue a producción
+
+1. **Los cajeros y distribuidores existentes NO tienen CBU cargado.** Al deployar
+   quedan bloqueados para subir transferencias (`BANK_TX_NO_CBU`) hasta cargarlo.
+   Backfill, aviso previo, o activación por tenant: sin decidir.
+2. **La pantalla "Mis métodos de pago"** tiene que estar disponible para cajeros
+   y distribuidores, no sólo para socios. **Sin verificar.**
+3. **El socio pierde visibilidad** sobre las transferencias de su red. Es lo
+   pedido, pero conviene avisarle antes de que lo descubra.
+
+### Pendiente que sigue sin implementarse
+
+**Invertir el orden de consumo del saldo** (primero el real, después el bono).
+Sigue como estaba: `wallet.service.ts` consume **bonus primero**. El análisis
+está en el DEVLOG de hoy.
