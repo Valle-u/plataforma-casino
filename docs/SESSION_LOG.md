@@ -15526,3 +15526,59 @@ y falla en la suite completa. Contaminación cruzada, **sin resolver**.
 **Invertir el orden de consumo del saldo** (primero el real, después el bono).
 Sigue como estaba: `wallet.service.ts` consume **bonus primero**. El análisis
 está en el DEVLOG de hoy.
+
+---
+
+## 2026-09-03 (cont. 3) — Addendum 3: consumo de fichas invertido · pendientes que dejaron de serlo
+
+### Se implementó el orden de consumo
+
+**Primero el saldo real, después el bono** (`538f3d3`). Detalle en el DEVLOG de
+hoy. El riesgo del `locked_balance` quedó cubierto **por construcción**: el
+débito real se capa contra `balance − locked`, así que la plata en hold nunca
+entra en el cálculo.
+
+Verificado: `bonuses`, `hold-vs-gambling`, `gregmorn-callback`,
+`forever-callback` (67/67) y `palace-bonus` (8/8).
+
+### 💡 Dos trampas que valen para la próxima
+
+**`jest -- <patrón>` que no matchea no falla, corre menos.** Pedí cinco archivos
+y corrieron cuatro: el de Palace se llama `palace-bonus.e2e.ts`, no
+`palace-callback`. Estuve a punto de reportar un verde incompleto —y era
+justamente la suite que prueba el reparto bono/real—. **Mirar cuántas suites
+corrieron, no sólo si están en verde.**
+
+**Invertir una regla puede dejar tests que pasan por la razón equivocada.** El
+test *"bet mixto"* apostaba 500 con 1300 de saldo real: con el orden nuevo eso
+sale entero de la real y dejaba de probar la mezcla. Se subió a 1500 para que
+siga ejercitando el reparto.
+
+### Se unificó una definición duplicada
+
+Yo había escrito `hasIndependentAncestor` sin ver que `getIndependentBranchAncestor`
+ya existía — **y es la que usa el gate de métodos de pago**, o sea la que decide
+quién puede cargar su CBU. Dos definiciones de lo mismo podían divergir y dejar a
+alguien con CBU cargado pero sin poder conciliar. Ahora es una sola (`bd4b649`).
+
+### ⚠️ Pendientes que dejaron de serlo
+
+El dueño confirmó (2026-09-03) que **la plataforma todavía no tiene operativa
+real**. Eso cierra dos cosas que estaban anotadas como bloqueantes:
+
+- ~~Backfill / aviso del CBU a los operadores existentes~~ — no hay operadores.
+- ~~Avisarle al socio que pierde visibilidad~~ — no hay a quién avisar.
+
+Y quedó verificado que **la pantalla para cargar el CBU ya existe**: *Mi
+sucursal*, visible para socio, cajero y distribuidor
+(`apps/web/components/admin/sidebar.tsx`). No hay que construir nada.
+
+### Lo que sigue abierto
+
+1. **`notifications › fraud_link_suspected`** — pasa aislada, falla en la suite
+   completa. Contaminación cruzada, sin resolver.
+2. **Credenciales de Prod de Gregmorn** — el bloqueante duro para abrir.
+3. **Nunca se restauró un backup**, y `scripts/deploy-checklist.md` sigue
+   describiendo Railway y Vercel, que ya no se usan.
+4. **Fase 2 del monitoreo** (`docs/26`): alertas de negocio y runbook de
+   diagnóstico.
