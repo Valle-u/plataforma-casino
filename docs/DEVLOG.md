@@ -10183,3 +10183,73 @@ Tres bugs de staging, los tres **de configuración, ninguno de código**: el gui
 en `admin-staging` (middleware), el mismo guion en los links de referido, y estos
 `buildArgs`. Los tres los introduje al montar el entorno, y **los tres los
 encontró staging antes que producción** — que es exactamente para lo que existe.
+
+---
+
+## 2026-09-04 (cont.) — Detalle de ronda: sacar a pantalla lo que ya se guardaba
+
+Pregunta del dueño: *"¿se ve todo al detalle? ¿puedo ver el id para mandarle a
+los proveedores?"*. La respuesta era **no**, y el diagnóstico dio algo llamativo:
+**el modelo de datos estaba bien pensado para auditar y la mitad no llegaba
+nunca a la pantalla.**
+
+### Lo que se guardaba y no se veía
+
+| Campo | Por qué importa |
+|---|---|
+| `action` | Si fue giro común, **compra de la feature** o tiradas gratis. Sin esto una compra se ve idéntica a un giro normal: un `bet` grande y después premios sin apuesta que los expliquen. El comentario del propio campo dice que existe para auditar. |
+| `payload` | El resultado crudo del proveedor: RNG, rodillos, multiplicador. Es **la evidencia** de qué pasó. |
+| `auto_settled_reason` | Si la cerró el proveedor o la cerramos nosotros. Gregmorn deja rondas abiertas para siempre y su API no permite consultarlas. En una disputa la diferencia es central. |
+| `win_wallet_tx_id`, `rollback_wallet_tx_id` | El salto de la ronda al movimiento de fichas que la pagó. |
+
+Y lo más grave: **`palace_transactions`, `gregmorn_transactions` y
+`forever_transactions` eran de sólo escritura.** Verificado: los únicos archivos
+que las tocan son los callbacks que las escriben. Ahí viven los **ids de
+transacción del proveedor** (`trans_guid`, `transaction_id`, `txn_code`), que es
+lo que piden además del round id cuando hay que reclamar una jugada.
+
+El único camino para sacar el round id completo era **exportar el CSV**: en la
+tabla sale cortado a 14 caracteres, con el completo sólo en el tooltip.
+
+### Qué se hizo
+
+`GET /tenant/game-stats/rounds/:id` + un drawer, siguiendo el patrón de
+`deposit-detail-drawer`. **No agrega datos: sólo lee lo que ya estaba.** Todos
+los identificadores con botón de copiar, que era el problema práctico.
+
+### El riesgo, y por qué 404 y no 403
+
+A diferencia del listado, este endpoint **acepta un id arbitrario**. Sin scope,
+un operador que conociera el id de una ronda podría leer actividad de otra red
+— fuga de aislamiento (**E8/P3**).
+
+Usa el mismo `resolveScope` del listado, y cuando la ronda existe pero está
+fuera de alcance devuelve **404, no 403**: un 403 confirmaría que existe, y esa
+confirmación ya es información que no le corresponde.
+
+**Hay precedente en el repo:** a los socios se les quitó `audit.view` (migración
+0102) exactamente por esto — el `audit_log` no está scopeado y un socio veía la
+actividad de todo el tenant.
+
+### Los tests
+
+Cinco e2e, y el que importa es el de la fuga, **con contraprueba**: si el mismo
+actor recibiera 404 siempre, el test del aislamiento pasaría por el motivo
+equivocado. Los dos van juntos a propósito.
+
+Al escribirlos apareció que **un cajero no tiene `game_stats.view_own_network`**:
+el guard cortaba con 403 antes de llegar al scope. Los roles que sí lo tienen son
+`socio` y `distribuidor`.
+
+### Un ajuste que salió del test
+
+El mapeo de Palace exponía el `type` numérico del callback. La tabla tiene además
+`sort` (**BET / WIN / CANCEL**), que dice mucho más en pantalla. Se cambió.
+
+### Limitación de la verificación
+
+**En staging no se pudo probar de punta a punta: el tenant es nuevo y no tiene
+ninguna ronda jugada.** Lo verificado es: los 5 e2e contra una DB real, y que la
+ruta quedó registrada en staging (401 sin token, contra 404 de una ruta
+inventada). El drawer con datos reales se ve recién al mergear a producción,
+que tiene 1.884 rondas.
