@@ -104,24 +104,31 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   requestHeaders.set('x-pathname', pathname);
 
   // ── Routing por subdominio ──────────────────────────────────────────────
-  // El PANEL solo se accede por `admin.<dominio>`. En el host del JUGADOR
+  // El PANEL solo se accede por un host de admin. En el host del JUGADOR
   // (dominio pelado / www.), el root y CUALQUIER ruta de panel redirigen a la
   // interfaz de jugador — así `miamihub.vip` abre el casino, no el login del
   // panel, y el panel no es accesible desde ahí.
-  // Excepciones (se mantiene el ruteo por path, panel accesible por `/login`):
-  //   - dev (localhost): no hay subdominio admin.
-  //   - staging en Vercel (`*.vercel.app`): no se puede tener `admin.<host>`
-  //     como subdominio del dominio efímero de Vercel, así que ahí el panel se
-  //     accede por path igual que en dev. La regla del subdominio aplica solo a
-  //     los dominios de producción reales (el VPS).
+  //
+  // Se aceptan DOS formas, `admin.` y `admin-`:
+  //   - `admin.miamihub.vip`        → producción
+  //   - `admin-staging.miamihub.vip` → staging
+  //
+  // El guion existe porque `admin.staging.miamihub.vip` es un subdominio de dos
+  // niveles y el certificado universal de Cloudflare (plan free) sólo cubre uno.
+  // Con guion sigue siendo un nivel, el cert lo cubre y el proxy queda activo.
+  //
+  // ⚠️ Sin el caso del guion, staging redirige TODO a `/play` y el panel es
+  //    inalcanzable — pasó el 2026-09-04 al montar el entorno.
+  //
+  // Excepción: dev (localhost) no tiene subdominio admin, así que ahí el panel
+  // se accede por path (`/login`).
   const host = (req.headers.get('host') ?? '').toLowerCase();
   const isLocalhost =
     host.includes('localhost') ||
     host.startsWith('127.') ||
     host.includes('0.0.0.0');
-  const isVercelHost = host.endsWith('.vercel.app');
-  const isAdminHost = host.startsWith('admin.');
-  if (!isLocalhost && !isVercelHost && !isAdminHost) {
+  const isAdminHost = host.startsWith('admin.') || host.startsWith('admin-');
+  if (!isLocalhost && !isAdminHost) {
     const isPlayerRoute =
       pathname.startsWith('/play') || pathname.startsWith('/r/');
     if (!isPlayerRoute) {

@@ -10066,3 +10066,60 @@ En `tenant_domains`, **`id` no tiene default en la DB** — Drizzle lo genera de
 lado JS con `$defaultFn`, así que un `INSERT` a mano tiene que pasar
 `gen_random_uuid()`. Y la verificación es **`verified_at` (timestamp)**, no un
 booleano `verified`.
+
+---
+
+## 2026-09-04 (cont.) — El panel de staging no era el panel
+
+Los dos dominios de staging mostraban **la interfaz de jugador**. El casino
+estaba bien; el panel era inalcanzable.
+
+### La causa: un guion
+
+`apps/web/middleware.ts` decide si el host es de panel con
+`host.startsWith('admin.')` — **con punto**. El dominio que se eligió al montar
+staging fue `admin-staging.miamihub.vip`, **con guion**, así que no matcheaba: el
+middleware lo trataba como host de jugador y redirigía *toda* ruta de panel a
+`/play`.
+
+Error de quien montó el entorno (yo): elegí el nombre sin mirar cómo lo
+interpreta el front.
+
+### Por qué el guion y no `admin.staging.miamihub.vip`
+
+Porque eso es un subdominio de **dos niveles** y el certificado universal de
+Cloudflare en plan free cubre **uno solo**. Con proxy activo presentaría un cert
+inválido; habría que pasar ese registro a DNS-only, exponiendo la IP del origen.
+El guion mantiene un solo nivel: cert cubierto, proxy activo.
+
+### El arreglo
+
+`isAdminHost` ahora acepta **`admin.` y `admin-`**. Eso deja el patrón
+disponible para cualquier entorno futuro (`admin-qa`, etc.) sin tocar más código.
+
+**Y había un segundo lugar con el mismo supuesto**, que no daba error visible:
+`apps/web/lib/player-url.ts`. Genera los links que se comparten con jugadores
+—referidos, campañas— **desde el panel**, quitándole el prefijo `admin.` al host.
+Con `admin-staging` no lo quitaba, así que **cada link de referido generado en
+staging habría apuntado al panel en vez de al casino**. Un visitante que lo
+abriera caía en el login del operador.
+
+Detalle lindo: `'admin.'.length === 'admin-'.length === 6`, así que un solo
+`slice(6)` sirve para los dos.
+
+```
+admin.miamihub.vip          → miamihub.vip
+admin-staging.miamihub.vip  → staging.miamihub.vip
+```
+
+### De paso: se limpió el caso de Vercel
+
+El middleware tenía una excepción para `*.vercel.app` (el staging viejo). Vercel
+se dio de baja el 2026-09-04, así que era código muerto que además explicaba mal
+por qué existía la regla.
+
+### Lo que esto dice del staging
+
+**Encontró un bug real el primer día, antes de producción.** Y encontró uno que
+sólo se ve mirando: el de los links de referido no rompe nada visible — genera
+links equivocados en silencio.
