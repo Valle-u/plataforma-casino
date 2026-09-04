@@ -718,7 +718,17 @@ export class UserHierarchyService {
     //
     // Decisión del dueño (2026-09-03): cada cajero y distribuidor independiente
     // tiene **su propio CBU** y ve sólo las transferencias de su banco.
-    const inside = row.isIndep || (await this.hasIndependentAncestor(db, userId));
+    // Se reusa `getIndependentBranchAncestor`, que es **el mismo helper que usa
+    // `NodePaymentMethodsService` para decidir quién puede gestionar sus propios
+    // métodos de pago**. Que sea el mismo no es cosmético: cargar el CBU y ser
+    // reconocido para el scope bancario tienen que ir juntos. Con dos
+    // definiciones distintas alguien podría cargar su CBU y seguir sin poder
+    // conciliar, o al revés.
+    //
+    // El `row.isIndep` va primero como atajo barato: si el flag ya vino en la
+    // fila leída, no hace falta subir el árbol.
+    const inside =
+      row.isIndep || (await this.getIndependentBranchAncestor(db, userId)) !== null;
     if (!inside) return { independent: false, account: null };
 
     // La cuenta es la SUYA, no la del socio: cada uno opera contra su banco.
@@ -788,7 +798,14 @@ export class UserHierarchyService {
       .where(eq(users.id, ownerId))
       .limit(1);
     if (!uRows[0]) return;
-    if (!uRows[0].isIndep && !(await this.hasIndependentAncestor(db, ownerId))) return;
+    // Misma definición que usa el gate de métodos de pago: quien puede cargar su
+    // CBU es exactamente quien lo tiene sincronizado.
+    if (
+      !uRows[0].isIndep &&
+      (await this.getIndependentBranchAncestor(db, ownerId)) === null
+    ) {
+      return;
+    }
 
     const pmRows = await db
       .select({ config: paymentMethods.config })
@@ -813,32 +830,6 @@ export class UserHierarchyService {
       .where(eq(users.id, ownerId));
   }
 
-  /**
-   * ¿Cuelga de un socio independiente? Mira **hacia arriba**, no hacia abajo.
-   *
-   * ⚠️ La alternativa obvia —`getIndependentSubtreeIds(db).has(userId)`— es
-   * correcta pero **carísima acá**: enumera todos los independientes y recorre
-   * el subárbol de cada uno. Se probó primero y hacía la suite de tests
-   * inusable, porque esto se llama en cada operación bancaria y en cada
-   * escritura de método de pago. Subir por la cadena de padres es una sola
-   * query recursiva contra la profundidad del árbol.
-   *
-   * No incluye al propio usuario: quien tiene `isIndependentBranch` se chequea
-   * aparte, antes, porque es más barato todavía.
-   */
-  private async hasIndependentAncestor(
-    db: TenantDb,
-    userId: string,
-  ): Promise<boolean> {
-    const ancestors = await this.getActiveAncestors(db, userId);
-    if (ancestors.length === 0) return false;
-    const rows = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(inArray(users.id, ancestors), eq(users.isIndependentBranch, true)))
-      .limit(1);
-    return rows.length > 0;
-  }
 
   async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
     const independents = await db
