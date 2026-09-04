@@ -10328,3 +10328,72 @@ Si fallara, degrada al fallback: no rompe la instalación.
 
 Era la causa raíz. Mientras estuvieran en el repo, cualquier referencia nueva
 volvía a traerlos.
+
+---
+
+## 2026-09-04 (cont.) — El header en modo app quedaba bajo la barra de estado
+
+En iOS standalone (PWA) la vista arranca en **y=0**: `viewport-fit=cover` más
+`apple-mobile-web-app-status-bar-style: black-translucent` hacen que el contenido
+se dibuje *debajo* de la barra de estado. Todo lo pegado arriba queda tapado por
+el notch y **no se puede tocar**.
+
+### Lo que estaba mal
+
+`components/admin/header.tsx` ya lo contemplaba
+(`h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]`). El
+del jugador **no**: el wrapper es `sticky top-0` en `app/play/layout.tsx` y el
+appbar era `h-14` pelado. Ahora usa el mismo patrón.
+
+Fuera de standalone el inset vale 0 y no cambia absolutamente nada.
+
+### El nav de abajo reservaba de más
+
+Tenía `paddingBottom: env(safe-area-inset-bottom)` — el inset **entero**, ~34px,
+que es la franja del indicador de inicio. Con la barra ya de 64px, los iconos
+quedaban flotando demasiado arriba.
+
+Pasa a reservar **la mitad**: el gesto de inicio conserva aire y los iconos bajan
+~17px. Está en una constante con nombre (`ESPACIO_INFERIOR`) y un comentario que
+dice que es **el único número a tocar** para subirla o bajarla.
+
+### Se sacó el `apple-mobile-web-app-title`
+
+Estaba fijo en `'Plataforma Casino'`. Ese meta **le gana al manifest**, así que
+el nombre dinámico que se había agregado un rato antes (casino vs `Panel · X`)
+no llegaba nunca a la pantalla de inicio: los dos accesos decían lo mismo. Sin
+ese campo, iOS usa el `short_name` del manifest, que sí varía por host.
+
+Es el tipo de bug que sólo aparece cuando dos arreglos se cruzan: el del icono
+dejó el manifest listo, y este meta lo anulaba en silencio.
+
+### Dos hipótesis que se descartaron sobre la marcha
+
+1. **Que `viewport-fit=cover` no llegara.** Se verificó el HTML servido en
+   producción: está, junto con `black-translucent`. Los `env()` funcionan.
+2. **Que `calc(3.5rem+env(...))` fuera CSS inválido** — `calc` exige espacios
+   alrededor del `+`. Falsa alarma: **Tailwind normaliza los espacios**, y el
+   CSS compilado sale `calc(3.5rem + env(safe-area-inset-top))`. Se comprobó
+   leyendo el bundle, no asumiendo.
+
+También se descartó que el service worker sirviera una versión vieja: es
+**network-only** desde la v1.5.0, no cachea nada.
+
+### Verificado en producción
+
+Con el navegador a 375×812 sobre `miamihub.vip`: el header visible lleva las
+clases del inset (56px con inset 0, ~103px en un iPhone), el nav resuelve
+`padding-bottom: 8px`, y `apple-mobile-web-app-title` ya no está en el HTML.
+
+**Lo que no se pudo verificar: el aspecto real en un iPhone.** Los `env()` valen
+0 en un navegador de escritorio, así que lo comprobado es que las reglas están
+aplicadas y responden — no cómo se ve con el notch de por medio.
+
+### Nota para el panel
+
+El usuario reportó el problema en el panel **y** en el jugador. En el jugador se
+encontró y arregló la causa. En el panel el ajuste **ya estaba** y no se encontró
+defecto: hay que confirmarlo en el dispositivo. Si persistiera, la salida de
+fondo es cambiar `statusBarStyle` a `black` — iOS deja de extender la vista bajo
+la barra de estado y el problema desaparece de raíz, a costa del header
+full-bleed del jugador.
