@@ -15740,3 +15740,43 @@ backups buenos son 25 archivos de 9,2 MB — chiquitos y fáciles de pasar por a
 al lado de 147 MB de dumps de la producción vieja.
 
 Vale la lección: **la estimación por multiplicación no reemplaza al listado.**
+
+### Bucket limpiado (2026-09-04)
+
+Borrados los **106 objetos** obsoletos bajo `YYYY/MM/DD/`: 53 pares `control` +
+`tenant_demo_casino`, del 2026-08-21 al 2026-09-04.
+
+**Cómo se borró, que es lo que importa:** primero un dry-run que exige que *cada*
+key matchee un patrón exacto y **aborta si aparece cualquier otra cosa**. 0
+objetos raros. Borrar por prefijo sin ese chequeo es exactamente como se pierden
+backups buenos por accidente — y acá el prefijo a purgar ya había estado a punto
+de llevarse puesto el dump final.
+
+| | Antes | Después |
+|---|---:|---:|
+| Objetos | 133 | **27** |
+| Tamaño | 159,4 MB | **12,0 MB** |
+
+Queda sólo `casino-postgres-ribula/` (25 obj, 9,2 MB — los backups de producción)
+y `_final-railway/` (2 obj, 2,8 MB — el dump final de la producción vieja).
+
+El desglose del borrado dejó una confirmación más: **53 pares exactos**, nada más
+que `control` y `tenant_demo_casino`. Ese `platform_control` nunca tuvo otro
+tenant.
+
+### Railway: no se pudo dar de baja desde acá
+
+**No hay credenciales de Railway en esta máquina.** Estaban en la memoria del
+agente (`prod-access-scope`, `deploy-infra`) y **se perdieron con el formateo**;
+`.claude/settings.local.json` sólo trae `CASINO_DOKPLOY_TOKEN`,
+`CLOUDFLARE_API_TOKEN` y `SENTRY_AUTH_TOKEN`.
+
+Lo tiene que hacer el dueño desde el panel. **Todo lo previo ya está listo**: el
+dump final hecho y a salvo en `_final-railway/`, y el workflow que la respaldaba
+apagado.
+
+**⚠️ Al apagarla se rompe `.github/workflows/deploy.yml`**, que deploya a
+Railway/Vercel en cada push a `staging`. Conviene apagarlo en la misma tanda — de
+todas formas queda obsoleto por la mudanza del staging a Dokploy. Y borrar los
+secrets huérfanos (`BACKUP_PG*` y los de Railway/Vercel): **un secret vivo que
+apunta a infra muerta es exactamente la trampa que causó todo esto**.

@@ -548,20 +548,31 @@ ese `platform_control` y dumpeó **uno solo**, `demo_casino`.
 > **✅ Movidos el 2026-09-04 a `_final-railway/`** (copy → verificación de tamaño
 > y ETag → borrado del original). Ya están fuera de la zona de purga.
 
-**⚠️ Todavía abierto — una cosa destructiva, sin hacer:**
+#### ✅ Bucket limpiado — 2026-09-04
 
-**Los objetos `YYYY/MM/DD/` siguen en el bucket.** Ya no crecen, pero siguen ahí
-para que alguien apurado los agarre. Inventario real del bucket (2026-09-04):
+Se borraron los **106 objetos** obsoletos bajo `YYYY/MM/DD/` (53 pares
+`control` + `tenant_demo_casino`, del 2026-08-21 al 2026-09-04).
+
+Antes de borrar se corrió un **dry-run que exige que cada key matchee un patrón
+exacto** (`YYYY/MM/DD/(control|tenant_demo_casino)_########_####.dump`) y aborta
+si aparece cualquier otra cosa. 0 objetos raros. Un borrado por prefijo sin ese
+chequeo es como se pierden backups buenos por accidente.
+
+| | Antes | Después |
+|---|---:|---:|
+| Objetos | 133 | **27** |
+| Tamaño | 159,4 MB | **12,0 MB** |
+
+Estado final del bucket, que ahora sí se lee de un vistazo:
 
 | Prefijo | Objetos | Tamaño | Qué es |
 |---|---:|---:|---|
-| `YYYY/MM/DD/` | 106 | 147,4 MB | ⛔ Actions → Railway. **Basura.** |
-| `casino-postgres-ribula/` | 25 | 9,2 MB | ✅ Dokploy → producción. **Los buenos.** |
-| `_final-railway/` | 2 | 2,8 MB | 📦 Dump final de `demo_casino`. **Guardar.** |
+| `casino-postgres-ribula/` | 25 | 9,2 MB | ✅ Dokploy → producción (`control` + `tenant_miamihub`) |
+| `_final-railway/` | 2 | 2,8 MB | 📦 Dump final de la producción vieja |
 
-O sea que **el 94% del espacio del bucket es basura**, y encima es la parte que
-más llama la atención por volumen. Conviene borrar `YYYY/MM/DD/` entero — ya no
-queda nada que rescatar ahí.
+El desglose del borrado dejó una confirmación más del diagnóstico: **53 pares
+exactos**, `control` y `tenant_demo_casino` y nada más. Ese `platform_control`
+nunca tuvo otro tenant.
 
 **Y Railway sigue prendida.** Respondió sin fallar en las 20 últimas corridas, o
 sea que está viva con la copia de la producción vieja adentro.
@@ -570,6 +581,16 @@ standby unos días" y ningún log registra que se haya hecho. **El dump final ya
 está hecho y a salvo**, así que no queda nada esperando: se puede dar de baja.
 Ojo: con el workflow apagado, si hiciera falta otro dump hay que dispararlo a
 mano (`workflow_dispatch`) **mientras Railway siga viva**.
+
+> **⚠️ Al apagar Railway se rompe `.github/workflows/deploy.yml`.** Ese workflow
+> deploya a Railway/Vercel en cada push a `staging`, así que va a empezar a
+> fallar en rojo. Conviene apagarlo **en la misma tanda**, no después — de todas
+> formas queda obsoleto por la mudanza del staging a Dokploy (2026-09-04).
+>
+> Y **borrar los secrets** que quedan sin uso: `BACKUP_PGHOST`, `BACKUP_PGPORT`,
+> `BACKUP_PGUSER`, `BACKUP_PGPASSWORD` (apuntan a Railway) más los de
+> Railway/Vercel del deploy. Un secret vivo que apunta a infra muerta es
+> exactamente la trampa que causó todo esto.
 
 ### ⚠️ El cron de GitHub Actions llega tarde — hasta 5 horas
 
