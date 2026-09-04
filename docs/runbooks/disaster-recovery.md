@@ -533,35 +533,43 @@ tener una última copia de la producción vieja **antes de dar de baja Railway**
 
 | Archivo | Tamaño |
 |---|---|
-| `2026/09/04/tenant_demo_casino_20260904_1807.dump` | 2.903.555 B (2,77 MB) |
-| `2026/09/04/control_20260904_1807.dump` | 15.841 B |
+| `_final-railway/tenant_demo_casino_20260904_1807.dump` | 2.903.555 B (2,77 MB) |
+| `_final-railway/control_20260904_1807.dump` | 15.841 B |
 
 De paso confirma el diagnóstico desde adentro: el script enumeró los tenants de
 ese `platform_control` y dumpeó **uno solo**, `demo_casino`.
 
 > ### 🚨 ESTOS DOS ARCHIVOS NO SE BORRAN
 >
-> Cayeron en `2026/09/04/`, o sea **dentro del prefijo que hay que purgar**. Si
-> se borra `YYYY/MM/DD/` entero, se borra también el dump final —
+> Cayeron en `2026/09/04/`, o sea **dentro del prefijo que hay que purgar**, así
+> que purgar `YYYY/MM/DD/` entero se hubiera llevado puesto el dump final —
 > justo lo que se guardó para poder apagar Railway tranquilo.
 >
-> **Antes de purgar: moverlos a un prefijo propio** (ej. `_final-railway/`).
+> **✅ Movidos el 2026-09-04 a `_final-railway/`** (copy → verificación de tamaño
+> y ETag → borrado del original). Ya están fuera de la zona de purga.
 
-**⚠️ Todavía abierto — dos cosas destructivas, sin hacer:**
+**⚠️ Todavía abierto — una cosa destructiva, sin hacer:**
 
-1. **Los objetos `YYYY/MM/DD/` siguen en el bucket.** Ya no crecen, pero siguen
-   ahí para que alguien apurado los agarre. 4 corridas por día × 2 archivos desde
-   el 2026-08-20 dan **~130 objetos** — y el bucket tenía 131 en total, así que
-   **casi todo lo que hay bajo `YYYY/MM/DD/` es basura**. Los buenos son los de
-   Dokploy, bajo `casino-postgres-ribula/`. Conviene borrarlos o moverlos a un
-   prefijo `_obsoleto/` — **salvo los dos `*_20260904_1807.dump` de arriba**.
-2. **Railway sigue prendido.** El dump de hoy salió bien (2,77 MB), o sea que esa
-   Postgres está viva con la copia de la producción vieja adentro.
-   `docs/23-migracion-vps.md` decía apagarla "cuando esté confirmado, dejar en
-   standby unos días" — y ningún log registra que se haya hecho. **El dump final
-   ya está hecho** (arriba), así que no queda nada esperando: se puede dar de
-   baja. Con el workflow apagado, si hiciera falta otro hay que dispararlo a mano
-   (`workflow_dispatch`) **mientras Railway siga viva**.
+**Los objetos `YYYY/MM/DD/` siguen en el bucket.** Ya no crecen, pero siguen ahí
+para que alguien apurado los agarre. Inventario real del bucket (2026-09-04):
+
+| Prefijo | Objetos | Tamaño | Qué es |
+|---|---:|---:|---|
+| `YYYY/MM/DD/` | 106 | 147,4 MB | ⛔ Actions → Railway. **Basura.** |
+| `casino-postgres-ribula/` | 25 | 9,2 MB | ✅ Dokploy → producción. **Los buenos.** |
+| `_final-railway/` | 2 | 2,8 MB | 📦 Dump final de `demo_casino`. **Guardar.** |
+
+O sea que **el 94% del espacio del bucket es basura**, y encima es la parte que
+más llama la atención por volumen. Conviene borrar `YYYY/MM/DD/` entero — ya no
+queda nada que rescatar ahí.
+
+**Y Railway sigue prendida.** Respondió sin fallar en las 20 últimas corridas, o
+sea que está viva con la copia de la producción vieja adentro.
+`docs/23-migracion-vps.md` decía apagarla "cuando esté confirmado, dejar en
+standby unos días" y ningún log registra que se haya hecho. **El dump final ya
+está hecho y a salvo**, así que no queda nada esperando: se puede dar de baja.
+Ojo: con el workflow apagado, si hiciera falta otro dump hay que dispararlo a
+mano (`workflow_dispatch`) **mientras Railway siga viva**.
 
 ### ⚠️ El cron de GitHub Actions llega tarde — hasta 5 horas
 

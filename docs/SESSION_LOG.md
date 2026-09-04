@@ -15715,11 +15715,28 @@ De paso confirmó el diagnóstico **desde adentro**: el script enumeró los tena
 de ese `platform_control` y dumpeó **uno solo**, `demo_casino`. Ya no es
 inferencia, es el propio backup diciéndolo.
 
-**🚨 Trampa anotada en el runbook:** estos dos archivos cayeron en `2026/09/04/`,
-o sea **adentro del prefijo que hay que purgar**. Si se borra `YYYY/MM/DD/`
-entero se borra el dump final — justo lo que se guardó para poder apagar Railway
-tranquilo. Hay que moverlos antes a un prefijo propio (ej. `_final-railway/`).
+**🚨 Trampa que casi se arma, ya desactivada:** los dos archivos cayeron en
+`2026/09/04/`, **adentro del prefijo que hay que purgar**. Borrar `YYYY/MM/DD/`
+entero se hubiera llevado puesto el dump final — justo lo que se guardó para
+poder apagar Railway tranquilo. **Se movieron a `_final-railway/`** (copy →
+verificación de tamaño y ETag → recién ahí borrar el original; nunca al revés).
 
-Con esto, **Railway ya no tiene nada esperando**: se puede dar de baja. Si
-alguna vez hiciera falta otro dump, hay que dispararlo a mano **mientras siga
-viva**.
+Con esto, **Railway ya no tiene nada esperando**: se puede dar de baja. Si alguna
+vez hiciera falta otro dump, hay que dispararlo a mano **mientras siga viva**.
+
+### Inventario real del bucket — mi estimación estaba mal
+
+Había estimado "~130 objetos de basura sobre 131". Al listarlo de verdad:
+
+| Prefijo | Objetos | Tamaño | Qué es |
+|---|---:|---:|---|
+| `YYYY/MM/DD/` | 106 | 147,4 MB | ⛔ Actions → Railway. Basura. |
+| `casino-postgres-ribula/` | 25 | 9,2 MB | ✅ Dokploy → producción. Los buenos. |
+| `_final-railway/` | 2 | 2,8 MB | 📦 Dump final de `demo_casino`. |
+
+La proporción de archivos era peor de lo que dije (106 de 133, no ~130 de 131),
+pero **por tamaño es mucho más grave: el 94% del espacio es basura**. Los
+backups buenos son 25 archivos de 9,2 MB — chiquitos y fáciles de pasar por alto
+al lado de 147 MB de dumps de la producción vieja.
+
+Vale la lección: **la estimación por multiplicación no reemplaza al listado.**

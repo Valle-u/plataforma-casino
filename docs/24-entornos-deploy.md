@@ -5,6 +5,17 @@
 
 ---
 
+> ### 🔄 Decidido el 2026-09-04: el staging se muda a Dokploy
+>
+> **No se usan más Railway ni Vercel para probar.** El staging pasa al VPS, al
+> lado de producción. Motivo de fondo: hoy staging y prod **no corren el mismo
+> software** — Railway/Vercel ignoran los Dockerfiles y buildean a su manera,
+> el VPS buildea por Dockerfile. Probar en un runtime y publicar en otro deja
+> bugs invisibles hasta producción.
+>
+> **Todavía no está montado.** Hasta que lo esté, lo de abajo describe la
+> realidad. Ver `docs/DEVLOG.md` (entrada 2026-09-04) para qué implica la mudanza.
+
 ## Los dos entornos
 
 | | **Staging (prueba)** | **Producción** |

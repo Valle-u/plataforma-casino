@@ -9794,3 +9794,68 @@ falta: la plataforma todavía no tiene operativa real** (dueño, 2026-09-03), as
 que no hay socios ni cajeros a los que avisar ni CBUs que backfillear. La
 pantalla para cargarlo ya existe en *Mi sucursal* y es visible para socio, cajero
 y distribuidor.
+
+---
+
+## 2026-09-04 — Staging se muda a Dokploy; se apaga el backup que respaldaba Railway
+
+Dos cosas del mismo hilo: la infra vieja (Railway + Vercel) sale de escena.
+
+### Decisión del dueño: el staging va a Dokploy
+
+**No se usan más Railway ni Vercel para probar.** El staging pasa al VPS, al lado
+de producción, *"así se puede testear mejor y es más cómodo"*.
+
+El argumento de fondo es sólido y va más allá de la comodidad: **hoy staging y
+producción no corren el mismo software**. Railway/Vercel ignoran los Dockerfiles
+y buildean a su manera; el VPS buildea por Dockerfile. Probar en un runtime y
+publicar en otro deja una clase entera de bugs invisible hasta producción — y con
+plata de por medio, ese es el peor lugar para descubrirlos. Un staging en Dokploy
+usa la misma imagen, el mismo Postgres, el mismo Redis y el mismo proxy.
+
+**Todavía no está montado.** Lo que implica cuando se haga:
+
+- Apps nuevas en Dokploy (API + web) apuntando a la rama `staging`, con sus
+  propios dominios (ej. `staging.miamihub.vip`, `api-staging.miamihub.vip`).
+- **DBs separadas, no compartidas con producción.** Un staging que escribe en la
+  DB de prod no es staging.
+- Reescribir `.github/workflows/deploy.yml`, que hoy deploya a Railway y Vercel.
+- Actualizar `docs/24-entornos-deploy.md`, que describe la tabla vieja.
+- **Ojo con los `refreshToken` de los webhooks**: Dokploy filtra por rama, así que
+  las apps de staging necesitan sus propios webhooks o el push a `staging` no
+  dispara nada.
+
+### El backup que respaldaba la producción vieja
+
+Los dumps de `tenant_demo_casino` que aparecían en el bucket salían de
+`.github/workflows/backup.yml`, un Action de este repo escrito el 2026-08-20
+cuando producción era Railway. Al migrar al VPS **nunca se repuntaron los secrets
+`BACKUP_PG*`**, así que siguió corriendo cada 6 horas contra Railway.
+
+Lo que lo hacía difícil de ver: **el workflow no nombra `demo_casino` en ningún
+lado**. `backup-all.sh` no recibe la lista de bases, se la pregunta a la DB
+(`SELECT slug FROM tenants`). Dumpeaba lo que hubiera del otro lado de
+`BACKUP_PGHOST`.
+
+**Se apagó en vez de repuntarlo.** En el VPS el puerto de Postgres está cerrado y
+se abre a mano; repuntarlo exigiría exponerlo a internet 24/7 para duplicar un
+backup que Dokploy ya hace bien y ya manda offsite a R2. Se pierde que el
+scheduler ahora vive en el mismo host que la DB: si el VPS muere no se generan
+backups *nuevos* — los viejos siguen en R2, que es lo que importa.
+
+**El daño no era perder backups, era la confusión.** Caían en el mismo bucket que
+los buenos y por volumen los tapaban: 106 objetos / 147 MB de basura contra 25
+objetos / 9,2 MB de backups reales. **El 94% del espacio era la producción
+vieja.** En una caída, agarrar el archivo equivocado es peor que no tener nada.
+
+Antes de apagar del todo se disparó a mano un **dump final de `demo_casino`** y
+se movió a `_final-railway/`, fuera de la zona de purga. Con eso Railway ya no
+tiene nada esperando y se puede dar de baja — lo cual encaja con la decisión de
+arriba: era la última cosa para la que servía.
+
+### Detalle que vale para cualquier cron futuro
+
+Las corridas de ese workflow llegaban **entre 2h39 y 4h48 tarde** respecto del
+cron. GitHub encola el cron de los runners compartidos. Para backups da igual;
+para un cierre contable o un corte de comisiones, no. **Eso va en el host, no en
+Actions.**
