@@ -718,7 +718,7 @@ export class UserHierarchyService {
     //
     // Decisión del dueño (2026-09-03): cada cajero y distribuidor independiente
     // tiene **su propio CBU** y ve sólo las transferencias de su banco.
-    const inside = row.isIndep || (await this.getIndependentSubtreeIds(db)).has(userId);
+    const inside = row.isIndep || (await this.hasIndependentAncestor(db, userId));
     if (!inside) return { independent: false, account: null };
 
     // La cuenta es la SUYA, no la del socio: cada uno opera contra su banco.
@@ -783,12 +783,12 @@ export class UserHierarchyService {
     // 2026-09-03). Fuera de esas redes sigue siendo no-op — la red central
     // opera contra el banco del tenant.
     const uRows = await db
-      .select({ id: users.id })
+      .select({ isIndep: users.isIndependentBranch })
       .from(users)
       .where(eq(users.id, ownerId))
       .limit(1);
     if (!uRows[0]) return;
-    if (!(await this.getIndependentSubtreeIds(db)).has(ownerId)) return;
+    if (!uRows[0].isIndep && !(await this.hasIndependentAncestor(db, ownerId))) return;
 
     const pmRows = await db
       .select({ config: paymentMethods.config })
@@ -811,6 +811,33 @@ export class UserHierarchyService {
       .update(users)
       .set({ branchBankAccount: value, updatedAt: new Date() })
       .where(eq(users.id, ownerId));
+  }
+
+  /**
+   * ¿Cuelga de un socio independiente? Mira **hacia arriba**, no hacia abajo.
+   *
+   * ⚠️ La alternativa obvia —`getIndependentSubtreeIds(db).has(userId)`— es
+   * correcta pero **carísima acá**: enumera todos los independientes y recorre
+   * el subárbol de cada uno. Se probó primero y hacía la suite de tests
+   * inusable, porque esto se llama en cada operación bancaria y en cada
+   * escritura de método de pago. Subir por la cadena de padres es una sola
+   * query recursiva contra la profundidad del árbol.
+   *
+   * No incluye al propio usuario: quien tiene `isIndependentBranch` se chequea
+   * aparte, antes, porque es más barato todavía.
+   */
+  private async hasIndependentAncestor(
+    db: TenantDb,
+    userId: string,
+  ): Promise<boolean> {
+    const ancestors = await this.getActiveAncestors(db, userId);
+    if (ancestors.length === 0) return false;
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(inArray(users.id, ancestors), eq(users.isIndependentBranch, true)))
+      .limit(1);
+    return rows.length > 0;
   }
 
   async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
