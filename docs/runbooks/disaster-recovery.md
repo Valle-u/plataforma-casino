@@ -624,5 +624,82 @@ retraso es un problema real — eso va en el host, no en Actions.
 
 - **Restaurar sobre producción** (el swap real). Sólo se probó restaurar a una DB
   temporal, que es el paso 4 del procedimiento de arriba.
-- **El backup de R2/uploads** (comprobantes, imágenes): sólo se respaldan las
-  bases de datos.
+- ~~El backup de R2/uploads~~ — **✅ HECHO el 2026-09-04.** Ver la sección al
+  final de este documento.
+
+---
+
+## Backup de los comprobantes (archivos subidos)
+
+Hasta el 2026-09-04 se respaldaban **sólo las bases de datos**. Los archivos que
+suben jugadores y cajeros —comprobantes de depósito y de transferencias
+bancarias— no tenían ninguna copia. Y esos archivos **son la prueba documental
+de movimientos de plata**: sin ellos, una disputa se resuelve contra el registro
+contable sin nada que lo respalde.
+
+### Cómo funciona
+
+Un cron de la propia API (`apps/api/src/uploads-backup/`), **06:30 diario** —
+media hora después de los backups de base, para no pelear por el disco.
+
+```
+casino-uploads  →  casino-backups/uploads/<misma key>
+```
+
+**Incremental por ETag**: la primera corrida copia todo, las siguientes sólo lo
+nuevo. Usa `CopyObject`, que se resuelve **dentro de R2** — los archivos nunca
+pasan por el contenedor de la API, así que da igual cuánto crezca el bucket.
+
+Si algún archivo falla, manda alerta por Telegram.
+
+### De qué protege y de qué no
+
+✅ **Borrado accidental** — un bug en el path de borrado, alguien limpiando un
+tenant. Es el caso realista.
+
+❌ **Que la cuenta de Cloudflare se comprometa.** Origen y destino viven en la
+**misma cuenta**. Para cubrir eso haría falta un segundo proveedor, y hoy no
+está. Queda anotado como límite conocido, no como olvido.
+
+R2 ya es almacenamiento durable, así que el caso "se rompió el disco" no es el
+que hay que cubrir.
+
+### Configuración
+
+| Variable | |
+|---|---|
+| `UPLOADS_BACKUP_ENABLED` | `false` lo apaga. Default: prendido. |
+| `UPLOADS_BACKUP_CRON` | default `30 6 * * *` |
+| `UPLOADS_BACKUP_SOURCE` / `_DEST` / `_PREFIX` | buckets y prefijo |
+| `UPLOADS_BACKUP_ENDPOINT` / `_KEY_ID` / `_SECRET` | credenciales S3 de R2 |
+
+Cargadas en **producción**. En **staging queda apagado explícito**: su storage es
+`local` y no tiene nada en R2.
+
+> ⚠️ **No reusa las `R2_*` de la API.** Ésas apuntan a una cuenta que **no
+> existe** — verificado el 2026-09-04: su endpoint ni siquiera completa el
+> handshake TLS. No rompen nada porque el driver es `cloudflare-worker` y va por
+> el Worker, pero **son configuración muerta que parece viva**. Los dos buckets
+> reales viven en la cuenta `5627e3f2…`, la misma de los backups.
+
+### Verificado el 2026-09-04
+
+Corriendo **la clase real del cron** contra los buckets reales, no una imitación:
+
+| | |
+|---|---|
+| Primera corrida | **97 de 97 copiados**, 90 MB, **0 fallos** |
+| Segunda corrida | 0 copiados, **97 sin cambios** (el incremental funciona) |
+| Comparación objeto por objeto | 0 faltantes, 0 con tamaño o ETag distinto |
+
+### Restaurar un comprobante
+
+No hay procedimiento automático: son archivos sueltos, se copian de vuelta con
+cualquier cliente S3. El backup conserva la key original bajo `uploads/`:
+
+```
+casino-backups/uploads/tenants/<slug>/deposits/<archivo>
+```
+
+⚠️ **La restauración de un archivo nunca se probó.** Antes de necesitarla en
+serio, copiar uno de vuelta a mano y verificar que la app lo sirve.
