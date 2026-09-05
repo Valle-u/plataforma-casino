@@ -47,6 +47,7 @@ import { StorageModule } from './storage/storage.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
 import { HouseModule } from './house/house.module';
 import { HostHealthModule } from './host-health/host-health.module';
+import { UploadsBackupModule } from './uploads-backup/uploads-backup.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -167,6 +168,7 @@ import { CRM_ENABLED } from './chat/chat.flag';
     // alerta — si se llena, Postgres deja de escribir y el casino se cae, y
     // hasta ahora nada lo miraba. Ver docs/26-monitoreo-diagnostico.md §4.2.
     HostHealthModule,
+    UploadsBackupModule,
 
     // House / Tesorería (Blindaje del núcleo económico, Parte B): la cuenta
     // "Casa" (system user) — única fuente de fichas + contraparte de todo.
