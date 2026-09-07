@@ -16250,3 +16250,80 @@ son borrables `*/proofs/` y `chat/attachments/`.
 
 **La Casa quedó en cero y hay que inyectarle capital antes de operar**: sin eso
 no se pueden pagar premios.
+
+---
+
+## Addendum — Red completa de prueba en staging, y R3 (2026-09-07)
+
+Con dos usuarios —admin y Casa— no se puede evaluar ningún panel: la vista de
+red vacía, la cola de pedidos vacía, el árbol de jerarquía vacío. Se armó una
+red de **205 usuarios** que cubre los seis roles y las nueve relaciones de
+jerarquía que escribe la app.
+
+### El script
+
+`packages/db/src/scripts/seed-network-demo.ts`, con dos frenos para que no
+toque producción: rechaza `tenant_miamihub` por nombre y exige `--yes`
+escrito a mano. Idempotente por username.
+
+```bash
+docker exec -i $(docker ps -q -f name=casino-api-staging) sh -c   'cd /app && pnpm --filter @casino/db exec tsx src/scripts/seed-network-demo.ts --slug=staging --yes'
+```
+
+Contraseña de todos: `Staging2026!`. Usuarios de referencia: `socio_norte`
+(dependiente) y `socio_litoral` (independiente) — el contraste entre esos dos
+es lo que más conviene mirar.
+
+**Usa las convenciones de `TenantUsersController`**, los mismos
+`relation_type` que escribe la app. Si inventara etiquetas propias, las
+pantallas de red mostrarían cualquier cosa y probarlas no serviría de nada.
+
+### El error: le daba fichas a los operadores dependientes
+
+Lo detectó Uriel mirando el panel: *"¿por qué los socios dependientes tienen
+saldo? ¿Está bien eso?"*.
+
+No estaba bien. **R3**: socios, distribuidores y cajeros **dependientes** son
+comerciales puros y no mueven plata — toda la de la red central la manejan sólo
+el admin y sus empleados. El seed no sólo les daba saldo: **se lo transfería a
+sus jugadores**, que es literalmente la operación que R3 les prohíbe.
+
+Tiene historia. El 2026-07-31 el dueño había autorizado que el socio dependiente
+cargara fichas (migración `0074`), y el **2026-08-19 lo revirtió** (`0097`).
+El seed modelaba la decisión que se había dado marcha atrás.
+
+**No rompía nada, y eso es lo interesante.** Los permisos de plata no salen del
+saldo sino de estar en una sub-red independiente
+(`EffectivePermissionsService`), así que esos operadores igual no podían
+operar: el saldo les quedaba inerte. Pero **mentía sobre el modelo**, y en un
+entorno cuyo único fin es mirar cómo se ve cada rol, eso lo invalida — quien
+probara concluiría o que hay un bug, o que el modelo permite lo que prohíbe.
+
+### Cómo quedó
+
+- **Dependientes en cero.** A sus jugadores los carga el admin, que para eso
+  recibe una caja operativa de la Casa.
+- **La rama independiente se fondea a sí misma**, nivel por nivel (R4: cada
+  nivel compra fichas al de arriba y banca lo suyo).
+- Verificado: **0 de 33** operadores dependientes con fichas, los 11
+  independientes con fichas, **0 wallets descuadradas**.
+
+Como el seed es idempotente por username, volver a correrlo **no** corrige
+saldos ya cargados. Staging ya tenía la versión vieja aplicada, así que se
+corrigió con un `UPDATE` en una transacción que devuelve las fichas al admin
+dejando el asiento contable de los dos lados — sin destruir fichas y sin romper
+el invariante.
+
+### Lo que enseñó
+
+**El invariante del ledger obliga a modelar el flujo, no el resultado.** No se
+puede escribir un balance: hay que hacer que la plata entre por donde entraría
+de verdad. Eso, que parecía una molestia, es lo que hizo evidente el error de R3
+— para darle fichas a un dependiente había que escribir una transferencia que
+ese rol no puede hacer.
+
+**Una consulta sobre jerarquía tiene que ser recursiva.** La primera
+verificación miraba un solo nivel de descendencia y dio 6 falsos positivos: un
+cajero que cuelga de un distribuidor de un socio independiente **también** está
+en la sub-red independiente. El sistema lo resuelve bien
+(`isInIndependentSubtree` sube por toda la cadena); el chequeo hecho a mano, no.
