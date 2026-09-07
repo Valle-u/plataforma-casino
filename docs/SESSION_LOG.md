@@ -16418,3 +16418,60 @@ sólo de usarse.
 > El worker de **uptime** sigue teniendo uno igual
 > (`miamihub-uptime.<titular>.workers.dev`). Lo ve mucha menos gente, pero si se
 > quiere dejar parejo, mismo tratamiento.
+
+---
+
+## Addendum — El HEAD del Worker, y su primer test (2026-09-07)
+
+Cierre del pendiente que dejó la falsa alarma del addendum anterior.
+
+### Qué pasaba
+
+El router del Worker sólo miraba `GET`. Un `HEAD` caía al **404 genérico del
+final**, el mismo que se devuelve para una ruta desconocida. O sea que preguntar
+por un archivo que existía daba "no existe".
+
+No rompía el casino —los navegadores piden con GET— pero **engaña a cualquier
+chequeo de existencia**, que es exactamente para lo que sirve un HEAD. Costó
+caro una vez: un `curl -I` sobre el logo devolvió 404 y se anunció que se habían
+perdido las imágenes de marca, que estaban intactas.
+
+### El arreglo
+
+`HEAD` comparte el camino de `GET`: mismo estado, mismas cabeceras
+—`Content-Length` y `Cache-Control` incluidos— y **sin cuerpo en ningún
+estado**, tampoco en el 403 de firma inválida ni en el 404.
+
+Se le pide a R2 sólo la metadata (`head()`) en vez de traer el objeto entero
+para después descartarlo, y el router reconstruye la respuesta sin body en vez
+de confiar en que el runtime lo recorte.
+
+Verificado en producción después de `wrangler deploy`:
+
+```
+HEAD de un archivo existente  → 200 · image/png · Content-Length 2.854.228
+GET  del mismo                → 200 · 2.854.228 bytes
+HEAD de uno inexistente       → 404
+```
+
+### El primer test del Worker
+
+`worker/test/router.test.mjs`, 12 casos con un R2 simulado. Se corre con:
+
+```bash
+node worker/test/router.test.mjs
+```
+
+Sin framework a propósito: es el único test del Worker y no vale la pena
+traerle un runner.
+
+**Por qué importa más de lo que parece:** este Worker sirve **todos** los
+archivos del casino —marca y comprobantes— y hasta hoy no tenía **ninguna**
+prueba. Se le habían agregado en los últimos días el `Cache-Control` por tipo
+de archivo, la validación de firma y el `DELETE` autenticado, todo sin red.
+Los casos cubren que un comprobante conserve su `Cache-Control` privado también
+en un HEAD, y que el `DELETE` siga exigiendo token.
+
+> El Worker **se despliega aparte** (`cd worker; npx wrangler deploy`, desde una
+> máquina con sesión de Cloudflare). No sale con el merge a `main`: mergear sólo
+> alinea el repositorio.
