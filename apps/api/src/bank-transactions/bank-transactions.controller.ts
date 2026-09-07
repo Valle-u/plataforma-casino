@@ -374,7 +374,7 @@ export class BankTransactionsController {
       db,
       actor.id,
     );
-    return this.service.list(db, {
+    const result = await this.service.list(db, {
       status: status as 'unmatched' | 'matched' | 'disputed' | undefined,
       direction: direction as 'incoming' | 'outgoing' | undefined,
       bankAccount,
@@ -388,6 +388,42 @@ export class BankTransactionsController {
       onlyUploadedBy,
       excludeUploadedBy,
     });
+    return { ...result, data: await this.refrescarUrls(result.data) };
+  }
+
+  /**
+   * Regenera la URL del comprobante desde su storage key.
+   *
+   * La URL guardada en `receipt_url` puede estar **vencida**: desde que los
+   * comprobantes se sirven firmados, esa URL vive minutos. La fuente de verdad
+   * es `receipt_storage_key`, que no caduca.
+   *
+   * Mismo patrón que `DepositsController`. Acá faltaba: transferencias
+   * devolvía la URL guardada tal cual, así que al empezar a firmar el operador
+   * habría dejado de ver los comprobantes — y sin comprobante no puede conciliar
+   * una transferencia.
+   *
+   * Si falla, devuelve la fila sin tocar en vez de romper el listado: es
+   * preferible un comprobante que no abre a una pantalla que no carga.
+   */
+  private async refrescarUrls<
+    T extends { receiptStorageKey?: string | null; receiptUrl?: string | null },
+  >(filas: T[]): Promise<T[]> {
+    return Promise.all(
+      filas.map(async (fila) => {
+        if (!fila.receiptStorageKey) return fila;
+        try {
+          const url = await this.storage.getUrl(fila.receiptStorageKey);
+          return { ...fila, receiptUrl: url };
+        } catch (err) {
+          this.logger.warn(
+            `No se pudo regenerar URL para ${fila.receiptStorageKey}: ` +
+              (err as Error).message,
+          );
+          return fila;
+        }
+      }),
+    );
   }
 
   /**
@@ -594,7 +630,7 @@ export class BankTransactionsController {
     }
     const row = await this.service.findById(db, id);
     if (!row) throw new NotFoundException(`Bank tx ${id} no existe.`);
-    return row;
+    return (await this.refrescarUrls([row]))[0];
   }
 
   /**
@@ -621,7 +657,7 @@ export class BankTransactionsController {
     }
     const row = await this.service.getDetail(db, id);
     if (!row) throw new NotFoundException(`Bank tx ${id} no existe.`);
-    return row;
+    return (await this.refrescarUrls([row]))[0];
   }
 
   /** POST /tenant/bank-transactions/:id/match/:depositId */
@@ -657,7 +693,7 @@ export class BankTransactionsController {
         },
         ...extractRequestContext(req),
       });
-      return row;
+      return (await this.refrescarUrls([row]))[0];
     } catch (err) {
       if (err instanceof BankTransactionNotFoundError) {
         throw new NotFoundException({ message: err.message });
@@ -727,7 +763,7 @@ export class BankTransactionsController {
         },
         ...extractRequestContext(req),
       });
-      return row;
+      return (await this.refrescarUrls([row]))[0];
     } catch (err) {
       if (err instanceof BankTransactionNotFoundError) {
         throw new NotFoundException({ message: err.message });
@@ -784,7 +820,7 @@ export class BankTransactionsController {
         },
         ...extractRequestContext(req),
       });
-      return row;
+      return (await this.refrescarUrls([row]))[0];
     } catch (err) {
       if (err instanceof BankTransactionNotFoundError) {
         throw new NotFoundException({ message: err.message });
@@ -828,7 +864,7 @@ export class BankTransactionsController {
         metadata: { severity: 'high' },
         ...extractRequestContext(req),
       });
-      return row;
+      return (await this.refrescarUrls([row]))[0];
     } catch (err) {
       if (err instanceof BankTransactionNotFoundError) {
         throw new NotFoundException({ message: err.message });
@@ -867,7 +903,7 @@ export class BankTransactionsController {
         metadata: { changedFields: Object.keys(dto), severity: 'medium' },
         ...extractRequestContext(req),
       });
-      return row;
+      return (await this.refrescarUrls([row]))[0];
     } catch (err) {
       if (err instanceof BankTransactionNotFoundError) {
         throw new NotFoundException({ message: err.message });

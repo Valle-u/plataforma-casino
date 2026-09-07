@@ -52,6 +52,49 @@ function cacheControlPara(key) {
   return 'public, max-age=31536000, immutable';
 }
 
+/**
+ * Valida la firma de una URL de comprobante.
+ *
+ * La genera `CloudflareWorkerDriver.getUrl` en la API con el mismo secreto:
+ * HMAC-SHA256 sobre `<key>:<exp>`. Se firma la key **y** el vencimiento
+ * juntos — firmar sólo el vencimiento dejaría reusar una firma para cualquier
+ * archivo.
+ *
+ * Devuelve `null` si está bien, o el motivo del rechazo.
+ */
+async function validarFirma(key, url, env) {
+  const exp = Number(url.searchParams.get('exp'));
+  const sig = url.searchParams.get('sig');
+  if (!exp || !sig) return 'falta la firma';
+  if (!Number.isFinite(exp)) return 'vencimiento invalido';
+  if (exp * 1000 < Date.now()) return 'la URL vencio';
+
+  const llave = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(env.CF_WORKER_SIGNING_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    llave,
+    new TextEncoder().encode(`${key}:${exp}`),
+  );
+  const esperado = [...new Uint8Array(mac)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Comparación de tiempo constante: un `===` filtra, por el tiempo que tarda
+  // en cortar, cuántos caracteres del principio acertó quien prueba firmas.
+  if (esperado.length !== sig.length) return 'firma invalida';
+  let dif = 0;
+  for (let i = 0; i < esperado.length; i += 1) {
+    dif |= esperado.charCodeAt(i) ^ sig.charCodeAt(i);
+  }
+  return dif === 0 ? null : 'firma invalida';
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -77,6 +120,26 @@ export default {
   async serveFile(url, env) {
     const key = url.pathname.slice('/files/'.length);
     if (!key) return jsonResponse({ error: 'Missing file key' }, 400);
+
+    // Comprobantes: sólo con URL firmada y vigente.
+    //
+    // Detrás de un flag a propósito. El despliegue va en DOS pasos: primero
+    // esto con el flag apagado (la API ya firma, el Worker todavía no exige),
+    // se verifica que el panel siga mostrando los comprobantes, y recién ahí se
+    // prende. Si se prendiera de una y algo quedó sin firmar, el operador deja
+    // de ver los comprobantes y no puede aprobar depósitos — o sea, se corta un
+    // flujo de plata.
+    if (key.includes(CARPETA_PRIVADA) && env.REQUIRE_SIGNED_PROOFS === '1') {
+      if (!env.CF_WORKER_SIGNING_SECRET) {
+        console.error('REQUIRE_SIGNED_PROOFS=1 pero falta CF_WORKER_SIGNING_SECRET');
+        return jsonResponse({ error: 'Server misconfigured' }, 500);
+      }
+      const motivo = await validarFirma(key, url, env);
+      if (motivo) {
+        // 403 y no 404: el archivo existe, lo que falta es la autorización.
+        return jsonResponse({ error: 'Forbidden', reason: motivo }, 403);
+      }
+    }
 
     const object = await env.R2_BUCKET.get(key);
     if (!object) {

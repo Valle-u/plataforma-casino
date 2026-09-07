@@ -720,3 +720,58 @@ Se aplica en los dos lados: al **servir** y al **subir** (queda en el
    adelante; las copias que ya están en el borde siguen ahí con su año. Se
    limpian desde el panel de Cloudflare → zona `miamihub.vip` → Caching → Purge
    Everything.
+
+### URLs firmadas (2026-09-06) — código listo, **falta desplegarlo**
+
+Resuelve el fondo: los comprobantes dejan de ser descargables por URL.
+
+**Cómo funciona.** La API firma la URL al devolverla y el Worker la valida antes
+de servir. HMAC-SHA256 sobre `<key>:<exp>`, con un secreto compartido.
+
+Se firma la key **y** el vencimiento juntos: firmar sólo el vencimiento dejaría
+reusar una firma válida para cualquier otro archivo. La marca (logos, hero)
+**no** se firma — es pública a propósito.
+
+Las dos implementaciones (`node:crypto` en la API, Web Crypto en el Worker) se
+verificaron dando el **mismo hex** para la misma entrada.
+
+**Lo que hacía falta arreglar de paso.** `bank-transactions` devolvía la
+`receipt_url` guardada tal cual, sin regenerarla desde el storage key —
+`deposits` sí lo hacía. Con URLs que vencen en minutos, eso significaba que al
+firmar el operador **habría dejado de ver los comprobantes de transferencias**, y
+sin comprobante no puede conciliar. Ahora regenera en los 7 caminos que devuelven
+una fila (listado, detalle, y las 5 mutaciones).
+
+#### 🚨 El orden del despliegue importa
+
+**No alcanza con hacer los pasos: hay que hacerlos en este orden.**
+
+1. **Desplegar el Worker** (`cd worker && npx wrangler deploy`).
+   Lleva el `Cache-Control` por tipo de archivo **y** el validador, con
+   `REQUIRE_SIGNED_PROOFS` apagado.
+2. **Purgar el caché** — panel de Cloudflare, zona `miamihub.vip`, Purge
+   Everything.
+3. **Recién ahí**, setear `CF_WORKER_SIGNING_SECRET` — el **mismo valor** en la
+   API (Dokploy) y en el Worker (`wrangler secret put`).
+4. **Verificar** que el panel siga abriendo comprobantes de depósitos **y** de
+   transferencias.
+5. **Prender** `REQUIRE_SIGNED_PROOFS=1` en el Worker.
+
+> ⚠️ **Por qué 1 y 2 van antes que 3.** Si la API empieza a firmar mientras el
+> Worker viejo sigue mandando `public, immutable`, cada URL firmada es una
+> **entrada de caché nueva** — y cada una queda un año en el borde. En vez de
+> arreglar el problema, se multiplicarían las copias públicas imborrables.
+>
+> Y el paso 5 va último porque prenderlo con algo sin firmar corta un flujo de
+> plata: el operador deja de ver comprobantes y no puede aprobar depósitos.
+
+#### Lo que sigue sin resolverse
+
+**Cualquiera con una URL firmada vigente puede abrirla** — no se valida *quién*
+pide. Son 15 minutos y hay que tener el link, así que es muchísimo menos que
+"para siempre y público", pero no es lo mismo que un endpoint que chequea
+permisos (la opción 2 de la lista original).
+
+**`delete()` no está implementado** en el driver del Worker: rechazar un depósito
+debería borrar el comprobante y hoy **sólo escribe un warning**. Los comprobantes
+de depósitos rechazados quedan en R2 para siempre.
