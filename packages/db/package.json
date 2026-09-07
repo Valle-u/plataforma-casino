@@ -44,6 +44,7 @@
     "db:backfill:player-hierarchy": "tsx src/scripts/backfill-player-hierarchy.ts",
     "db:seed:dev-tenant": "tsx src/scripts/seed-dev-tenant.ts",
     "db:seed:pilot": "tsx src/scripts/seed-pilot-tenant.ts",
+    "db:seed:network": "tsx src/scripts/seed-network-demo.ts",
     "db:list:tenants": "tsx src/scripts/list-tenants.ts",
     "db:reset:demo": "tsx src/scripts/reset-demo-tenant.ts",
     "db:verify:money": "tsx src/scripts/verify-money-clean.ts",
