@@ -22,6 +22,36 @@ const ALLOWED_TYPES = new Set([
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
+/**
+ * Qué archivos son documentos privados y no pueden cachearse en el borde.
+ *
+ * Los comprobantes —transferencias bancarias, depósitos— llevan nombre, CBU,
+ * banco y monto de personas reales. Con el `immutable` de un año que había
+ * antes pasaban dos cosas malas:
+ *
+ *   1. Quedaba una copia en el caché de Cloudflare, servible por URL.
+ *   2. **Borrar el archivo de R2 no lo sacaba de circulación**: verificado el
+ *      2026-09-06 — se borró un objeto y su URL siguió devolviendo 200 con
+ *      `cf-cache-status: HIT` durante un año.
+ *
+ * `private` le prohíbe al borde guardarlo: sólo el navegador del que lo pidió,
+ * y por 5 minutos. Así borrar tiene efecto inmediato.
+ *
+ * ⚠️ Esto NO los vuelve privados: siguen siendo accesibles por URL sin
+ * autenticación. Eso se arregla con URLs firmadas o un endpoint autenticado
+ * (ver `docs/12-seguridad-compliance.md`). Este cambio sólo corta que se
+ * acumulen copias imborrables en el borde.
+ */
+const CARPETA_PRIVADA = '/proofs/';
+
+/** Cache-Control según el tipo de archivo. */
+function cacheControlPara(key) {
+  // Documentos: nunca en el borde, poco en el navegador.
+  if (key.includes(CARPETA_PRIVADA)) return 'private, max-age=300';
+  // Marca (logos, hero): la key es un UUID y el archivo nunca cambia.
+  return 'public, max-age=31536000, immutable';
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -55,7 +85,7 @@ export default {
 
     const headers = new Headers();
     object.writeHttpMetadata(headers);
-    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set('Cache-Control', cacheControlPara(key));
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Content-Length', String(object.size));
 
@@ -116,7 +146,7 @@ export default {
       await env.R2_BUCKET.put(storageKey, file.stream(), {
         httpMetadata: {
           contentType: file.type,
-          cacheControl: 'public, max-age=31536000, immutable',
+          cacheControl: cacheControlPara(storageKey),
         },
       });
     } catch (err) {

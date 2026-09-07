@@ -685,3 +685,38 @@ visor directo). Las salidas posibles:
    borrar un archivo tenga efecto en horas y no en un año.
 
 Las opciones 1 y 2 son las que resuelven el fondo; la 3 sólo reduce el daño.
+
+### Parche aplicado (2026-09-06): el caché ya no es imborrable
+
+**Lo que se arregló** es el punto 3 de la lista de arriba, el menos ambicioso:
+que borrar un comprobante tenga efecto.
+
+`worker/src/index.js` ahora decide el `Cache-Control` **según el tipo de
+archivo**:
+
+| Archivo | Header | Por qué |
+|---|---|---|
+| Cualquier cosa bajo `/proofs/` | `private, max-age=300` | `private` le **prohíbe al borde guardarlo**: sólo el navegador que lo pidió, y por 5 minutos. Borrar pasa a tener efecto inmediato. |
+| El resto (logos, hero) | `public, max-age=31536000, immutable` | Sin cambios: la key es un UUID y el archivo nunca cambia. |
+
+Se aplica en los dos lados: al **servir** y al **subir** (queda en el
+`httpMetadata` del objeto en R2).
+
+> ⚠️ **Esto NO cierra el agujero.** Los comprobantes siguen siendo accesibles
+> por URL **sin autenticación**. Lo único que cambia es que dejan de acumularse
+> copias imborrables en el borde. El fondo se arregla con las opciones 1 o 2.
+
+**Dos cosas que hay que hacer a mano** (no se pudieron hacer desde acá):
+
+1. **Desplegar el Worker.** El código está en el repo pero el Worker se despliega
+   con `wrangler`, y el token de Cloudflare disponible sólo tiene permisos de
+   DNS. Hasta que se despliegue, **producción sigue con el header viejo**.
+
+   ```bash
+   cd worker && npx wrangler deploy
+   ```
+
+2. **Purgar el caché ya existente.** El parche cambia lo que se cachea de acá en
+   adelante; las copias que ya están en el borde siguen ahí con su año. Se
+   limpian desde el panel de Cloudflare → zona `miamihub.vip` → Caching → Purge
+   Everything.
