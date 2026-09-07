@@ -241,11 +241,21 @@ const RTP_DIVERGENCE_FLAG_PTS = 5;
  * 75-96 y no se marcaría, cuando estaría devolviendo 12 puntos de más y
  * perdiendo plata en cada ronda.
  *
- * ⚠️ **Es un solo número para toda la cuenta, y el proveedor avisó que no todos
- * los estudios soportan la configuración.** Cuando confirmen a cuáles se aplicó,
- * esto tendría que pasar a ser un objetivo POR ESTUDIO —ya existe
- * `games.studio`, de la migración 0107— y configurable por tenant, en vez de una
- * constante que hay que deployar para cambiar.
+ * Confirmado aplicado el 2026-09-07 a todos los proveedores de Gregmorn salvo
+ * `AG`, que no está en el catálogo de este tenant.
+ *
+ * ⚠️ **Este número vale porque HOY Gregmorn es el único proveedor sirviendo
+ * juegos.** Palace (1.693 juegos) y Forever (4.791) están en `maintenance_mode`,
+ * y su RTP no lo configuramos nosotros ni lo sabemos. Si a alguno se lo saca de
+ * mantenimiento, sus juegos se van a marcar en amarillo apenas junten 100
+ * rondas — no por un problema real, sino por estar medidos contra un objetivo
+ * que no es el suyo.
+ *
+ * Antes de reactivarlos hay que hacer una de dos cosas: pedirle a ese proveedor
+ * el mismo 82%, o convertir esto en un objetivo POR PROVEEDOR. Y si algún día se
+ * necesita por estudio, ya existe `games.studio` (migración 0107) — pero ojo
+ * que ahí hay nombres duplicados sin unificar (`Pragmatic` vs `Pragmatic Play`),
+ * así que primero haría falta un diccionario de alias.
  */
 const RTP_OBJETIVO_PCT = 82;
 
