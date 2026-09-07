@@ -35,13 +35,34 @@ aprobar depósitos ni conciliar transferencias**.
 
 ---
 
+## Paso 0 — Mergear el código de la API a `main`
+
+**Este paso faltaba en la primera versión de este runbook, y se pagó.** El
+2026-09-06 se desplegó el Worker, se purgó el caché y se cargaron los secretos
+en los dos lados — y las URLs seguían saliendo **sin firmar**, porque el código
+que firma estaba en `staging` y **producción corre `main`**.
+
+Cuesta encontrarlo porque todo lo demás parece correcto: el secreto está, el
+Worker está desplegado, los comprobantes se ven. Lo único que falla es lo que
+nadie mira hasta el final.
+
+```bash
+git checkout main
+git merge --ff-only staging
+git push origin main
+```
+
+Esperar a que Dokploy termine de desplegar la API antes de seguir.
+
+---
+
 ## Paso 1 — Desplegar el Worker
 
 Lleva el `Cache-Control` por tipo de archivo, el validador de firma (apagado) y
 el `DELETE /files/:key`.
 
 ```bash
-cd worker && npx wrangler deploy
+cd worker; npx wrangler deploy   # PowerShell 5.1 no soporta &&
 ```
 
 **Verificar** — el comprobante tiene que dejar de decir `immutable`:
@@ -119,7 +140,7 @@ REQUIRE_SIGNED_PROOFS = "1"
 Y desplegar:
 
 ```bash
-cd worker && npx wrangler deploy
+cd worker; npx wrangler deploy   # PowerShell 5.1 no soporta &&
 ```
 
 **Verificar** — sin firma tiene que dar 403, con firma 200:
@@ -141,7 +162,7 @@ minuto sin tocar nada más — los comprobantes vuelven a verse mientras se
 investiga.
 
 ```bash
-cd worker && npx wrangler deploy
+cd worker; npx wrangler deploy   # PowerShell 5.1 no soporta &&
 ```
 
 ---
