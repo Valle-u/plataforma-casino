@@ -1,7 +1,17 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs';
 
-const WORKER_URL = process.env.CF_WORKER_URL ?? 'https://casino-uploader.urielalejandrovalle493.workers.dev';
+// Host del Worker que sirve los archivos. Destino del rewrite
+// `/storage/files/*`, que se resuelve al COMPILAR: setearlo como env de runtime
+// no cambia nada, va como build arg (ver `Dockerfile`).
+//
+// ⚠️ El fallback es el subdominio `*.workers.dev` de la cuenta, que **lleva el
+// nombre del titular** — dato personal en cada URL que se genere con él.
+// Mientras esté acá, es sólo una red de contención: el valor real va por
+// `CF_WORKER_URL`, apuntando a un dominio propio.
+const WORKER_URL =
+  process.env.CF_WORKER_URL ??
+  'https://casino-uploader.urielalejandrovalle493.workers.dev';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

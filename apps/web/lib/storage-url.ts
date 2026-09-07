@@ -22,15 +22,28 @@ const API_ORIGIN =
   process.env.NEXT_PUBLIC_API_ORIGIN ||
   process.env.NEXT_PUBLIC_API_URL ||
   '';
-const WORKER_ORIGIN =
-  process.env.NEXT_PUBLIC_WORKER_ORIGIN ||
-  'https://casino-uploader.urielalejandrovalle493.workers.dev';
 
 export function normalizeStorageUrl(url: string | null | undefined): string {
   if (!url) return '';
-  // Worker URL: /files/... → /storage/files/... (for Next.js rewrite)
-  if (url.startsWith(WORKER_ORIGIN + '/files/')) {
-    return '/storage/files/' + url.slice(WORKER_ORIGIN.length + '/files/'.length);
+
+  // URL del Worker: cualquier origen cuyo path arranque en `/files/` se
+  // reescribe a `/storage/files/...` para que pase por el rewrite de Next.
+  //
+  // Antes esto comparaba contra un origen fijo —el `*.workers.dev` de la
+  // cuenta— y eso lo ataba a dos cosas malas: el subdominio lleva el NOMBRE
+  // del titular de la cuenta de Cloudflare, y cualquier cambio de dominio
+  // rompía la normalización en silencio, dejando salir la URL cruda. Mirar el
+  // path en vez del host funciona con los dos mientras se hace el cambio, y
+  // con el que venga después.
+  if (/^https?:\/\//.test(url)) {
+    try {
+      const u = new URL(url);
+      if (u.pathname.startsWith('/files/')) {
+        return '/storage' + u.pathname + u.search;
+      }
+    } catch {
+      // URL mal formada: se devuelve tal cual más abajo.
+    }
   }
   // API origin URL: strip origin, keep /storage/files/...
   // El `API_ORIGIN &&` no es decorativo: si quedara vacío, `startsWith('')` es
