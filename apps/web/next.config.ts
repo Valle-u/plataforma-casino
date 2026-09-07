@@ -5,13 +5,11 @@ import { withSentryConfig } from '@sentry/nextjs';
 // `/storage/files/*`, que se resuelve al COMPILAR: setearlo como env de runtime
 // no cambia nada, va como build arg (ver `Dockerfile`).
 //
-// ⚠️ El fallback es el subdominio `*.workers.dev` de la cuenta, que **lleva el
-// nombre del titular** — dato personal en cada URL que se genere con él.
-// Mientras esté acá, es sólo una red de contención: el valor real va por
-// `CF_WORKER_URL`, apuntando a un dominio propio.
-const WORKER_URL =
-  process.env.CF_WORKER_URL ??
-  'https://casino-uploader.urielalejandrovalle493.workers.dev';
+// El fallback fue hasta el 2026-09-07 el subdominio `*.workers.dev` de la
+// cuenta, que **lleva el nombre del titular**: un dato personal en cada URL de
+// comprobante. Se le dio al Worker un dominio propio y el fallback pasó a ser
+// ese, así que un build sin `CF_WORKER_URL` ya no filtra nada.
+const WORKER_URL = process.env.CF_WORKER_URL ?? 'https://files.miamihub.vip';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

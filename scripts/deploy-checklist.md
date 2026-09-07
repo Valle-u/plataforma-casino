@@ -133,6 +133,23 @@ Cargarlas con `application.saveEnvironment`, que exige **los cuatro** campos
 (`env`, `buildArgs`, `buildSecrets`, `createEnvFile`) — si mandás uno solo, los
 otros se pisan. **Cambiar un buildArg exige rebuild.**
 
+**`CF_WORKER_URL` también va en `buildArgs`, y en el web.** No es sólo un
+prefijo `NEXT_PUBLIC_*`: `next.config.ts` lo lee al compilar porque los
+rewrites se hornean en el routes-manifest. Puesto como env de runtime **no hace
+nada** y el rewrite `/storage/files/*` sigue apuntando al destino viejo. En la
+**api**, en cambio, va como env: ahí sí se lee en cada arranque.
+
+> **Cómo saber si un buildArg entró de verdad:** cambiar uno invalida el caché
+> de capas y obliga a recompilar. Si el build del web termina en un minuto y
+> medio, **no tomó** — reusó todo el caché. Un build real son varios minutos.
+> Pasó el 2026-09-07 al mover el Worker a un dominio propio: el deploy dio
+> "done" y la configuración estaba en el cuadro equivocado.
+
+> **Y revisá que no quede duplicada.** Agregar una variable que ya existía deja
+> dos líneas con la misma clave. Suele ganar la última, pero es un
+> comportamiento implícito: si alguien reordena, cambia el valor efectivo sin
+> que nadie toque nada.
+
 **Rutas nuevas con extensión.** El matcher del middleware deja pasar las rutas
 con extensión; sin ella, en el host del jugador se las come el redirect a
 `/play`. Por eso `/icons/tenant-icon.png` termina en `.png`.
