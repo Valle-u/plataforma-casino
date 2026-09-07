@@ -16327,3 +16327,94 @@ verificación miraba un solo nivel de descendencia y dio 6 falsos positivos: un
 cajero que cuelga de un distribuidor de un socio independiente **también** está
 en la sub-red independiente. El sistema lo resuelve bien
 (`isInIndependentSubtree` sube por toda la cadena); el chequeo hecho a mano, no.
+
+---
+
+## Addendum — El Worker a un dominio propio (2026-09-07)
+
+Uriel, mirando un comprobante: *"en el link aparece mi mail personal, quiero que
+saquemos eso"*.
+
+No era el mail, pero casi: los links salían como
+`casino-uploader.<nombre-del-titular>.workers.dev/files/...`. El subdominio por
+defecto de un Worker **lleva el nombre de la cuenta de Cloudflare**, así que iba
+en cada URL de comprobante que generara la API.
+
+### Dónde estaba
+
+En tres lugares, y hacía falta tocar los tres:
+
+| | |
+|---|---|
+| `CF_WORKER_URL` (env de la api) | de acá sale el link que se genera |
+| `next.config.ts` | destino del rewrite `/storage/files/*` |
+| `storage-url.ts` | origen contra el que se comparaba para normalizar |
+
+### El orden importó
+
+`normalizeStorageUrl` comparaba contra un **origen fijo**. Cambiar el dominio
+primero habría dejado de reconocer las URLs y el front habría servido links
+crudos — el mismo error de orden que ya se pagó con las URLs firmadas.
+
+Así que primero se hizo el código **agnóstico del origen**: ahora mira el
+**path**, y cualquier URL absoluta cuyo path arranque en `/files/` se reescribe
+a `/storage/files/...`. Funciona con los dos dominios a la vez, y con el que
+venga después.
+
+### La trampa que costó dos intentos
+
+**`CF_WORKER_URL` no estaba entre los build args del web.** `next.config.ts` lo
+lee al COMPILAR —los rewrites se hornean en el routes-manifest— así que como env
+de runtime no hace nada. Es la misma trampa de los `NEXT_PUBLIC_*` que ya había
+costado un 502 en staging, pero esta variable no tenía el prefijo y por eso
+nadie la asoció.
+
+Y aparecieron dos formas de detectarla, ahora en `scripts/deploy-checklist.md`:
+
+1. **Un buildArg que entra invalida el caché de capas.** El primer intento
+   terminó en **95 segundos**; el que funcionó tardó **3 minutos y medio**. Un
+   build sospechosamente rápido es un build que no recompiló nada.
+2. **Agregar una variable que ya existía deja dos líneas con la misma clave.**
+   En la api quedaron el valor viejo y el nuevo. Suele ganar la última, pero es
+   comportamiento implícito: alguien reordena y cambia el valor efectivo sin
+   tocar nada.
+
+También se descubrió que **guardar los Build Args no dispara el rebuild**: hay
+que darle Deploy aparte. El deploy que se creía hecho no existía.
+
+### Cómo se verificó sin comprobantes
+
+Después del reset no quedaba ninguno, y no valía inventar transferencias en
+producción. La verificación que sí sirve es más directa:
+
+```bash
+docker exec $(docker ps -q -f name=casino-api-hnwmew) printenv CF_WORKER_URL
+```
+
+El link se arma como `<CF_WORKER_URL>/files/<clave>`, así que saber qué valor ve
+el proceso **es** saber cómo sale el link. No depende de encontrar un archivo ni
+de lo que muestre el navegador.
+
+### ⚠️ Una falsa alarma, y por qué
+
+En el medio se anunció que **las imágenes de marca se habían borrado de R2** y
+que el casino se veía sólo por caché. **Era falso.** El error: probar con
+`curl -sI`, que manda **HEAD**, y el Worker **contesta 404 a un HEAD** en vez
+de 200 sin cuerpo. Con GET daba 200 y los bytes correctos.
+
+El `cf-cache-status: HIT` encajaba con la hipótesis y se dio por confirmada sin
+descartar la otra explicación posible — que el método de prueba estuviera mal.
+
+> Queda como pendiente menor arreglar el HEAD en el Worker: no rompe nada
+> (los navegadores piden con GET) pero engaña a cualquier chequeo de existencia.
+
+### Estado
+
+Los links ya no llevan el nombre del titular. Falta un gesto manual: **apagar
+los dos `workers.dev`** (Producción y Vista previa) en Cloudflare →
+`casino-uploader` → Dominios, para que el subdominio deje de ser accesible y no
+sólo de usarse.
+
+> El worker de **uptime** sigue teniendo uno igual
+> (`miamihub-uptime.<titular>.workers.dev`). Lo ve mucha menos gente, pero si se
+> quiere dejar parejo, mismo tratamiento.
