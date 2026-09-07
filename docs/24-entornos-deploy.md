@@ -398,6 +398,24 @@ docker exec -i $(docker ps -q -f name=casino-postgres-staging) psql -U postgres 
 > correr un seed de desarrollo con credenciales hardcodeadas invita al error.
 > Haría falta un `db:seed:plans` que inserte sólo los planes.
 
+#### El usuario de Postgres NO es el mismo en los dos entornos
+
+| Entorno | Contenedor | Usuario |
+|---|---|---|
+| staging | `casino-postgres-staging-7qarjo` | `postgres` |
+| **producción** | `casino-postgres-ribula` | **`casino`** |
+
+Copiar el `-U postgres` de los ejemplos de staging a producción da
+`FATAL: role "postgres" does not exist`. Averiguarlo sin adivinar:
+
+```bash
+docker exec $(docker ps -q -f name=casino-postgres-ribula) printenv POSTGRES_USER
+```
+
+> `printenv POSTGRES_USER` y no `env` a secas: `env` imprime también
+> `POSTGRES_PASSWORD`, y esa contraseña queda en el scrollback de la terminal
+> (y en el chat, si se pegó ahí la salida).
+
 #### Al pegar comandos con heredoc
 
 Los `<<'SQL'` se cuelgan si al pegar no entra el salto de línea final: bash
