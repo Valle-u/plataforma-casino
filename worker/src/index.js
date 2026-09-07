@@ -114,7 +114,17 @@ export default {
       return this.uploadFile(request, env);
     }
 
-    return jsonResponse({ error: 'Not found. Use POST /upload or GET /files/:key' }, 404);
+    // DELETE /files/:key — borrar de R2. Autenticado con el mismo token que
+    // el upload: NO puede ser público, es la operación más destructiva del
+    // Worker.
+    if (request.method === 'DELETE' && url.pathname.startsWith('/files/')) {
+      return this.deleteFile(url, request, env);
+    }
+
+    return jsonResponse(
+      { error: 'Not found. Use POST /upload, GET /files/:key or DELETE /files/:key' },
+      404,
+    );
   },
 
   async serveFile(url, env) {
@@ -153,6 +163,37 @@ export default {
     headers.set('Content-Length', String(object.size));
 
     return new Response(object.body, { headers });
+  },
+
+  /**
+   * Borra un archivo de R2.
+   *
+   * Existe porque el driver de la API tenía `delete()` sin implementar: al
+   * rechazar un depósito se suponía que se borraba el comprobante y en realidad
+   * sólo se escribía un warning. Los comprobantes de depósitos rechazados
+   * quedaban en R2 para siempre.
+   *
+   * **Idempotente**: borrar algo que no está devuelve OK. El caller —rechazar un
+   * depósito— no debería fallar porque el archivo ya no exista; lo que le
+   * importa es que después de llamar, no esté.
+   */
+  async deleteFile(url, request, env) {
+    const auth = request.headers.get('Authorization');
+    if (auth !== `Bearer ${env.CF_WORKER_UPLOAD_TOKEN}`) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+
+    const key = url.pathname.slice('/files/'.length);
+    if (!key) return jsonResponse({ error: 'Missing file key' }, 400);
+
+    try {
+      await env.R2_BUCKET.delete(key);
+    } catch (err) {
+      console.error('R2 delete failed:', err);
+      return jsonResponse({ error: 'Failed to delete file from R2' }, 500);
+    }
+
+    return jsonResponse({ deleted: true, key });
   },
 
   async uploadFile(request, env) {

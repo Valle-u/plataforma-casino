@@ -123,11 +123,39 @@ export class CloudflareWorkerDriver implements StorageDriver {
     return Promise.resolve(`${base}?exp=${exp}&sig=${sig}`);
   }
 
+  /**
+   * Borra el archivo de R2, vía `DELETE /files/:key` del Worker.
+   *
+   * Hasta el 2026-09-06 esto **no hacía nada**: sólo escribía un warning. El
+   * caller que más importa es el rechazo de un depósito, que da por hecho que
+   * el comprobante se borra — así que los comprobantes de depósitos rechazados
+   * se acumulaban en R2 para siempre, y públicos.
+   *
+   * No tira si falla. Es a propósito: el caller ya hizo lo que importaba
+   * —rechazar el depósito, con su registro en auditoría— y hacerlo fallar
+   * entero porque no se pudo borrar un archivo cambiaría un problema de
+   * housekeeping por uno de negocio. Queda en el log como `error` para que se
+   * pueda encontrar y limpiar.
+   */
   async delete(storageKey: string): Promise<void> {
-    // R2 delete via Worker not implemented yet (not needed for uploads).
-    this.logger.warn(
-      `delete() not implemented for CloudflareWorkerDriver (key: ${storageKey})`,
-    );
+    try {
+      const res = await fetch(`${this.workerUrl}/files/${storageKey}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.workerToken}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        this.logger.error(
+          `No se pudo borrar "${storageKey}" (${res.status}): ${await res.text()}`,
+        );
+        return;
+      }
+      this.logger.log(`Borrado de R2: ${storageKey}`);
+    } catch (err) {
+      this.logger.error(
+        `No se pudo borrar "${storageKey}": ${(err as Error).message}`,
+      );
+    }
   }
 }
 
