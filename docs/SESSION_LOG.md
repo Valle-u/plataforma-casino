@@ -16061,3 +16061,121 @@ lee igual que uno que describe la realidad. **Verificar antes de confiar.**
 
 `main` = `5509994` (código). `staging` va adelante sólo con documentación, para
 no reiniciar producción por un `.md`. Producción y staging verificados sanos.
+
+---
+
+## 2026-09-07 16:00 AR — Claude Code (Opus 5) — Comprobantes, el RTP inventado y Gregmorn en producción
+
+**Duración**: ~2 días de calendario, retomando entre medio.
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**1. Los comprobantes ahora tienen backup, y se probó restaurarlos.**
+Hasta acá se respaldaban sólo las bases: los comprobantes de depósito y de
+transferencia —la prueba documental de movimientos de plata— no tenían ninguna
+copia. Se agregó `UploadsBackupCron`, incremental por `ETag` y con `CopyObject`
+para que los bytes nunca pasen por el contenedor. La restauración se probó de
+verdad: el archivo recuperado es **byte a byte idéntico** al original (SHA-256).
+
+**2. Al probar la restauración apareció un agujero de seguridad.**
+Los comprobantes se descargaban **con sólo tener la URL**, sin autenticación, y
+con `Cache-Control: public, max-age=31536000, immutable` — o sea que borrar uno
+**no lo sacaba de circulación** durante un año.
+
+- **El parche de caché está desplegado y funcionando**: `private, max-age=300`,
+  `cf-cache-status: BYPASS`, y borrar ahora tiene efecto.
+- **Las URLs firmadas están escritas y verificadas pero apagadas**
+  (`REQUIRE_SIGNED_PROOFS = "0"`). Falta cargar bien el secreto en el Worker.
+  El procedimiento completo quedó en `docs/runbooks/firmar-comprobantes.md`.
+
+**3. El "RTP objetivo" del panel era un número inventado.**
+Ningún proveedor manda el RTP en su catálogo. Palace tenía `0.95` fijo escrito a
+mano en el sync, igual para todos sus juegos; Gregmorn y Forever, nada. El panel
+lo mostraba como objetivo y marcaba en amarillo los que se desviaban: **la
+alerta que debía detectar un juego pagando mal no funcionaba**, justo antes de
+abrir con plata real. Se sacó el número, se cambió el flag a "fuera del rango
+declarado" (75-96%, lo que el proveedor puso por escrito) con un piso de 100
+rondas, y la migración `0111` limpió los **1.693** juegos de Palace ya creados.
+
+**4. Gregmorn pasó a producción.** Estuvo trabado varias horas en un 401
+`authorization failed`. La causa: **a la contraseña guardada le faltaba el
+último carácter** — 15 en vez de 16, perdido al copiar. Se confirmó reproduciendo
+el 401 con el valor truncado y el 200 con el completo. Después: catálogo
+sincronizado (**9.489 juegos**, contra los 2.840 del entorno `-dev`), callbacks
+activos y **rondas reales de dos jugadores distintos entrando y procesándose**.
+
+**5. Se documentó el usuario de Postgres de producción** (`casino`, no
+`postgres` como staging). El ejemplo de los docs invitaba al error.
+
+### Decisiones tomadas
+
+- **No se cargó un RTP a mano para los 2.840 juegos.** Sería inventar otra vez.
+  Se cambió la pregunta: de "¿se desvía de su objetivo?" —incontestable— a
+  "¿está pagando algo absurdo?", que sale de la devolución real y del rango
+  declarado. Detalle en el DEVLOG.
+- **La limpieza del `0.95` se hizo por migración, no a mano**, para que corra
+  sola en cada base de tenant. El `WHERE` se acotó a la firma exacta del sync y
+  la semántica jsonb se probó contra un Postgres real con ocho casos.
+- **Se verificó que `config.rtp` no se usa para jugar** antes de borrarlo:
+  `PalaceClient.gameUrl` acepta un parámetro `rtp` pero los dos call sites lo
+  llaman sin él.
+- **Se revirtió el despliegue de las URLs firmadas** en vez de seguir iterando
+  con producción rota. Debió hacerse a la primera y se hizo a la cuarta.
+
+### Commits creados
+
+- `0c4fcbe` — `feat(backup): respaldar los comprobantes, que no tenian ninguna copia`
+- `358f494` — `docs(dr): el backup de comprobantes, y sus limites`
+- `170369d` — `docs: restauracion de comprobantes probada, y un agujero que aparecio`
+- `6645216` — `docs(runbook): el despliegue de las URLs firmadas, paso por paso`
+- `a0d4997` — `fix(game-stats): el "RTP objetivo" era inventado, y la alerta no servia`
+- `2f4a869` — `fix(db): borrar el RTP inventado que quedo en los juegos de Palace`
+- `51084be` — `docs(deploy): el usuario de Postgres no es el mismo en los dos entornos`
+
+### Lo que enseñó la sesión
+
+**Un runbook de cinco pasos no incluía el paso que hacía falta.** Se desplegó el
+Worker, se purgó el caché y se cargaron los secretos, y las URLs seguían
+saliendo sin firmar: **el código que firma estaba en `staging` y producción
+corre `main`**. Todo lo demás parecía correcto, que es lo que lo hace difícil de
+ver. El runbook ahora arranca con "Paso 0 — mergear a `main`".
+
+**Un "done" viejo se lee igual que uno nuevo.** Monitoreando el deploy, Dokploy
+reportó la API en `done` cuando todavía no había empezado a construir: era el
+deployment anterior. Hay que comparar **contra qué commit**, no sólo el estado.
+Es la misma forma del error de arriba.
+
+**Medir en vez de suponer, dos veces.** El 401 de Gregmorn se resolvió
+reproduciéndolo con el valor truncado, no adivinando. Y el `con_rtp = 0` de la
+migración es compatible con "se limpiaron" y con "no había ninguno": se dejó
+anotada la consulta que los distingue.
+
+### Estado al cerrar
+
+- **`main` = `51084be`**, `staging` en el mismo commit. Producción sana:
+  `health` con db y redis conectados, home 307, panel 200.
+- **Gregmorn en producción, funcionando** — catálogo sincronizado, callbacks
+  llegando, firma HMAC validando (que las filas existan lo prueba).
+- **Suite**: 956 tests en verde.
+
+### Notas para próximo agente
+
+1. **Rotar la contraseña de Gregmorn.** Viajó por chat en un screenshot. La
+   integración ya anda, así que rotarla no bloquea nada.
+2. **URLs firmadas de comprobantes: a mitad de camino.** El parche de caché está
+   puesto; falta `npx wrangler secret put CF_WORKER_SIGNING_SECRET` en el Worker
+   —**el nombre es el argumento**, no el valor— y borrar tres secretos basura que
+   quedaron nombrados con sus propios valores. Seguir
+   `docs/runbooks/firmar-comprobantes.md` **desde el Paso 0**.
+3. **Falta confirmar que la ronda movió plata**, no sólo que el callback quedó
+   registrado. Se mira en el panel, en el detalle de ronda.
+4. **`two-fa.e2e.ts` tiene un teardown que a veces se cuelga** 30 s y pone CI en
+   rojo con los 956 tests en verde. Intermitente: el reintento pasó. No subirle
+   el timeout al hook — esconde algo real, jest ya avisa que quedan handles
+   abiertos.
+5. **El rango 75-96% del flag de RTP está hardcodeado.** Debería ser
+   configurable por proveedor, ya que cada uno declara el suyo.
+6. Sigue abierto de antes: Turnstile sin sitekey para staging, restaurar una DB
+   **encima** de producción nunca se probó, y la Fase 2 del monitoreo
+   (`docs/26`).
