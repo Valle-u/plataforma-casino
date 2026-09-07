@@ -187,8 +187,18 @@ export interface ByGameRow {
   rtpRealPct: string;
   /** Divergencia |real - target| en puntos. NULL si target no definido. */
   rtpDivergencePts: string | null;
-  /** true si divergencia > 5 puntos — flag de "atención al juego". */
+  /** true si el juego merece atención. El motivo va en `flagReason`. */
   flagged: boolean;
+  /**
+   * Por qué está marcado, o `null` si no lo está.
+   *
+   *   'fuera_de_rango' — la devolución real quedó fuera de lo declarado por el
+   *                      proveedor (75-96%) con suficientes rondas. Es la señal
+   *                      útil: no depende de un objetivo que no tenemos.
+   *   'divergencia'    — alguien configuró un RTP objetivo a mano y el real se
+   *                      aleja más de 5 puntos.
+   */
+  flagReason: 'fuera_de_rango' | 'divergencia' | null;
   roundsCount: number;
   uniquePlayers: number;
 }
@@ -208,6 +218,32 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 /** Umbral de divergencia RTP en puntos para flagear un juego. */
 const RTP_DIVERGENCE_FLAG_PTS = 5;
+
+/**
+ * Rango de devolución que el proveedor declaró **por escrito** (Telegram,
+ * 2026-09-03): mínimo 75%, máximo 96% para SL-games, Nova, X-games y Slot7Zon.
+ *
+ * Es el único número real que tenemos. **Ningún proveedor manda el RTP en su
+ * catálogo** — ni Gregmorn (id, título, imagen, estudio) ni Palace. Así que la
+ * pregunta "¿se desvía de su objetivo?" no se puede contestar: no hay objetivo.
+ *
+ * La que sí se puede contestar, y es la que importa con plata real, es
+ * **"¿este juego está pagando algo absurdo?"**. Por encima de 100% sostenido el
+ * casino pierde en cada ronda; muy por debajo de lo declarado puede ser un bug
+ * del proveedor y plata cobrada de más.
+ */
+const RTP_MIN_DECLARADO_PCT = 75;
+const RTP_MAX_DECLARADO_PCT = 96;
+
+/**
+ * Rondas mínimas para que la devolución signifique algo.
+ *
+ * Con 3 rondas un RTP de 300% es ruido, no una señal: un premio grande en una
+ * muestra chica. Sin este piso, el panel marcaría en amarillo cualquier juego
+ * recién estrenado y el aviso se volvería ignorable — que es la peor falla
+ * posible en una alerta.
+ */
+const RTP_RONDAS_MINIMAS = 100;
 
 @Injectable()
 export class GameStatsService {
@@ -480,6 +516,24 @@ export class GameStatsService {
             ? Math.abs(rtpReal - rtpTargetPct)
             : null;
 
+        // Marcamos por DOS motivos distintos, en orden de importancia.
+        //
+        // El primero no necesita objetivo configurado, y por eso es el que
+        // sirve: casi ningún juego tiene uno. El segundo sólo aplica si alguien
+        // lo puso a mano.
+        const hayMuestra = r.rounds >= RTP_RONDAS_MINIMAS && totalBet > 0;
+        const fueraDeRango =
+          hayMuestra &&
+          (rtpReal > RTP_MAX_DECLARADO_PCT || rtpReal < RTP_MIN_DECLARADO_PCT);
+        const divergeDelObjetivo =
+          divergence !== null && divergence > RTP_DIVERGENCE_FLAG_PTS;
+
+        const flagReason: ByGameRow['flagReason'] = fueraDeRango
+          ? 'fuera_de_rango'
+          : divergeDelObjetivo
+            ? 'divergencia'
+            : null;
+
         return {
           gameId: r.gameId,
           gameCode: r.gameCode,
@@ -490,7 +544,8 @@ export class GameStatsService {
           ggr: ggr.toFixed(2),
           rtpRealPct: rtpReal.toFixed(2),
           rtpDivergencePts: divergence !== null ? divergence.toFixed(2) : null,
-          flagged: divergence !== null && divergence > RTP_DIVERGENCE_FLAG_PTS,
+          flagged: flagReason !== null,
+          flagReason,
           roundsCount: r.rounds,
           uniquePlayers: r.players,
         };

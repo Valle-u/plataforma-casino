@@ -173,7 +173,16 @@ export class PalaceSyncService {
       category,
       thumbnailUrl: palGame.game_image ?? null,
       shortDescription: palGame.locale_name ?? null,
-      config: { rtp: 0.95 },
+      // Sin `rtp`. Antes acá iba `{ rtp: 0.95 }` fijo, igual para TODOS los
+      // juegos — un número que no eligió nadie y que Palace no informa (su
+      // catálogo trae code, nombre, imagen, categoría y provider_id, nada más).
+      //
+      // El problema no era el número sino que el panel lo mostraba como
+      // "RTP objetivo" y marcaba en amarillo los juegos que se desviaban de él.
+      // Una métrica inventada es peor que una vacía: da confianza sin
+      // fundamento. Ahora la columna dice "—" y el flag mira otra cosa (ver
+      // `GameStatsService`, RTP_MIN/MAX_DECLARADO_PCT).
+      config: {},
       featured: false,
       sortOrder: 0,
       isActive: palGame.launch_enable,

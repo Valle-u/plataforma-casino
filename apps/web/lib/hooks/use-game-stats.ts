@@ -211,6 +211,8 @@ export interface ByGameRow {
   rtpRealPct: string;
   rtpDivergencePts: string | null;
   flagged: boolean;
+  /** Por qué está marcado. `fuera_de_rango` es el que importa. */
+  flagReason: 'fuera_de_rango' | 'divergencia' | null;
   roundsCount: number;
   uniquePlayers: number;
 }

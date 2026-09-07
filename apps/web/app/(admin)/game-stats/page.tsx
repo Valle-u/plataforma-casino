@@ -650,9 +650,22 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
                 <div className="flex flex-wrap items-center gap-2">
                   {r.flagged && (
                     <AlertTriangle
-                      className="size-3.5 text-[var(--color-warning)]"
-                      aria-label="Devolución fuera del objetivo"
-                    />
+                      className="size-3.5 shrink-0 text-[var(--color-warning)]"
+                      // El motivo, en criollo. Antes decía siempre "fuera del
+                      // objetivo", incluso cuando no había ningún objetivo
+                      // configurado — que es el caso de casi todo el catálogo.
+                      aria-label={
+                        r.flagReason === 'fuera_de_rango'
+                          ? 'La devolución quedó fuera del rango declarado por el proveedor (75-96%)'
+                          : 'La devolución se aleja del RTP objetivo configurado'
+                      }
+                    >
+                      <title>
+                        {r.flagReason === 'fuera_de_rango'
+                          ? 'Devolución fuera del rango declarado por el proveedor (75-96%). Con plata real, mirarlo.'
+                          : 'Se aleja más de 5 puntos del RTP objetivo configurado a mano.'}
+                      </title>
+                    </AlertTriangle>
                   )}
                   <div className="flex flex-col">
                     <span className="text-[12px] text-[var(--color-fg)]">

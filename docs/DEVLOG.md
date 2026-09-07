@@ -10475,3 +10475,87 @@ sesión. Más `tenant-settings` + `notifications` juntas: 85/85.
 > Dato útil: la DB de test se **destruye** en el teardown, así que las fugas
 > entre suites sólo afectan **dentro** de una corrida, nunca entre corridas. Por
 > eso no se puede inspeccionar la contaminación después de que jest termina.
+
+---
+
+## 2026-09-07 — El "RTP objetivo" del panel era un número inventado
+
+Revisión pedida antes de abrir con Gregmorn en producción, a raíz de que el
+proveedor declarara por escrito un rango de **75% a 96%**.
+
+### Lo que se encontró
+
+**Ningún proveedor manda el RTP en su catálogo.** Gregmorn devuelve
+`id, isEnabled, title, imageUrl, provider`; Palace, el equivalente. El dato no
+existe del lado de ellos.
+
+Y sin embargo el panel mostraba una columna **"RTP objetivo"**:
+
+| Proveedor | Objetivo | De dónde salía |
+|---|---|---|
+| Gregmorn (2.840 juegos) | ninguno | — |
+| Palace | **0,95 en todos** | `config: { rtp: 0.95 }` escrito a mano en el sync |
+| Forever | ninguno | — |
+
+El 0,95 se le estampaba **a cada juego al crearlo**, idéntico para todos, sin
+relación con lo que ese juego paga.
+
+### Por qué importaba
+
+El panel marcaba en amarillo los juegos cuya devolución real se alejaba más de 5
+puntos de ese objetivo. O sea que la alerta:
+
+- **No decía nada para Gregmorn** — sin objetivo no hay comparación, y Gregmorn
+  es prácticamente todo el catálogo.
+- **Comparaba contra ficción para Palace.**
+
+**El aviso que debía detectar un juego pagando mal no funcionaba**, justo antes
+de abrir con plata real.
+
+### El arreglo: cambiar la pregunta
+
+No se puede contestar *"¿se desvía de su objetivo?"* — no hay objetivo y el
+proveedor no lo da. Cargarlo a mano para 2.840 juegos sería inventar otra vez.
+
+La que sí se puede contestar es **"¿este juego está pagando algo absurdo?"**, y
+es la que importa con plata real:
+
+- Por encima del **96%** declarado, sostenido, el casino pierde en cada ronda.
+- Muy por debajo del **75%** puede ser un bug del proveedor — plata cobrada de
+  más, que es otro riesgo, no la ausencia de uno.
+
+Eso no necesita el RTP de cada juego: alcanza con la devolución real y el rango
+que el proveedor **declaró por escrito**.
+
+Ahora `flagged` se enciende por dos motivos, y `flagReason` dice cuál:
+
+- `fuera_de_rango` — real fuera de 75-96% con muestra suficiente. **El útil.**
+- `divergencia` — alguien configuró un objetivo a mano y el real se aleja.
+
+### El piso de rondas
+
+Con 3 rondas, un RTP de 300% es ruido: un premio grande en una muestra chica.
+Sin piso, el panel marcaría cualquier juego recién estrenado y el aviso se
+volvería ignorable — **la peor falla posible en una alerta**. Se fijó en 100
+rondas.
+
+### Se dejó de inventar el número
+
+`palace-sync` ya no escribe `rtp`. La columna ahora dice `—` cuando no hay dato,
+que es la verdad.
+
+> ⚠️ **Los juegos de Palace ya creados conservan su `0.95`.** Limpiarlos es
+> borrar datos en producción y no se hizo sin pedirlo: un admin podría haber
+> puesto ese valor a propósito y no hay forma de distinguirlo. Si se decide
+> limpiar, es un `UPDATE` sobre `games` donde `provider_code='palace'` y
+> `config->>'rtp' = '0.95'`.
+
+### Lo que queda pendiente
+
+El rango 75-96 está **hardcodeado**. Debería ser configurable por tenant —o por
+proveedor, ya que cada uno declara el suyo— igual que los thresholds de fraude.
+Hoy son dos constantes con el comentario de dónde salió el número.
+
+Y el flag **sigue siendo sólo visual**: no manda alerta por Telegram. Con plata
+real, un juego pagando 300% durante horas debería avisar solo. Eso es la Fase 2
+de `docs/26`.
