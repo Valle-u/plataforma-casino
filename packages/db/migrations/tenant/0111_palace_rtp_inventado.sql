@@ -1,0 +1,61 @@
+-- 0111 · Borrar el RTP inventado de los juegos de Palace.
+--
+-- EL PROBLEMA
+--
+-- Hasta el 2026-09-07 `palace-sync` le escribia `config: { rtp: 0.95 }` a CADA
+-- juego de Palace al crearlo. El mismo numero para todos, elegido por nadie:
+-- **Palace no informa el RTP** -- su catalogo trae game_code, nombre, imagen,
+-- categoria y provider_id, y nada mas.
+--
+-- El panel mostraba ese valor como columna "RTP objetivo" y marcaba en amarillo
+-- los juegos cuya devolucion real se alejaba de el. O sea que la unica alerta
+-- que deberia avisar "este juego esta pagando mal" comparaba contra ficcion.
+--
+-- El sync ya dejo de escribirlo (ver `palace-sync.service.ts`). Esta migracion
+-- limpia las filas que ya lo tienen: si no, esos juegos siguen mostrando un
+-- objetivo inventado para siempre.
+--
+-- POR QUE ES SEGURO
+--
+-- `config.rtp` NO se usa para jugar. Se verifico cada lector:
+--
+--   * `PalaceClient.gameUrl` acepta un parametro `rtp` opcional que se le
+--     mandaria a Palace... y los dos unicos call sites
+--     (`palace-game-provider.ts:127` y `:161`) lo llaman SIN el. El valor nunca
+--     sale de nuestra base.
+--   * `GameStatsService` lo lee para mostrarlo. Es todo lo que hace.
+--   * `GamesService.assertValidConfig` lo valida al editar (E7).
+--
+-- No toca wallet, ni el calculo de comisiones, ni lo que paga el proveedor.
+-- Es un cambio de lo que se MUESTRA.
+--
+-- E7 (`rtp in (0, 1]`) no se viola: acota el valor cuando esta presente, y el
+-- validador corta antes si viene `undefined`. Ausente es un estado legitimo --
+-- de hecho es el de Gregmorn y Forever, que son la mayoria del catalogo.
+--
+-- POR QUE NO BORRA DE MAS
+--
+-- El panel **no tiene campo para editar el RTP**: no existe en ninguna pantalla
+-- de admin (`config.rtp` solo aparece en las de estadisticas, que lo leen). Un
+-- 0.95 cargado a mano requeriria haber llamado la API directo. Aun asi, las dos
+-- condiciones lo acotan a exactamente lo que escribia el sync:
+--
+--   1. `config - 'rtp' = '{}'` -- no tiene NINGUNA otra clave. El sync creaba
+--      `{"rtp": 0.95}` pelado y su rama de update nunca vuelve a tocar `config`,
+--      asi que esa forma exacta es su firma. Un juego con mas configuracion
+--      encima fue tocado por otra cosa y queda intacto.
+--   2. El valor es exactamente 0.95, el fabricado. Un 0.96 o un 0.93 se
+--      respetan.
+--
+-- NO SE PUEDE DESHACER DESDE ACA
+--
+-- Despues de correr esto, un juego limpiado y uno recien sincronizado son
+-- indistinguibles: los dos tienen `config = '{}'`. No hay como revertir
+-- selectivamente. Se acepta a proposito -- restaurar el 0.95 seria restaurar la
+-- ficcion -- y si hiciera falta el dato historico esta en los backups diarios.
+UPDATE games
+   SET config = config - 'rtp',
+       updated_at = now()
+ WHERE provider_code = 'palace'
+   AND config - 'rtp' = '{}'::jsonb
+   AND (config -> 'rtp')::numeric = 0.95;

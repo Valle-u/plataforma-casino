@@ -10544,11 +10544,32 @@ rondas.
 `palace-sync` ya no escribe `rtp`. La columna ahora dice `—` cuando no hay dato,
 que es la verdad.
 
-> ⚠️ **Los juegos de Palace ya creados conservan su `0.95`.** Limpiarlos es
-> borrar datos en producción y no se hizo sin pedirlo: un admin podría haber
-> puesto ese valor a propósito y no hay forma de distinguirlo. Si se decide
-> limpiar, es un `UPDATE` sobre `games` donde `provider_code='palace'` y
-> `config->>'rtp' = '0.95'`.
+### Y se limpió el que ya estaba escrito
+
+Sacarlo del sync no alcanzaba: los juegos ya creados seguían mostrando el
+objetivo inventado para siempre. Lo limpia la migración
+`0111_palace_rtp_inventado`, que corre sola al arrancar la API
+(`MIGRATE_ON_BOOT=1`) en cada base de tenant.
+
+**Antes de tocar nada se verificó que `config.rtp` no se usa para jugar.**
+`PalaceClient.gameUrl` acepta un parámetro `rtp` opcional que iría a Palace —
+pero los dos únicos call sites lo llaman **sin** él. El valor nunca sale de
+nuestra base: sólo lo leen las pantallas de estadísticas y el validador de E7.
+
+La duda de "y si un admin lo puso a propósito" se cerró mirando el panel:
+**no existe ningún campo para editar el RTP**. Un 0,95 cargado a mano habría
+requerido llamar la API directo. Igual el `WHERE` se acotó a la firma exacta
+del sync — `provider_code='palace'`, valor exactamente `0.95`, y **ninguna
+otra clave en `config`** — así que un juego con más configuración encima, o con
+otro RTP, queda intacto.
+
+Se verificó la semántica jsonb contra un Postgres real con ocho casos (los seis
+que no deben tocarse incluidos) antes de escribir la migración.
+
+⚠️ **No se puede deshacer selectivamente**: después de correr, un juego limpiado
+y uno recién sincronizado son idénticos (`config = '{}'`). Se acepta a
+propósito — restaurar el 0,95 sería restaurar la ficción — y el dato histórico
+está en los backups diarios.
 
 ### Lo que queda pendiente
 
