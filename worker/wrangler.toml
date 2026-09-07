@@ -6,3 +6,18 @@ account_id = "5627e3f2c291921ece435f3cca6463c5"
 [[r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "casino-uploads"
+
+# Exigir URL firmada para los comprobantes (todo lo que esté bajo /proofs/).
+#
+# Arranca en "0" A PROPÓSITO. El despliegue va en dos pasos: primero se sube
+# este Worker con la validación apagada y se comprueba que el panel siga
+# abriendo comprobantes; recién después se pone "1" y se vuelve a desplegar.
+#
+# Ponerlo en "1" de una es lo único que puede cortar un flujo de plata: si algo
+# quedara sin firmar, el operador deja de ver los comprobantes y no puede
+# aprobar depósitos ni conciliar transferencias.
+#
+# Los secretos (CF_WORKER_UPLOAD_TOKEN, CF_WORKER_SIGNING_SECRET) NO van acá:
+# se cargan con `wrangler secret put`.
+[vars]
+REQUIRE_SIGNED_PROOFS = "0"
