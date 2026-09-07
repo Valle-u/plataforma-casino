@@ -10580,3 +10580,72 @@ Hoy son dos constantes con el comentario de dónde salió el número.
 Y el flag **sigue siendo sólo visual**: no manda alerta por Telegram. Con plata
 real, un juego pagando 300% durante horas debería avisar solo. Eso es la Fase 2
 de `docs/26`.
+
+---
+
+## 2026-09-07 (cont.) — El proveedor sí configura el RTP: el flag pasa a medir contra 82%
+
+Horas después de sacar el RTP inventado, Gregmorn contestó la pregunta que se
+les había hecho:
+
+> *"You can send us the desired rtp and we will set it up. The rtp is configured
+> by the provider, and not all providers have this setting."*
+
+O sea: **el RTP se configura del lado de ellos, por estudio** —Pragmatic,
+Amusnet, Amigo— no juego por juego, y no todos lo soportan. Uriel pidió **82%**.
+
+### Por qué el rango 75-96% dejó de servir
+
+Esa mañana el flag marcaba lo que se saliera del rango declarado. Era lo mejor
+posible **mientras no existiera ningún objetivo**: el único número real.
+
+Con un objetivo pedido, el rango se vuelve **peor que inútil**. Un juego pagando
+**94% cae adentro de 75-96 y no se marcaría** — cuando estaría devolviendo 12
+puntos de más y el casino perdería en cada ronda. El rango amplio dejaba pasar
+exactamente el caso que la alerta existe para detectar.
+
+Ahora se compara contra el objetivo, con la misma tolerancia de 5 puntos: se
+marca fuera de **77-87%**.
+
+### El objetivo propio del juego le gana al de la cuenta
+
+Si alguien configuró un `config.rtp` a mano, se mide contra ese. Es más
+específico. Y el motivo del flag distingue los dos casos, porque **lo que tiene
+que hacer el operador no es lo mismo**: `divergencia` se corrige acá, del lado
+nuestro; `fuera_de_rango` se le reclama al proveedor.
+
+De paso, la columna "RTP objetivo" del panel **vuelve a mostrar un número** en
+vez de `—`. Esta vez uno real.
+
+### El piso de rondas ahora aplica a los dos motivos
+
+Antes la divergencia no lo pedía: un juego con 3 rondas y un premio grande se
+marcaba igual. Era el ruido que el piso existe para evitar.
+
+### Se extrajo la regla y se testeó
+
+`evaluarRtp` salió del servicio a una función pura con 13 tests. El motivo es
+concreto: **esta regla cambió de significado tres veces en un día** —del
+`config.rtp` inventado, al rango declarado, al 82%— y no tenía un solo test.
+Cada cambio movía qué juegos se marcan, y la única forma de verificarlo era
+mirar el panel y confiar.
+
+Los casos cubiertos son los dos modos de falla, que son opuestos y los dos
+caros: que **no** marque un juego devolviendo de más, y que marque de más —una
+alerta ruidosa es una alerta ignorada, que es lo mismo que no tenerla. Incluye
+el borde exacto de la tolerancia y un `config.rtp` basura (0, negativo, `NaN`,
+string): sin ese guard el objetivo sería 0 y se marcaría el catálogo entero.
+
+### Lo que queda
+
+**El 82% es una constante y un solo número para toda la cuenta.** El proveedor
+avisó que no todos los estudios lo soportan, así que cuando confirmen a cuáles
+se aplicó, esto tiene que pasar a ser un objetivo **por estudio** —ya existe
+`games.studio`, de la migración 0107— y configurable por tenant.
+
+Y sigue siendo **sólo visual**: no manda alerta por Telegram.
+
+> Nota de timing: el reset de producción dejó las rondas en cero, así que no hay
+> historial viejo que se marque en masa por haberse jugado antes del cambio. La
+> muestra vuelve a juntarse recién con las rondas nuevas, para entonces con el
+> 82% ya aplicado.

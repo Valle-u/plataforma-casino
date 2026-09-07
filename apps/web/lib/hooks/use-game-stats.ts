@@ -204,7 +204,8 @@ export interface ByGameRow {
   gameId: string;
   gameCode: string;
   gameName: string;
-  rtpTargetPct: number | null;
+  /** El de la cuenta, o el del juego si tiene uno propio configurado. */
+  rtpTargetPct: number;
   totalBet: string;
   totalWin: string;
   ggr: string;

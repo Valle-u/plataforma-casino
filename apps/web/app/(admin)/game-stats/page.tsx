@@ -651,19 +651,19 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
                   {r.flagged && (
                     <AlertTriangle
                       className="size-3.5 shrink-0 text-[var(--color-warning)]"
-                      // El motivo, en criollo. Antes decía siempre "fuera del
-                      // objetivo", incluso cuando no había ningún objetivo
-                      // configurado — que es el caso de casi todo el catálogo.
+                      // El motivo, en criollo. Los dos usan el mismo umbral;
+                      // cambia de dónde sale el objetivo, y con eso qué hacer:
+                      // uno se corrige acá, el otro se le reclama al proveedor.
                       aria-label={
                         r.flagReason === 'fuera_de_rango'
-                          ? 'La devolución quedó fuera del rango declarado por el proveedor (75-96%)'
-                          : 'La devolución se aleja del RTP objetivo configurado'
+                          ? `La devolución se aleja del RTP objetivo de la cuenta (${r.rtpTargetPct}%)`
+                          : `La devolución se aleja del RTP configurado para este juego (${r.rtpTargetPct}%)`
                       }
                     >
                       <title>
                         {r.flagReason === 'fuera_de_rango'
-                          ? 'Devolución fuera del rango declarado por el proveedor (75-96%). Con plata real, mirarlo.'
-                          : 'Se aleja más de 5 puntos del RTP objetivo configurado a mano.'}
+                          ? `Se aleja más de 5 puntos del ${r.rtpTargetPct}% que el proveedor tiene configurado. Con plata real, mirarlo.`
+                          : `Se aleja más de 5 puntos del ${r.rtpTargetPct}% que se le configuró a mano a este juego.`}
                       </title>
                     </AlertTriangle>
                   )}
@@ -694,7 +694,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
               </TD>
               <TD className="text-right num font-mono">{r.rtpRealPct}%</TD>
               <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
-                {r.rtpTargetPct !== null ? `${r.rtpTargetPct}%` : '—'}
+                {`${r.rtpTargetPct}%`}
               </TD>
               <TD
                 className={cn(

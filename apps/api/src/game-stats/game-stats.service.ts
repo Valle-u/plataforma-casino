@@ -4,8 +4,10 @@
  * Read-only puro. Métricas clave:
  *   - GGR (Gross Gaming Revenue) = totalBet - totalWin. Es la ganancia
  *     bruta del casino para el período.
- *   - RTP real = totalWin / totalBet. Comparar contra config.rtp del game
- *     define si el juego está "calibrado" (divergencia >5% = alerta).
+ *   - RTP real = totalWin / totalBet. Se compara contra el objetivo de la
+ *     cuenta (`RTP_OBJETIVO_PCT`), o contra el `config.rtp` del juego si alguien
+ *     le puso uno a mano. Divergencia > 5 puntos, con muestra suficiente, marca
+ *     el juego.
  *   - Top losers/winners por user.
  *   - Volumen y rondas por juego.
  *
@@ -178,8 +180,14 @@ export interface ByGameRow {
   gameId: string;
   gameCode: string;
   gameName: string;
-  /** RTP target del config (puede ser null si no está set). */
-  rtpTargetPct: number | null;
+  /**
+   * Objetivo contra el que se mide este juego. El de su `config.rtp` si alguien
+   * lo puso a mano; si no, el de la cuenta (`RTP_OBJETIVO_PCT`).
+   *
+   * Dejó de ser `null`: hasta el 2026-09-07 no había ningún objetivo y la
+   * columna mostraba "—" para casi todo el catálogo.
+   */
+  rtpTargetPct: number;
   totalBet: string;
   totalWin: string;
   ggr: string;
@@ -220,20 +228,26 @@ const MAX_LIMIT = 200;
 const RTP_DIVERGENCE_FLAG_PTS = 5;
 
 /**
- * Rango de devolución que el proveedor declaró **por escrito** (Telegram,
- * 2026-09-03): mínimo 75%, máximo 96% para SL-games, Nova, X-games y Slot7Zon.
+ * RTP objetivo de la cuenta, en porcentaje.
  *
- * Es el único número real que tenemos. **Ningún proveedor manda el RTP en su
- * catálogo** — ni Gregmorn (id, título, imagen, estudio) ni Palace. Así que la
- * pregunta "¿se desvía de su objetivo?" no se puede contestar: no hay objetivo.
+ * El 2026-09-07 el proveedor confirmó que **el RTP se configura del lado de
+ * ellos, por proveedor** —o sea por estudio: Pragmatic, Amusnet, Amigo— y no
+ * juego por juego. Se les pidió **82%**.
  *
- * La que sí se puede contestar, y es la que importa con plata real, es
- * **"¿este juego está pagando algo absurdo?"**. Por encima de 100% sostenido el
- * casino pierde en cada ronda; muy por debajo de lo declarado puede ser un bug
- * del proveedor y plata cobrada de más.
+ * Antes acá vivía el rango que habían declarado por escrito (75-96%) y se
+ * marcaba lo que se saliera de él. Eso servía mientras no hubiera ningún
+ * objetivo: era el único número real que existía. Con un objetivo pedido, el
+ * rango pasa a ser **peor que inútil** — un juego pagando 94% cae DENTRO de
+ * 75-96 y no se marcaría, cuando estaría devolviendo 12 puntos de más y
+ * perdiendo plata en cada ronda.
+ *
+ * ⚠️ **Es un solo número para toda la cuenta, y el proveedor avisó que no todos
+ * los estudios soportan la configuración.** Cuando confirmen a cuáles se aplicó,
+ * esto tendría que pasar a ser un objetivo POR ESTUDIO —ya existe
+ * `games.studio`, de la migración 0107— y configurable por tenant, en vez de una
+ * constante que hay que deployar para cambiar.
  */
-const RTP_MIN_DECLARADO_PCT = 75;
-const RTP_MAX_DECLARADO_PCT = 96;
+const RTP_OBJETIVO_PCT = 82;
 
 /**
  * Rondas mínimas para que la devolución signifique algo.
@@ -244,6 +258,64 @@ const RTP_MAX_DECLARADO_PCT = 96;
  * posible en una alerta.
  */
 const RTP_RONDAS_MINIMAS = 100;
+
+/**
+ * Decide si un juego se marca, y contra qué objetivo se lo midió.
+ *
+ * Está afuera del servicio a propósito: es la única regla acá que decide algo
+ * sobre plata —cuándo avisarle al operador que un juego paga distinto de lo que
+ * debería— y adentro del método sólo se podía probar levantando la app y
+ * fabricando cien rondas. Como función pura se testea con una tabla de casos.
+ */
+export function evaluarRtp(params: {
+  /** Devolución real, ya en porcentaje 0-100. */
+  rtpRealPct: number;
+  totalBet: number;
+  rondas: number;
+  /** `config` del juego. Su `rtp` puede venir como fracción (0,96) o como pct. */
+  config: Record<string, unknown> | null;
+}): {
+  objetivoPct: number;
+  divergence: number | null;
+  flagReason: ByGameRow['flagReason'];
+} {
+  // El RTP propio del juego vive en `config.rtp`. Se acepta en las dos escalas
+  // porque históricamente se guardó como fracción (0.95) y a mano es fácil
+  // cargar 95.
+  const raw = params.config?.rtp;
+  const objetivoPropioPct =
+    typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+      ? raw <= 1
+        ? raw * 100
+        : raw
+      : null;
+
+  // El objetivo del juego, si alguien lo configuró a mano, le gana al de la
+  // cuenta: es más específico.
+  const objetivoPct = objetivoPropioPct ?? RTP_OBJETIVO_PCT;
+
+  const divergence =
+    params.totalBet > 0 ? Math.abs(params.rtpRealPct - objetivoPct) : null;
+
+  // El piso de rondas vale para los DOS motivos. Antes la divergencia no lo
+  // pedía, así que un juego con 3 rondas y un premio grande se marcaba igual —
+  // exactamente el ruido que el piso existe para evitar.
+  const hayMuestra = params.rondas >= RTP_RONDAS_MINIMAS && params.totalBet > 0;
+  const seAleja =
+    hayMuestra && divergence !== null && divergence > RTP_DIVERGENCE_FLAG_PTS;
+
+  // Mismo umbral, distinto origen del objetivo: `divergencia` es contra el del
+  // propio juego, `fuera_de_rango` contra el de la cuenta. Se distinguen porque
+  // lo que tiene que hacer el operador no es lo mismo — uno se corrige acá, el
+  // otro se le reclama al proveedor.
+  const flagReason: ByGameRow['flagReason'] = !seAleja
+    ? null
+    : objetivoPropioPct !== null
+      ? 'divergencia'
+      : 'fuera_de_rango';
+
+  return { objetivoPct, divergence, flagReason };
+}
 
 @Injectable()
 export class GameStatsService {
@@ -500,45 +572,18 @@ export class GameStatsService {
         const ggr = totalBet - totalWin;
         const rtpReal = totalBet > 0 ? (totalWin / totalBet) * 100 : 0;
 
-        // El RTP target vive en config.rtp como fracción 0-1 (e.g. 0.96).
-        // Convertimos a porcentaje 0-100 para comparar.
-        const config = r.gameConfig as Record<string, unknown> | null;
-        const rtpTargetRaw = config?.rtp;
-        const rtpTargetPct =
-          typeof rtpTargetRaw === 'number'
-            ? rtpTargetRaw <= 1
-              ? rtpTargetRaw * 100
-              : rtpTargetRaw
-            : null;
-
-        const divergence =
-          rtpTargetPct !== null && totalBet > 0
-            ? Math.abs(rtpReal - rtpTargetPct)
-            : null;
-
-        // Marcamos por DOS motivos distintos, en orden de importancia.
-        //
-        // El primero no necesita objetivo configurado, y por eso es el que
-        // sirve: casi ningún juego tiene uno. El segundo sólo aplica si alguien
-        // lo puso a mano.
-        const hayMuestra = r.rounds >= RTP_RONDAS_MINIMAS && totalBet > 0;
-        const fueraDeRango =
-          hayMuestra &&
-          (rtpReal > RTP_MAX_DECLARADO_PCT || rtpReal < RTP_MIN_DECLARADO_PCT);
-        const divergeDelObjetivo =
-          divergence !== null && divergence > RTP_DIVERGENCE_FLAG_PTS;
-
-        const flagReason: ByGameRow['flagReason'] = fueraDeRango
-          ? 'fuera_de_rango'
-          : divergeDelObjetivo
-            ? 'divergencia'
-            : null;
+        const { objetivoPct, divergence, flagReason } = evaluarRtp({
+          rtpRealPct: rtpReal,
+          totalBet,
+          rondas: r.rounds,
+          config: r.gameConfig as Record<string, unknown> | null,
+        });
 
         return {
           gameId: r.gameId,
           gameCode: r.gameCode,
           gameName: r.gameName,
-          rtpTargetPct,
+          rtpTargetPct: objetivoPct,
           totalBet: totalBet.toFixed(2),
           totalWin: totalWin.toFixed(2),
           ggr: ggr.toFixed(2),
