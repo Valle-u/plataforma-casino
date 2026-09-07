@@ -626,3 +626,62 @@ Para no quedar locked-out de la plataforma:
 - **Política de password rotation** para roles privilegiados (¿obligamos rotar cada N días? Discutible).
 - **MFA hardware** (YubiKey) opcional para super-admin — v2.
 - **Anonymización avanzada** (k-anonymity en exports) cuando crezca el data warehouse.
+
+---
+
+## ⚠️ Hallazgo abierto (2026-09-06): los comprobantes son públicos por URL
+
+**Sin resolver.** Encontrado al probar la restauración del backup de
+comprobantes. No es una hipótesis: está verificado contra producción.
+
+### Qué pasa
+
+Los comprobantes —PDF de transferencias bancarias, imágenes de depósitos— se
+sirven en `https://<host>/storage/files/<key>` **sin ninguna autenticación**.
+Verificado con un `GET` sin sesión a un comprobante real del tenant vivo:
+
+```
+http=200  application/pdf  102432B
+```
+
+Son documentos financieros de personas reales: suelen tener nombre, CBU, banco y
+monto.
+
+### Y no se puede "des-publicar"
+
+El header que devuelven es:
+
+```
+Cache-Control: public, max-age=31536000, immutable
+```
+
+**Un año, en el caché del borde de Cloudflare.** Se comprobó el efecto: se borró
+un objeto de R2 y su URL **siguió devolviendo 200** desde el caché
+(`cf-cache-status: HIT`). Con un parámetro que saltea el caché, la misma URL da
+404 — o sea que el archivo ya no existe y lo que responde es la copia cacheada.
+
+**Consecuencia práctica: borrar un comprobante NO deja de servirlo.** Si un
+jugador pide que se borren sus datos, o si hay que sacar un archivo subido por
+error, el archivo sigue disponible en su URL.
+
+### Por qué no es "grave pero controlado"
+
+El único obstáculo hoy es que la key es un UUID, o sea **seguridad por
+oscuridad**. Y las URLs se filtran solas: quedan en el historial del navegador,
+en el header `Referer`, en capturas que se comparten por chat, en logs de proxies
+y en cualquier lado donde se haya pegado el link. Una vez que una URL sale, sigue
+viva un año y no hay forma de cortarla salvo purgar el caché a mano.
+
+### Qué habría que hacer
+
+No se tocó nada: cambiar cómo se sirven los comprobantes es una decisión de
+producto con consecuencias reales (el panel los muestra hoy con un `<img>` /
+visor directo). Las salidas posibles:
+
+1. **URLs firmadas con vencimiento** (presigned, minutos). El repo ya tiene
+   `@aws-sdk/s3-request-presigner` entre las dependencias de la API.
+2. **Servirlos por un endpoint autenticado** que valide permisos y haga de proxy.
+3. Como mínimo inmediato: bajar el `max-age` y sacar `immutable`, para que
+   borrar un archivo tenga efecto en horas y no en un año.
+
+Las opciones 1 y 2 son las que resuelven el fondo; la 3 sólo reduce el daño.

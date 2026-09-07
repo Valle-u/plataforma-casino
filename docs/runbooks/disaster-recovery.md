@@ -701,5 +701,22 @@ cualquier cliente S3. El backup conserva la key original bajo `uploads/`:
 casino-backups/uploads/tenants/<slug>/deposits/<archivo>
 ```
 
-⚠️ **La restauración de un archivo nunca se probó.** Antes de necesitarla en
-serio, copiar uno de vuelta a mano y verificar que la app lo sirve.
+### ✅ Restauración probada — 2026-09-06
+
+Se verificó la cadena completa contra producción:
+
+| Paso | Resultado |
+|---|---|
+| Comparar original vivo vs copia del backup (PDF y JPG) | **SHA-256 idéntico**, cabeceras válidas |
+| Restaurar desde el backup al bucket vivo | copiado, **SHA idéntico** |
+| Que la app lo sirva | **200**, 100 KB, PDF válido, **mismo SHA** |
+| Limpieza | clave de prueba borrada, bucket de vuelta en 97 objetos |
+
+Se restauró a una clave de prueba (`_restore-test/`) y no encima de un
+comprobante real: el original seguía existiendo, así que sobrescribirlo no
+probaba nada y arriesgaba de gusto.
+
+> ⚠️ **Al probar esto apareció un problema de seguridad, sin resolver:** los
+> comprobantes se sirven **sin autenticación** y con `Cache-Control` de **un
+> año**, así que borrar uno no deja de servirlo. Ver
+> `docs/12-seguridad-compliance.md`, al final.
