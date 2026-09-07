@@ -3,7 +3,8 @@
  *
  * Handles two operations:
  *   POST /upload — multipart file upload → R2 storage
- *   GET  /files/* — serve files from R2 with caching headers
+ *   GET|HEAD /files/* — serve files from R2 with caching headers
+ *   DELETE /files/* — borrar de R2 (autenticado)
  *
  * This bypasses the TLS issue between Railway and R2's S3 API by using
  * Cloudflare's internal network via R2 bindings.
@@ -104,9 +105,23 @@ export default {
       return corsResponse(new Response(null, { status: 204 }));
     }
 
-    // GET /files/:key — serve file from R2
-    if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
-      return this.serveFile(url, env);
+    // GET | HEAD /files/:key — serve file from R2
+    //
+    // HEAD tiene que contestar lo MISMO que GET pero sin cuerpo. Antes caía al
+    // 404 genérico del final, y eso engaña a cualquier chequeo de existencia:
+    // el 2026-09-07 un `curl -I` sobre el logo del casino devolvió 404 y se
+    // llegó a dar por perdidas las imágenes de marca, que estaban intactas.
+    if (
+      (request.method === 'GET' || request.method === 'HEAD') &&
+      url.pathname.startsWith('/files/')
+    ) {
+      const esHead = request.method === 'HEAD';
+      const res = await this.serveFile(url, env, esHead);
+      // Se reconstruye sin cuerpo en vez de devolver `res`: un HEAD no lleva
+      // body en NINGÚN estado, tampoco en el 403 ni en el 404.
+      return esHead
+        ? new Response(null, { status: res.status, headers: res.headers })
+        : res;
     }
 
     // POST /upload — upload file to R2
@@ -122,12 +137,18 @@ export default {
     }
 
     return jsonResponse(
-      { error: 'Not found. Use POST /upload, GET /files/:key or DELETE /files/:key' },
+      { error: 'Not found. Use POST /upload, GET|HEAD /files/:key or DELETE /files/:key' },
       404,
     );
   },
 
-  async serveFile(url, env) {
+  /**
+   * @param {boolean} soloCabeceras `true` para un HEAD: se pide a R2 sólo la
+   *   metadata (`head`) en vez del objeto entero. Las cabeceras y el estado
+   *   salen idénticos a los del GET — es la única forma de que un HEAD sirva
+   *   para lo que se usa, que es preguntar si algo existe y cuánto pesa.
+   */
+  async serveFile(url, env, soloCabeceras = false) {
     const key = url.pathname.slice('/files/'.length);
     if (!key) return jsonResponse({ error: 'Missing file key' }, 400);
 
@@ -151,7 +172,9 @@ export default {
       }
     }
 
-    const object = await env.R2_BUCKET.get(key);
+    const object = soloCabeceras
+      ? await env.R2_BUCKET.head(key)
+      : await env.R2_BUCKET.get(key);
     if (!object) {
       return jsonResponse({ error: 'File not found' }, 404);
     }
@@ -162,7 +185,10 @@ export default {
     headers.set('Access-Control-Allow-Origin', '*');
     headers.set('Content-Length', String(object.size));
 
-    return new Response(object.body, { headers });
+    // `head()` no trae `body`. El router igual descarta el cuerpo en un HEAD,
+    // pero pedirle a R2 sólo la metadata evita traer el objeto entero para
+    // después tirarlo.
+    return new Response(soloCabeceras ? null : object.body, { headers });
   },
 
   /**
@@ -279,7 +305,7 @@ function jsonResponse(data, status = 200) {
 
 function corsResponse(response) {
   response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, POST, DELETE, OPTIONS');
   response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   return response;
 }
