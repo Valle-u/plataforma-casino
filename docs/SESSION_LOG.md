@@ -16179,3 +16179,74 @@ anotada la consulta que los distingue.
 6. Sigue abierto de antes: Turnstile sin sitekey para staging, restaurar una DB
    **encima** de producción nunca se probó, y la Fase 2 del monitoreo
    (`docs/26`).
+
+---
+
+## Addendum — Reset de producción para separar las pruebas del arranque (2026-09-07)
+
+Pedido al cerrar la sesión: borrar los datos de la etapa de prueba para que la
+trazabilidad del casino abierto no se mezcle con ellos. **Conservando la
+configuración de los proveedores**, que había costado toda la tarde.
+
+### Lo que había
+
+19 usuarios, 271.214,58 fichas en 11 wallets, 2.053 rondas, 2.993 movimientos,
+3 depósitos, 1 retiro y 10 transferencias bancarias. Uriel confirmó que **no
+entró dinero real**: todo era prueba.
+
+> Se preguntó explícitamente antes de proponer nada. Si alguno de esos depósitos
+> hubiera sido de una persona real, borrarlo eliminaría el respaldo documental
+> de plata que se movió — lo contrario de la trazabilidad que se buscaba.
+
+### Cómo se hizo
+
+**Borrado selectivo, no base desde cero.** Un `drop` + `create` habría borrado
+`tenant_settings`: credenciales de Gregmorn, token de callback y branding.
+Habría obligado a reconfigurar todo y a **avisarle al proveedor de la URL nueva**.
+
+De las **67 tablas** del tenant se vaciaron **52** y se conservaron 15: juegos,
+proveedores, `tenant_settings`, roles, permisos, branding, métodos de pago,
+plantillas y config del CRM.
+
+**Los usuarios se eligieron por rol, no por nombre** — `__casa__` más quien
+tenga `admin_tenant` — para no depender de escribir bien un username. Se corrió
+un ensayo en seco que lista quién se conserva y quién se borra, y recién después
+la ejecución.
+
+Tres detalles que importan si hay que repetirlo:
+
+1. **`TRUNCATE` sin `CASCADE`, a propósito.** Si falta una tabla en la lista, la
+   operación aborta en vez de arrastrar algo no listado. El error es la red.
+2. **`tenant_settings.updated_by_user_id` y su equivalente en plantillas hay que
+   ponerlos en `NULL` antes de borrar usuarios.** Son FKs sin `ON DELETE` que
+   bloquean el borrado; anularlas conserva la configuración y suelta la
+   referencia.
+3. **Todo en una transacción** (`psql --single-transaction`).
+
+Y antes de todo: **dump del momento** de `tenant_miamihub` y `platform_control`,
+verificado con `pg_restore --list`, en `/root/backups-pre-reset/`.
+
+### Resultado
+
+2 usuarios, 2 wallets en cero, 0 rondas, 0 movimientos, **25 settings intactos**
+y **15.981 juegos** (forever 4.791 · gregmorn 9.497 · palace 1.693), los tres con
+`con_rtp = 0` — de paso quedó confirmada la limpieza del RTP inventado.
+
+Los comprobantes se borraron del bucket **desde el panel de Cloudflare**: eran
+~14 archivos y scriptearlo no valía la pena. Se dejaron **las copias del bucket
+de backup**, para que el dump pre-reset siga siendo restaurable junto con sus
+archivos.
+
+### Se desambiguaron los dos buckets de R2
+
+Duda que venía anotada de antes. **El bucket vivo es `casino-uploads`** (es el
+que bindea el Worker). **`plataforma-casino-uploads` es basura de la etapa
+demo**: sólo contiene `tenants/demo-casino/`. Candidato a limpieza, sin apuro.
+
+⚠️ Dentro de `tenants/miamihub/`, **`hero/` es el branding y no se toca**. Sólo
+son borrables `*/proofs/` y `chat/attachments/`.
+
+### Pendiente inmediato
+
+**La Casa quedó en cero y hay que inyectarle capital antes de operar**: sin eso
+no se pueden pagar premios.
