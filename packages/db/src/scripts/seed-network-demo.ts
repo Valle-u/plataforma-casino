@@ -55,9 +55,26 @@
  * de conciliación empezaría a marcar descuadres en todos lados — ruido que
  * después hay que salir a explicar.
  *
- * Así que toda ficha entra por donde entraría de verdad: la Casa mintea, carga
- * a los operadores, y los operadores cargan a los jugadores. Cada movimiento
- * deja su fila en `wallet_transactions` con su `balance_after`.
+ * Así que toda ficha entra por donde entraría de verdad, y **por quien
+ * corresponde según R3 y R4**:
+ *
+ *   - **Red central (socios dependientes).** Sus operadores son *comerciales
+ *     puros*: NO tienen fichas ni las mueven. Quedan en cero y a sus jugadores
+ *     los carga el **admin**, que junto a sus empleados es el único que maneja
+ *     la plata de la Casa central (R3).
+ *   - **Red independiente (Litoral).** Compra sus fichas a la Casa y fondea su
+ *     propia estructura hacia abajo, nivel por nivel (R4). Es la única rama
+ *     donde los operadores tienen saldo.
+ *
+ * La primera versión de este seed le daba saldo a los dependientes. No rompía
+ * nada —los permisos de plata no salen del saldo sino de estar en una sub-red
+ * independiente, así que el saldo quedaba inerte— pero **mentía sobre el
+ * modelo**: mostraba operadores con fichas que por ley no pueden tenerlas, y
+ * encima se las transfería a sus jugadores, que es exactamente la operación que
+ * R3 les prohíbe. Para un entorno cuyo único fin es mirar cómo se ve cada rol,
+ * eso lo invalidaba.
+ *
+ * Cada movimiento deja su fila en `wallet_transactions` con su `balance_after`.
  */
 
 import { config as loadEnv } from 'dotenv';
@@ -363,6 +380,26 @@ async function main(): Promise<void> {
     console.log('  La Casa ya tenía fondos: no se mintea de nuevo.');
   }
 
+  // ── Caja operativa del admin ─────────────────────────────────────────────
+  // R3: la plata de la red central la maneja SOLO el admin (con sus empleados).
+  // De acá salen todas las cargas a los jugadores de las ramas dependientes,
+  // así que sin este paso las ramas centrales no tendrían de dónde fondearse.
+  const CAJA_ADMIN = 5_000_000;
+  const saldoAdmin = await db
+    .select({ balance: wallets.balance })
+    .from(wallets)
+    .where(eq(wallets.userId, ctx.adminId))
+    .limit(1);
+  if (Number(saldoAdmin[0]?.balance ?? 0) < CAJA_ADMIN / 2) {
+    await moverFichas(ctx, {
+      desde: ctx.casaId,
+      hacia: ctx.adminId,
+      monto: CAJA_ADMIN,
+      motivo: 'Caja operativa del admin (R3)',
+    });
+    console.log(`  Admin con ${CAJA_ADMIN.toLocaleString('es-AR')} fichas de caja.`);
+  }
+
   // ── Empleados ────────────────────────────────────────────────────────────
   for (let i = 1; i <= CANT.empleados; i++) {
     await crearUsuario(ctx, {
@@ -415,14 +452,20 @@ async function main(): Promise<void> {
     });
     if (!socioId) continue;
 
-    if (socioId.nuevo) {
+    // R3: un socio DEPENDIENTE es comercial puro y NO tiene fichas. Sólo el
+    // independiente compra su cupo a la Casa (R4: paga primero, banca lo suyo).
+    if (socioId.nuevo && socio.independiente) {
       await moverFichas(ctx, {
         desde: ctx.casaId,
         hacia: socioId.id,
         monto: 2_000_000,
-        motivo: 'Cupo del socio',
+        motivo: 'Compra de fichas del socio independiente (R4)',
       });
     }
+
+    // De quién sale la plata de esta rama. En la red central la maneja el
+    // admin y nadie más (R3); en la independiente, el socio.
+    const fondeador = socio.independiente ? socioId.id : ctx.adminId;
 
     const cajerosDelSocio: string[] = [];
 
@@ -438,12 +481,12 @@ async function main(): Promise<void> {
       });
       if (!distId) continue;
 
-      if (distId.nuevo) {
+      if (distId.nuevo && socio.independiente) {
         await moverFichas(ctx, {
           desde: socioId.id,
           hacia: distId.id,
           monto: 300_000,
-          motivo: 'Cupo del distribuidor',
+          motivo: 'Compra de fichas del distribuidor (R4)',
         });
       }
 
@@ -457,12 +500,12 @@ async function main(): Promise<void> {
           estado: estadoDe(++n),
         });
         if (cajId) {
-          if (cajId.nuevo) {
+          if (cajId.nuevo && socio.independiente) {
             await moverFichas(ctx, {
               desde: distId.id,
               hacia: cajId.id,
               monto: 60_000,
-              motivo: 'Cupo del cajero',
+              motivo: 'Compra de fichas del cajero (R4)',
             });
           }
           // Se acumula SIEMPRE, exista o no de antes: de esta lista salen los
@@ -486,10 +529,10 @@ async function main(): Promise<void> {
         });
         if (jugId?.nuevo) {
           await moverFichas(ctx, {
-            desde: distId.id,
+            desde: socio.independiente ? distId.id : fondeador,
             hacia: jugId.id,
             monto: 500 + j * 300,
-            motivo: 'Carga del distribuidor',
+            motivo: 'Carga al jugador',
           });
         }
       }
@@ -506,12 +549,12 @@ async function main(): Promise<void> {
         estado: estadoDe(++n),
       });
       if (cajId) {
-        if (cajId.nuevo) {
+        if (cajId.nuevo && socio.independiente) {
           await moverFichas(ctx, {
             desde: socioId.id,
             hacia: cajId.id,
             monto: 80_000,
-            motivo: 'Cupo del cajero',
+            motivo: 'Compra de fichas del cajero (R4)',
           });
         }
         cajerosDelSocio.push(cajId.id);
@@ -530,10 +573,10 @@ async function main(): Promise<void> {
       });
       if (jugId?.nuevo) {
         await moverFichas(ctx, {
-          desde: socioId.id,
+          desde: socio.independiente ? socioId.id : fondeador,
           hacia: jugId.id,
           monto: 700 + j * 400,
-          motivo: 'Carga del socio',
+          motivo: 'Carga al jugador',
         });
       }
     }
@@ -553,10 +596,10 @@ async function main(): Promise<void> {
         });
         if (jugId?.nuevo) {
           await moverFichas(ctx, {
-            desde: cajId,
+            desde: socio.independiente ? cajId : fondeador,
             hacia: jugId.id,
             monto: 300 + (jn % 7) * 250,
-            motivo: 'Carga del cajero',
+            motivo: 'Carga al jugador',
           });
         }
       }
