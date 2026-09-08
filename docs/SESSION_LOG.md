@@ -16657,3 +16657,120 @@ colgado", y de ahí a buscar qué espera 30 segundos.
 Pendiente sin cambios: **terminar las URLs firmadas de comprobantes** (lo único
 con peso real: hoy cualquiera con el link abre un comprobante), apagar los
 `workers.dev`, y las limpiezas diferidas.
+
+---
+
+## Addendum — Categorías del catálogo y el bot de monitoreo (2026-09-08)
+
+Sesión de mejoras al producto, no de arreglos urgentes. Salió de la pregunta
+*"¿qué podríamos hacer para mejorar la experiencia del usuario?"* — y la
+respuesta salió de mirar datos reales, no de opinar.
+
+### 1. El filtro por categoría no filtraba nada
+
+**Los 9.449 juegos estaban catalogados como `slots`.** El lobby mostraba dos
+chips —"Todos 9449" y "Slots 9449"— para exactamente lo mismo.
+
+**La causa fue una palabra.** La lista de estudios de casino en vivo decía
+`pragmatic play live` y Gregmorn los manda como **`Pragmatic Live`**: el
+`includes` no matcheaba y 84 juegos de ruleta y blackjack quedaban archivados
+como tragamonedas.
+
+El comentario del código llamaba a esto "cosmético". No lo era: **con 9.449
+juegos y sólo búsqueda por nombre, la categoría es el único camino para quien no
+sabe de antemano cómo se llama lo que busca.** Un jugador que quería ruleta en
+vivo no tenía cómo llegar.
+
+Ahora la comparación es **normalizada** —sin espacios, guiones ni apóstrofos—
+así que `Play'nGO`, `Playngo` y `play n go` son la misma cosa: el
+emparejamiento deja de depender de cómo escriba el proveedor. Y se agregaron
+`crash` (Spribe) y `mini` (bingo, keno, juegos de pesca).
+
+> `table` NO se mapea a propósito: los juegos de mesa vienen de estudios mixtos
+> que también hacen slots, y marcarlos por estudio metería tragamonedas en
+> "Mesa".
+
+**Resultado en producción**, tras re-sincronizar: 9.216 slots · 124 mini · 10
+crash. Y los chips aparecieron **también en el menú lateral**, que se arma de las
+mismas categorías — el arreglo no mejoró una pantalla sino todas las que leen
+categorías.
+
+> Los 99 de casino en vivo no aparecen porque el dueño los deshabilitó (no
+> funcionaban bien). Cuando los reactive, ya van a caer en "En Vivo".
+
+**Se agregó el test que faltaba**, con los nombres de estudio REALES tomados de
+`/tenant/games/facets`. La función no tenía ninguno y por eso el error duró
+meses: no rompía nada visible. Un caso verifica explícitamente que `Pragmatic`
+a secas **no** caiga en vivo — mandar 1.699 juegos a "En Vivo" sería mucho peor
+que el bug original.
+
+### 2. El chip "Destacados" en llamas
+
+Handoff de Claude Design, implementado como componente propio
+(`featured-chip.tsx`) para que `FilterChip` —compartido por tres pantallas— no
+se llene de SVG y ningún otro chip pueda cambiar por accidente.
+
+Los quince paths se extrajeron del prototipo **con un script**, y se verificó
+renderizando el original y la reconstrucción lado a lado. Altura: 40px, la del
+diseño, confirmada por el dueño viéndola en producción.
+
+### 3. El bot de monitoreo
+
+**Se verificó por primera vez que el canal funciona.** Nadie lo había probado
+nunca. El servicio trae un flag para eso (`ALERTS_BOOT_PING`) que no estaba
+puesto; se prendió, llegó el mensaje al grupo, y se sacó. Ahora se sabe que las
+alertas llegan — antes el silencio del grupo era ambiguo.
+
+**Un aviso perdido ya no se calla media hora.** El silencio se marcaba ANTES de
+mandar, para no machacar a un Telegram caído. El efecto era que un error de red
+transitorio hacía dos cosas malas a la vez: perdía el aviso **y** lo silenciaba
+30 minutos. En un aviso `critico` —plata en riesgo— eso es exactamente lo que
+no puede pasar. Ahora, si el envío falla, la ventana se recorta a 2 minutos.
+
+**El parte diario** (`HealthReportCron`, 12:00 UTC = 9:00 AR). Un informe que
+llega todas las mañanas convierte el silencio en señal: si un día no llega, algo
+pasa. Y muestra lo que no alerta —fichas en circulación, cuántos jugaron— y
+sobre todo **los pedidos pendientes**: un retiro esperando hace tres días no
+dispara ninguna alarma y es un jugador esperando su plata.
+
+Degrada por bloque: si una consulta falla, ese renglón lo dice y el resto del
+parte igual sale. Y si no se puede armar, avisa que no se pudo.
+
+**15 tests** para `AlertsService`, que no tenía ninguno: el escapado de HTML
+(un `<` en el nombre de un juego rompe el mensaje entero), la deduplicación, y
+el camino del grupo convertido en supergrupo que el propio código llama "la peor
+forma de romperse".
+
+### Lo que enseñó
+
+**"Cosmético" es una etiqueta peligrosa.** El comentario del mapeo de categorías
+decía que una categoría equivocada era cosmética. Era, en los hechos, la
+diferencia entre encontrar un juego y no encontrarlo — en un catálogo de casi
+diez mil.
+
+**Medir antes de opinar.** Las tres propuestas de mejora salieron de consultar el
+catálogo real, no de intuición. La primera se pudo arreglar en media hora
+justamente porque estaba identificada con números.
+
+**Verificar antes de mergear, esta vez sí.** La proyección de categorías se corrió
+contra los 82 estudios reales antes de tocar producción, y las cuatro consultas
+del parte se probaron contra una base real — es código que corre una vez por día
+y un nombre de columna equivocado no se descubriría hasta la mañana siguiente.
+
+### Descartado
+
+**Favoritos y "jugados recientemente"** se planificó y **no se hizo**: el dueño
+prefirió no sumar la tabla. La propuesta sigue en pie si se retoma — con casi
+diez mil juegos, es lo que hace que alguien vuelva a lo que le gustó.
+
+### Estado
+
+`main` = `staging` = `340587f`.
+
+Pendiente del monitoreo, sin hacer: el silencio de alertas **vive en memoria y
+se borra en cada deploy** (mudarlo a Redis, que ya está andando, destraba además
+la segunda réplica), y **las alertas de la API no avisan cuando se resuelven**,
+a diferencia del monitor de caída, cuyo README defiende explícitamente lo
+contrario.
+
+Y sigue arriba de todo: **terminar las URLs firmadas de comprobantes.**
