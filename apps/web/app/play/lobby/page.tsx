@@ -39,6 +39,7 @@ import {
 } from '@/lib/hooks/use-games';
 import { useAuth } from '@/lib/auth-context';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
+import { FeaturedChip } from '@/components/player/featured-chip';
 import { FilterChip } from '@/components/player/filter-chip';
 import { GameSearch } from '@/components/player/game-search';
 import { HomeGameCard } from '@/components/player/home-game-card';
@@ -295,8 +296,7 @@ function GameLobbyContent() {
         {/* Destacados: solo si hay alguno marcado. Una pestaña que lleva a una
             grilla vacía es peor que no tenerla. */}
         {(globalFacets.data?.featured ?? 0) > 0 && (
-          <FilterChip
-            label="Destacados"
+          <FeaturedChip
             count={globalFacets.data?.featured}
             active={tab === 'featured'}
             onClick={() => handleTabChange('featured')}
