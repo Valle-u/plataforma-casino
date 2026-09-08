@@ -16475,3 +16475,107 @@ en un HEAD, y que el `DELETE` siga exigiendo token.
 > El Worker **se despliega aparte** (`cd worker; npx wrangler deploy`, desde una
 > máquina con sesión de Cloudflare). No sale con el merge a `main`: mergear sólo
 > alinea el repositorio.
+
+---
+
+## Addendum — El parpadeo al cargar, y lo que había detrás (2026-09-07)
+
+Uriel: *"antes de que cargue realmente la página, carga por un microsegundo los
+banners originales, antes de los que están configurados. Lo mismo con los
+colores. Queda demasiado mal."*
+
+Terminó tocando seis cosas. Dos de mis diagnósticos fueron por el camino
+equivocado y quedan anotados, porque el error es más útil que el resultado.
+
+### 1. Los colores venían del cliente, no del servidor
+
+`play/layout.tsx` pedía `/tenant/info` **desde el navegador**. Primer pintado
+con la paleta del sistema de diseño, y al llegar la respuesta, repintado con la
+del casino.
+
+El layout raíz ya era componente de servidor, así que resuelve el tenant por el
+`Host`, pide la config y emite un `<style>` con las variables en `:root`
+(`lib/server-tenant-theme.ts`). El primer pintado pasa a ser el definitivo.
+
+> ⚠️ **Next cachea los `fetch` por URL**, y `/tenant/info` sería idéntica para
+> todos los casinos — lo único que los distingue es la cabecera
+> `X-Tenant-Host`, que el caché no mira. Sin separar las entradas, **un casino
+> recibiría los colores de otro**. El host va también como query param.
+
+> ⚠️ Los colores salen de un campo del panel y terminan dentro de un `<style>`.
+> Sin filtrar, un operador podría cerrar la etiqueta e inyectar markup en la
+> página de todos sus jugadores. `bloqueCssDeVariables` descarta lo que traiga
+> `<`, `>`, `;` o llaves.
+
+### 2. El cliente tapaba el arreglo del servidor
+
+**El primer intento no se notó, y por eso.** Los colores se aplican como `style`
+en línea sobre un div, y un estilo en línea le gana a cualquier regla CSS —
+incluida la del servidor. Sin datos todavía, ese objeto se calculaba con los
+valores por defecto y pisaba la paleta buena.
+
+Ahora, mientras no hay datos, el cliente **no pinta nada** y deja mandar al
+`:root`. La lección general: **no pintar valores por defecto mientras no se
+sabe cuáles son los verdaderos.**
+
+### 3. Los banners de ejemplo mentían
+
+Se mostraban cuatro slides de muestra hasta que llegaba la configuración —"El
+dueño de la noche", "Hasta $200.000 + 200 giros"—. No era sólo feo: **el jugador
+alcanzaba a leer una promoción que no existe**. Se eliminaron; mientras carga va
+un placeholder de la MISMA altura, y un casino sin slides no muestra carrusel.
+
+### 4. Sin banner la home quedaba rota
+
+El margen negativo que mete el banner detrás del header translúcido se aplicaba
+siempre. Sin banner se comía la altura del header y la franja "Ganando ahora"
+quedaba **debajo de los botones de sesión**. Ahora es condicional.
+
+Y para que la home tenga con qué arrancar se sumaron dos filas: `CategoriesRow`
+—que ya existía, se arma desde los conteos reales y **no la usaba ninguna
+pantalla**— y `DestacadosRow`, que conecta el campo `featured`: ya estaba en el
+modelo y el panel dejaba marcarlo, pero **la home no lo miraba**.
+
+### 5. El logo bajaba 2,8 MB (el hallazgo grande)
+
+Medido contra producción: `<img>` directo al archivo original, **2.787 KB de
+PNG para mostrarlo a 100 píxeles**, con `fetchPriority="high"`. En cada carga,
+compitiendo con todo. Por el optimizador: **29 KB**.
+
+Y el carrusel montaba los cuatro slides a la vez; como están apilados dentro del
+banner visible, el `loading="lazy"` no los frenaba y el navegador pedía las ocho
+imágenes. Ahora monta la actual y la siguiente.
+
+### 6. La pantalla de carga era una mota
+
+Un div de **4×4 píxeles** latiendo en negro. Indistinguible de un sitio roto —y
+en un casino, quien duda de si la página funciona duda de si su plata está bien.
+Ahora es un esqueleto con la forma de la página.
+
+### Los dos errores de diagnóstico
+
+**Medí el archivo equivocado.** Señalé que los PNG de los banners pesaban 3 MB
+contra 200 KB de los WebP y di eso por causa. Falso: **Next los sirve
+redimensionados y en WebP, 103 KB en los dos casos**. El navegador nunca baja el
+original. Lo que importa no es cuánto pesa el archivo sino **si la imagen pasa
+por el optimizador** — y la que no pasaba era el logo.
+
+**Rompí el logo en producción.** Pedí el ancho `s.width * 2` = 260 px, y
+`/_next/image` sólo acepta anchos de una **lista blanca**; cualquier otro
+devuelve 400. El logo desapareció hasta el hotfix. Medí que el arreglo
+funcionaba en teoría y no comprobé la respuesta real antes de mergear.
+
+> Las dos veces el patrón fue el mismo: dar por buena una hipótesis sin medir
+> contra lo que ve el navegador. La herramienta correcta estuvo disponible todo
+> el tiempo — el panel de red del navegador es lo que finalmente resolvió las
+> dos.
+
+### Commits
+
+`7dd7344` · `d6f0a4e` · `4943a0c` · `32bb875` · `4224ef4` (hotfix) · `a3ce1f3`
+
+### Pendiente
+
+Comprimir los originales que sube el operador. No lo sufre el jugador —Next los
+convierte— pero **el caché de imágenes se borra en cada deploy**, y ahí el
+servidor vuelve a bajar y reconvertir 3 MB por imagen.
