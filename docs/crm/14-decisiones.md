@@ -116,35 +116,6 @@ redes). **No** toca E8 ni P3: el CRM no mueve fichas.
 
 ---
 
-## Restricciones técnicas que acotan lo que se puede prometer
-
-No son decisiones nuestras — son de las plataformas. Se anotan acá porque
-cambian qué es realista ofrecerle a un operador.
-
-### Telegram: sólo bots, y sólo responden
-
-Se puede usar **un bot**, no una cuenta personal. Y un bot **sólo puede hablar
-con quien primero le escribió a él**: no se puede iniciar una conversación con
-alguien que no contactó al bot.
-
-Automatizar una cuenta personal (userbot) viola los términos de Telegram y puede
-terminar en la cuenta cerrada.
-
-**Traducción para el producto:** Telegram sirve para *atender*, no para
-*prospectar*.
-
-### WhatsApp: la ventana de 24 horas
-
-Fuera de las 24 horas desde el último mensaje del cliente, sólo se le puede
-escribir con **plantillas aprobadas** por Meta. Una respuesta libre a las 25
-horas no sale.
-
-**Traducción para el producto:** cualquier función de "escribirle al jugador que
-no vuelve" necesita plantillas aprobadas de antemano, y eso es un trámite con
-tiempos propios.
-
----
-
 ## Bloque 2 — Identidad: quién es quién, y quién lo ve
 
 **Decidido el 2026-09-08** con el dueño.
@@ -653,3 +624,173 @@ implementar el borrado.
 base**. El borrado en R2 recién funciona desde el 2026-09-06 —antes sólo
 escribía un warning y los archivos se acumulaban—, así que este proceso se apoya
 en algo que es nuevo y conviene verificar de verdad, no dar por hecho.
+---
+
+## Bloque 5 — Avisos, automatismos y por dónde se empieza
+
+**Decidido el 2026-09-08** con el dueño. **Último bloque de decisiones
+estructurales.**
+
+> **Estado del código al decidir esto.** Se leyó `apps/api/src/notifications/` y
+> `chat.gateway.ts` antes de preguntar:
+>
+> - **El email no manda nada.** `ConsoleEmailProvider` está fijo por código
+>   (`useClass`, sin factory): sólo escribe en el log. Las notificaciones por
+>   mail son decorativas hoy.
+> - **El SMS sale sólo si las tres variables de Twilio están puestas**; si no,
+>   `ConsoleSmsProvider`. Y se paga por mensaje.
+> - **El panel sí avisa en vivo**: el gateway emite `message:new` por WebSocket.
+> - **Hay un bot de Telegram funcionando** (el de alertas, verificado el
+>   2026-09-08).
+
+---
+
+### D16 · El aviso vive en el panel, y no sale de ahí
+
+Un mensaje nuevo se ve como **badge de no leídos** en el panel del operador. No
+se manda nada al celular: ni Telegram, ni SMS, ni mail.
+
+**Por qué.** Es lo que el sistema ya hace, y para un cajero que trabaja de día
+alcanza: entra a la mañana y ve lo que llegó.
+
+**Se descartó:**
+
+- *Avisar por Telegram con el bot que ya anda.* Era la recomendación: gratis, sin
+  límite de volumen, llega al celular, y la infraestructura ya está probada. La
+  única traba es que por regla de Telegram el operador tiene que escribirle al
+  bot una vez para vincularse. **Queda como la primera mejora a agregar si el
+  problema aparece** — no requiere nada nuevo, sólo vincular al operador.
+- *SMS.* Llega siempre y sin vincular nada, pero se paga por mensaje y con varios
+  cajeros recibiendo chats todo el día la cuenta sube rápido.
+
+---
+
+### D17 · No hay respuestas automáticas: contesta un humano o nadie
+
+El sistema **no manda ningún mensaje escrito solo**. Ni aviso de horario, ni
+menú de opciones, ni confirmación de recibido.
+
+**Por qué.** Cero código y ningún riesgo de que un mensaje automático diga algo
+confuso sobre plata — que es de lo único que se habla en este chat.
+
+**Se descartó:**
+
+- *Un aviso de horario* ("te respondemos de 9 a 22"). Le habría dicho a la
+  persona que su mensaje llegó y cuándo esperar respuesta.
+- *Un menú de opciones al primer contacto.* Habría dejado la conversación
+  etiquetada antes de que la lea un humano. Se descartó también por lo que
+  molesta a parte de la gente que le conteste una máquina.
+
+---
+
+### ⚠️ El cruce de D16 y D17: el silencio de las dos puntas
+
+Estas dos decisiones son razonables por separado y **juntas dejan un hueco que
+conviene ver ahora**:
+
+```
+03:14  Juan escribe.
+       → Juan no recibe nada           (D17: sin automáticos)
+       → Pérez no se entera            (D16: sólo el panel, y está cerrado)
+09:20  Pérez abre el panel y recién ahí existe el mensaje.
+```
+
+Durante seis horas **ninguna de las dos partes tiene señal de nada**. Y si Pérez
+no abre el panel en dos días, nadie en el sistema lo sabe: no hay alerta, no hay
+badge que alguien mire, y por **D10** el socio tampoco lo ve.
+
+**No hay que cambiar ninguna decisión para tapar esto.** Hay una salida que no
+contradice nada y no construye nada nuevo:
+
+> **Sumar "conversaciones sin responder" al parte diario.**
+> `HealthReportCron` ya manda todas las mañanas un bloque *ESPERANDO RESPUESTA*
+> con los depósitos y retiros pendientes, y ya marca lo que lleva más de 24 h.
+> Agregar un renglón con los chats sin contestar es una consulta más en un cron
+> que ya existe y ya llega. **Candidato claro cuando se implemente el CRM.**
+
+Queda anotado como propuesta, no como decisión.
+
+---
+
+### D18 · Primero la base, después los canales
+
+El orden de construcción:
+
+1. **La base** — dueño del contacto (D6), alta desde el chat (D9) y **firmar los
+   adjuntos (D12)**.
+2. **Telegram.**
+3. **WhatsApp.**
+
+El livechat web sigue funcionando durante todo el proceso.
+
+**Por qué.** D6 cambia cómo se guardan los contactos y D12 cambia cómo se guardan
+los adjuntos: las dos tocan tablas que el livechat actual **ya usa en
+producción**. Migrar eso con un solo canal andando es mucho más barato que con
+tres. Y el paso 1 incluye un arreglo que ya corre en producción, no una función
+nueva.
+
+**Se descartó:**
+
+- *Telegram primero.* Meter un canal externo ya, para ver el mecanismo andando
+  con operadores reales. Se descartó porque se construiría sobre un modelo de
+  contactos que después hay que cambiar, con dos canales en vivo en vez de uno.
+- *WhatsApp primero.* Es el canal que la gente realmente usa, pero por **D13**
+  arrancar depende de que Meta verifique a cada socio: el comienzo no estaría en
+  nuestras manos.
+
+**Nota sobre el orden dentro del paso 1:** firmar los adjuntos tiene su propio
+orden interno, heredado del runbook de comprobantes — **primero el Worker,
+después la API**. Está en D12.
+
+---
+
+### D19 · Fuera de la versión 1: campañas y mensajes masivos
+
+Escribirle a todos los jugadores que no vuelven hace un mes **no va en la v1**.
+
+**Por qué.** Necesita plantillas aprobadas por Meta una por una (ver las
+restricciones de plataforma al final de este documento), y es donde más fácil se
+gana una denuncia que tumba el número — que con **D13** es el número del socio,
+no el nuestro.
+
+**Lo que NO se excluyó, y hay que decidir al armar el roadmap.** Se ofrecieron
+otras tres exclusiones y no se marcaron, así que **siguen como candidatas a la
+v1**:
+
+| | Qué implica dejarlo adentro |
+|---|---|
+| Métricas de atención | Por **D11** (hilo eterno) hay que medir por tramos: no es sumar una consulta, es definir el modelo de medición primero. |
+| Varios agentes en la misma bandeja | Bloqueos, "quién agarra qué", presencia. Necesario si el staff crece; evitable si atiende una persona por vez. |
+| Búsqueda global de mensajes | Por **D6** hay que acotarla por bandeja, o se vuelve la forma más fácil de leer lo que no corresponde. |
+
+Con las tres adentro, la v1 es grande. **`13-roadmap.md` es el lugar para
+recortar**, ya con el peso de cada una a la vista.
+
+---
+
+## Restricciones técnicas que acotan lo que se puede prometer
+
+No son decisiones nuestras — son de las plataformas. Se anotan acá porque
+cambian qué es realista ofrecerle a un operador.
+
+### Telegram: sólo bots, y sólo responden
+
+Se puede usar **un bot**, no una cuenta personal. Y un bot **sólo puede hablar
+con quien primero le escribió a él**: no se puede iniciar una conversación con
+alguien que no contactó al bot.
+
+Automatizar una cuenta personal (userbot) viola los términos de Telegram y puede
+terminar en la cuenta cerrada.
+
+**Traducción para el producto:** Telegram sirve para *atender*, no para
+*prospectar*.
+
+### WhatsApp: la ventana de 24 horas
+
+Fuera de las 24 horas desde el último mensaje del cliente, sólo se le puede
+escribir con **plantillas aprobadas** por Meta. Una respuesta libre a las 25
+horas no sale.
+
+**Traducción para el producto:** cualquier función de "escribirle al jugador que
+no vuelve" necesita plantillas aprobadas de antemano, y eso es un trámite con
+tiempos propios.

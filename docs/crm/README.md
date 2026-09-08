@@ -3,8 +3,10 @@
 > Sistema de atención omnicanal anclado a la plataforma: livechat propio,
 > WhatsApp y Telegram, con la misma jerarquía de redes que el resto del casino.
 >
-> **Estado: en planificación.** Se planifica por bloques; cada bloque se decide
-> con el dueño antes de escribirse. Empezado el 2026-09-08.
+> **Estado: decisiones cerradas, documentos por escribir.** Los cinco bloques de
+> decisiones estructurales se tomaron con el dueño el 2026-09-08 y viven en
+> [`14-decisiones.md`](14-decisiones.md) — **D1 a D19**. Lo que falta es bajar
+> esas decisiones a los documentos de la tabla de abajo.
 
 ---
 
@@ -47,11 +49,11 @@ un CRM y no un chat.
 | 06 | `06-operacion-diaria.md` | Estados, transferencias, no leídos | **decidido** (bloque 3), falta escribir |
 | 07 | `07-crear-usuarios.md` | Alta de jugador desde una conversación | **decidido** (bloque 3), falta escribir |
 | 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | **decidido** (bloques 2 y 3), falta escribir |
-| 09 | `09-plantillas-y-bots.md` | Respuestas rápidas y automatismos | pendiente |
-| 10 | `10-metricas.md` | Tiempos de respuesta, volumen, por agente | pendiente |
+| 09 | `09-plantillas-y-bots.md` | Respuestas rápidas y automatismos | **decidido** (bloque 5: no hay bots), falta escribir |
+| 10 | `10-metricas.md` | Tiempos de respuesta, volumen, por agente | pendiente — ver D11 (medir por tramos) |
 | 11 | `11-cumplimiento.md` | Reglas de WhatsApp, retención, privacidad | **decidido** (bloque 4), falta escribir |
 | 12 | `12-infraestructura.md` | Webhooks, colas, límites, medios | **decidido** en parte (bloque 4: medios), falta escribir |
-| 13 | `13-roadmap.md` | En qué orden se construye | pendiente |
+| 13 | `13-roadmap.md` | En qué orden se construye | **decidido** (bloque 5), falta escribir |
 | 14 | [`14-decisiones.md`](14-decisiones.md) | **Bitácora de decisiones y por qué** | vivo |
 
 > **Ojo con el nombre de `04-identidad-y-fusion.md`.** El bloque 2 decidió que
@@ -74,6 +76,24 @@ puede hacer la pantalla. Definir la pantalla primero garantiza rehacerla.
 Cada decisión queda en [`14-decisiones.md`](14-decisiones.md) **con las
 alternativas que se descartaron y por qué**. Sin eso, dentro de seis meses nadie
 sabe si algo se decidió o simplemente salió así.
+
+---
+
+## Lo primero que hay que construir
+
+Por **D18**, en este orden:
+
+1. **La base** — dueño del contacto (D6), alta desde el chat (D9) y **firmar los
+   adjuntos (D12)**. Las tres tocan tablas que el livechat **ya usa en
+   producción**: migrarlas con un solo canal andando es mucho más barato que
+   con tres.
+2. **Telegram.**
+3. **WhatsApp.**
+
+> 🔴 **Uno de esos tres no es una función nueva: es un arreglo.** Los adjuntos
+> del livechat se sirven hoy como URLs públicas con caché de un año, y el
+> runbook `../runbooks/firmar-comprobantes.md` **no los cubre** — la regla de
+> privacidad mira `/proofs/` y ellos viven en `chat/attachments`. Ver D12.
 
 ---
 
