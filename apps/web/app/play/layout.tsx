@@ -35,7 +35,8 @@ import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { applyTenantFavicon } from '@/lib/tenant-favicon';
-import { PLAYER_THEME_CLASS, injectPlayerVars, derivedAccentVars } from '@/lib/player-appearance';
+import { PLAYER_THEME_CLASS, injectPlayerVars } from '@/lib/player-appearance';
+import { variablesDeColorDelTenant } from '@/lib/tenant-color-vars';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -53,38 +54,20 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
   const brandingStyle = useMemo<CSSProperties>(() => {
     const themeVars = themeToStyle(theme);
-    const designColors = tenantInfo.data?.design?.colors as Record<string, string> | undefined;
-    const vars: Record<string, string> = {};
+    const base: Record<string, string> = {};
     for (const [k, v] of Object.entries(themeVars)) {
-      if (typeof v === 'string') vars[k] = v;
+      if (typeof v === 'string') base[k] = v;
     }
-    if (designColors) {
-      const colorMap: Record<string, string> = {
-        bgColor: '--color-bg', bgElevated: '--color-bg-elevated', bgSubtle: '--color-bg-subtle',
-        fgColor: '--color-fg', fgMuted: '--color-fg-muted', fgSubtle: '--color-fg-subtle',
-        borderColor: '--color-border', borderStrong: '--color-border-strong',
-        accentColor: '--color-accent', accentHover: '--color-accent-hover',
-        accentFg: '--color-accent-fg', accentText: '--color-accent-text',
-        accentSubtle: '--color-accent-subtle', accentBorder: '--color-accent-border',
-        success: '--color-success', warning: '--color-warning',
-        magenta: '--color-magenta', cyan: '--color-cyan', purple: '--color-purple', gold: '--color-gold',
-      };
-      for (const [key, cssVar] of Object.entries(colorMap)) {
-        const val = designColors[key];
-        if (val) vars[cssVar] = val;
-      }
-    }
-    if (branding?.primaryColor) vars['--color-accent'] = branding.primaryColor;
-    // Gradientes/glows del acento como valores CONCRETOS (ver derivedAccentVars):
-    // los CTAs (Depositar/Registrarse), cards premium y glows siguen la
-    // temática del socio. No se puede vía var(--gradient-accent) en CSS porque
-    // el var() anidado no hereda el override.
-    Object.assign(vars, derivedAccentVars(
-      vars['--color-accent'] ?? '#ff2ea0',
-      vars['--color-accent-hover'] ?? vars['--color-accent'] ?? '#e0208a',
-      vars['--color-accent-border'] ?? 'rgba(255, 46, 160, 0.4)',
-    ));
-    return vars;
+    // El mapeo de colores y los degradados derivados viven en
+    // `tenant-color-vars` porque el SERVIDOR usa exactamente los mismos para
+    // pintar el primer HTML. Si acá hubiera una copia, cualquier diferencia
+    // entre las dos aparecería como un cambio de color al hidratar — que es
+    // justo el parpadeo que se fue a arreglar.
+    return variablesDeColorDelTenant(
+      tenantInfo.data?.design?.colors,
+      branding?.primaryColor,
+      base,
+    );
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
 
   // Diseño del socio en los PORTALES (modales/menús/drawers). El `style`

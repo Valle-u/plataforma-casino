@@ -20,6 +20,7 @@ import { RegisterServiceWorker } from '@/components/pwa/register-sw';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import { getServerUser } from '@/lib/server-api';
+import { cssDeLaPaletaDelTenant } from '@/lib/server-tenant-theme';
 import './globals.css';
 
 const outfit = Outfit({
@@ -102,8 +103,25 @@ export default async function RootLayout({
   // está prendido evita volver dinámica toda la app cuando está apagado.
   const initialUser =
     process.env.SSR_AUTH === '1' ? await getServerUser() : null;
+
+  // Paleta del tenant en el PRIMER HTML. Sin esto la página se pinta con los
+  // colores del sistema de diseño y recién al llegar `/tenant/info` cambia a
+  // los del casino — un salto visible en cada carga. Ver `server-tenant-theme`.
+  const cssPaleta = await cssDeLaPaletaDelTenant();
+
   return (
     <html lang="es-AR" className={`${outfit.variable} ${inter.variable} ${geistMono.variable}`}>
+      <head>
+        {/* Antes de cualquier pintado. `dangerouslySetInnerHTML` es la forma de
+            emitir CSS crudo en React; los valores se filtran en
+            `bloqueCssDeVariables` porque salen de un campo del panel. */}
+        {cssPaleta ? (
+          <style
+            id="tenant-palette-ssr"
+            dangerouslySetInnerHTML={{ __html: cssPaleta }}
+          />
+        ) : null}
+      </head>
       <body className="min-h-screen bg-grain antialiased">
         <ErrorBoundary>
           <QueryProvider>
