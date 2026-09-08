@@ -16579,3 +16579,81 @@ funcionaba en teoría y no comprobé la respuesta real antes de mergear.
 Comprimir los originales que sube el operador. No lo sufre el jugador —Next los
 convierte— pero **el caché de imágenes se borra en cada deploy**, y ahí el
 servidor vuelve a bajar y reconvertir 3 MB por imagen.
+
+---
+
+## Addendum — El teardown de `two-fa` y el chip en llamas (2026-09-08)
+
+### 1. El `afterAll` de `two-fa` se colgaba 30 segundos
+
+CI fallaba de a ratos con **los 956 tests en verde**: lo que moría era el
+teardown.
+
+```
+Test suite failed to run: Exceeded timeout of 30000 ms for a hook
+```
+
+**El `30000` no era casual.** `connect_timeout` de postgres.js son **30
+segundos** y el límite del hook de Jest es el mismo: una conexión que no se
+establece agota el hook justo en el borde. Y como el error no menciona Postgres
+por ningún lado, parecía un problema del `afterAll`.
+
+**Por qué no se establecía.** Cada helper abría su propia conexión y la cerraba.
+Con `beforeEach` corriendo en los 17 tests más los lectores de cada prueba, la
+suite abría **entre 30 y 45 conexiones** contra el Postgres de un contenedor,
+con 78 suites en serie. Alcanzaba con que una no entrara.
+
+Ahora hay **una sola conexión** para toda la suite, establecida al principio
+cuando no hay presión, con `connect_timeout: 10` — más corto que el del hook, así
+que si algún día no puede conectar, el test falla **diciendo qué falló**.
+
+**Cómo se llegó ahí, que es lo reutilizable:** no se reproducía localmente (7
+corridas verdes). Se instrumentó el teardown y se midió: **~300 ms normales**
+(reset 70, close 150). O sea que los 30 s eran un cuelgue y no lentitud — y eso
+es lo que mandó a buscar un timeout de 30 s en las dependencias.
+
+De paso la suite bajó de 44-60 s a 37-40 s, que es lo que costaba abrir y cerrar
+40 conexiones.
+
+> ⚠️ **El patrón está en veinte suites más.** `notifications.e2e.ts` abre **32**
+> conexiones sueltas, `tenant-settings` 15, `bonuses` 8, y hay una cola larga.
+> `two-fa` fue simplemente la que perdió la carrera. El arreglo de fondo sería un
+> helper compartido en `db-helpers.ts`; toca ~20 archivos y quedó sin hacer.
+
+### 2. El chip "Destacados", en llamas
+
+Handoff de Claude Design (`design_handoff_chip_destacados`): el chip de filtro
+del lobby pasa a estar prendido fuego. Puramente estético — el click, el dato y
+la accesibilidad no cambian, y no hay backend.
+
+**Como componente propio** (`featured-chip.tsx`) y no como variante de
+`FilterChip`. El handoff aceptaba las dos, pero `FilterChip` lo comparten la
+home, el lobby y el filtro por estudio: meterle quince paths de SVG adentro lo
+volvería enorme por un caso de una sola pantalla. Y así **ningún otro chip puede
+cambiar por accidente**, que era el requisito duro.
+
+**Los paths se extrajeron con un script, no a mano.** Son cadenas de miles de
+caracteres; transcribirlas a ojo es garantía de error silencioso. Se verificó
+renderizando el prototipo original y la reconstrucción **lado a lado** antes de
+subir nada.
+
+**La altura fue de ida y vuelta.** Se implementó a 44px por el mínimo táctil que
+documenta `FilterChip`; visto en producción, el dueño confirmó los **40** del
+diseño — que lo pidió más chico a propósito, "para que la llama se aprecie".
+Queda 4px por debajo del mínimo, anotado en el componente como el primer lugar
+donde mirar si alguna vez cuesta acertarle en el celular.
+
+### Lo que enseñó
+
+**Un número redondo en un error es una pista, no un detalle.** El `30000` del
+timeout de Jest coincidía exactamente con un default de una dependencia. Medir
+primero el caso normal (~300 ms) fue lo que convirtió "es lento" en "está
+colgado", y de ahí a buscar qué espera 30 segundos.
+
+### Estado
+
+`main` = `staging` = `b0a6b2f`. Contraseña de Gregmorn **rotada**.
+
+Pendiente sin cambios: **terminar las URLs firmadas de comprobantes** (lo único
+con peso real: hoy cualquiera con el link abre un comprobante), apagar los
+`workers.dev`, y las limpiezas diferidas.
