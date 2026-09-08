@@ -10,11 +10,16 @@
  * un caso que usa una sola pantalla. Acá el fuego queda contenido y **ningún
  * otro chip puede cambiar por accidente**, que era el requisito duro.
  *
- * ⚠️ **Mide 44px de alto, no los 40 del diseño.** `FilterChip` documenta 44 como
- * mínimo táctil —antes medía 30 y con el pulgar sobre un celular se erraba— y el
- * handoff contempla explícitamente esta alternativa: subir a 44 y dejar que el
- * fuego acompañe, que lo hace solo porque su altura está en porcentaje. Bajar a
- * 40 además desalinearía la fila, donde todos los demás chips miden 44.
+ * **Mide 40px de alto y los demás chips 44.** No es un descuido: el diseño lo
+ * pidió "un poco más chico para que la llama se aprecie", y el dueño lo
+ * confirmó viéndolo en producción a 44. Ser distinto es el punto — este chip
+ * existe para no parecerse a los de al lado.
+ *
+ * ⚠️ Queda 4px por debajo del mínimo táctil que documenta `FilterChip`. Es un
+ * botón ancho, así que el área sigue siendo cómoda, pero si alguna vez se
+ * reporta que cuesta acertarle en el celular, **este es el primer lugar donde
+ * mirar** — y volver a 44 es cambiar `h-10` por `h-11`: el fuego acompaña solo,
+ * porque su altura está en porcentaje.
  *
  * Sin estado, sin timers, sin JS: el fuego es CSS y SVG. Los `@keyframes` viven
  * en `globals.css`, como el resto de las animaciones del proyecto.
@@ -44,7 +49,7 @@ export function FeaturedChip({
       className={cn(
         // `overflow-hidden` es CRÍTICO: es lo que recorta el fuego contra la
         // pill. Sin él el dibujo se sale y pinta todo de naranja.
-        'relative inline-flex h-11 shrink-0 snap-start items-center gap-2 overflow-hidden rounded-full px-[15px]',
+        'relative inline-flex h-10 shrink-0 snap-start items-center gap-2 overflow-hidden rounded-full px-[15px]',
         'text-[13.5px] font-extrabold tracking-[0.015em] whitespace-nowrap text-white',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
       )}
