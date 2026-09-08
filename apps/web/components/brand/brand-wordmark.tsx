@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_PLATFORM_NAME } from '@/lib/brand';
-import { normalizeStorageUrl } from '@/lib/storage-url';
+import { optimizedStorageUrl } from '@/lib/storage-url';
 
 interface BrandWordmarkProps {
   size?: 'sm' | 'md' | 'lg';
@@ -43,7 +43,13 @@ export function BrandWordmark({
   // normalizeStorageUrl convierte URLs cross-origin del worker/Railway a
   // /storage/files/... (rewrite same-origin de Next.js). Sin esto, el browser
   // bloquea la imagen con ERR_BLOCKED_BY_RESPONSE.
-  const safeSrc = normalizeStorageUrl(src) || '/brand/logo.webp';
+  // Se pide REDIMENSIONADO, no crudo. El logo que sube el operador es el
+  // archivo original —el de MiamiHub pesa 2,8 MB— y acá se muestra a `s.width`
+  // píxeles. Pedirlo al doble del ancho cubre las pantallas retina y lo deja en
+  // unos pocos KB. Ver `optimizedStorageUrl`.
+  const safeSrc = src
+    ? optimizedStorageUrl(src, s.width * 2)
+    : '/brand/logo.webp';
   const label = platformName || DEFAULT_PLATFORM_NAME;
   return (
     <span className={`inline-flex flex-col ${className}`} aria-label={label}>

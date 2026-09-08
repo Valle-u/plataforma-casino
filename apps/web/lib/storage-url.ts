@@ -23,6 +23,33 @@ const API_ORIGIN =
   process.env.NEXT_PUBLIC_API_URL ||
   '';
 
+/**
+ * La misma imagen, pero pedida al optimizador de Next en vez de cruda.
+ *
+ * **Por qué hace falta.** Las imágenes que sube el operador desde el panel son
+ * los archivos originales: el logo de MiamiHub es un PNG de **2,8 MB** que se
+ * muestra a 100 píxeles de ancho. Un `<img src>` directo baja esos 2,8 MB en
+ * cada carga, con prioridad alta, compitiendo con todo lo demás — y con mala
+ * conexión eso es la diferencia entre ver el casino y ver una pantalla a medio
+ * armar. Por el optimizador, la misma imagen son **16 KB** en WebP.
+ *
+ * Se usa donde hay un `<img>` que no se puede cambiar por `next/image` sin
+ * tocar el layout: el optimizador acepta rutas relativas del mismo origen y
+ * devuelve el formato que el browser soporte.
+ *
+ * Devuelve la URL tal cual si no es una ruta local (una imagen externa que Next
+ * no tiene configurada daría 400, y es peor no mostrar nada que mostrar pesado).
+ */
+export function optimizedStorageUrl(
+  url: string | null | undefined,
+  width: number,
+  quality = 75,
+): string {
+  const normalizada = normalizeStorageUrl(url);
+  if (!normalizada.startsWith('/')) return normalizada;
+  return `/_next/image?url=${encodeURIComponent(normalizada)}&w=${width}&q=${quality}`;
+}
+
 export function normalizeStorageUrl(url: string | null | undefined): string {
   if (!url) return '';
 

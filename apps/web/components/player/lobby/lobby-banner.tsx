@@ -76,6 +76,21 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
   const [index, setIndex] = useState(0);
   const total = slides.length;
 
+  /**
+   * Qué slides tienen su imagen montada.
+   *
+   * Antes se montaban TODOS, y como están apilados dentro del banner visible,
+   * el `loading="lazy"` no los frenaba: el navegador pedía las ocho imágenes
+   * —cuatro slides × desktop y mobile— apenas cargaba la página. Siete de esas
+   * ocho no se ven, y con mala conexión le roban el ancho de banda justo a la
+   * única que el jugador está mirando.
+   *
+   * Ahora se monta la actual y la siguiente (para que el cambio no espere la
+   * descarga), y las que ya se mostraron quedan montadas para no volver a
+   * pedirlas ni cortar el crossfade.
+   */
+  const [montados, setMontados] = useState<Set<number>>(() => new Set([0, 1]));
+
   /** Hasta cuándo NO autorotar, porque el jugador acaba de moverse solo. */
   const pausedUntil = useRef(0);
 
@@ -88,6 +103,19 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
     },
     [total],
   );
+
+  // Al cambiar de slide, se suma el actual y el que viene.
+  useEffect(() => {
+    if (total === 0) return;
+    setMontados((previos) => {
+      const siguiente = (index + 1) % total;
+      if (previos.has(index) && previos.has(siguiente)) return previos;
+      const nuevos = new Set(previos);
+      nuevos.add(index);
+      nuevos.add(siguiente);
+      return nuevos;
+    });
+  }, [index, total]);
 
   useEffect(() => {
     if (total <= 1) return;
@@ -170,6 +198,9 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
         // la de desktop: cuando el tenant deja la misma (el caso por
         // defecto) se sigue bajando una sola.
         const mobile = s.imageMobile && s.imageMobile !== s.image ? s.imageMobile : null;
+        // El div se renderiza siempre (mantiene el crossfade y el orden), pero
+        // las imágenes recién cuando al slide le toca. Ver `montados`.
+        const cargar = montados.has(i);
         return (
           <div
             key={s.id}
@@ -179,23 +210,27 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
               i === index ? 'opacity-100' : 'opacity-0',
             )}
           >
-            <Image
-              src={s.image}
-              alt=""
-              fill
-              priority={i === 0}
-              sizes="100vw"
-              className={cn('object-cover', mobile && 'hidden lg:block')}
-            />
-            {mobile && (
-              <Image
-                src={mobile}
-                alt=""
-                fill
-                priority={i === 0}
-                sizes="100vw"
-                className="object-cover lg:hidden"
-              />
+            {cargar && (
+              <>
+                <Image
+                  src={s.image}
+                  alt=""
+                  fill
+                  priority={i === 0}
+                  sizes="100vw"
+                  className={cn('object-cover', mobile && 'hidden lg:block')}
+                />
+                {mobile && (
+                  <Image
+                    src={mobile}
+                    alt=""
+                    fill
+                    priority={i === 0}
+                    sizes="100vw"
+                    className="object-cover lg:hidden"
+                  />
+                )}
+              </>
             )}
           </div>
         );
