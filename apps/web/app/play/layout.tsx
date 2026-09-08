@@ -23,6 +23,7 @@ import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/shell/player-bottom-nav';
 import { PlayerMobileAppBar } from '@/components/player/shell/player-mobile-appbar';
 import { PlayerMobileSidebar } from '@/components/player/shell/player-mobile-sidebar';
+import { PlayerLoadingScreen } from '@/components/player/shell/player-loading-screen';
 import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
 import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
@@ -152,8 +153,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // Loading state
   if (loading) {
     return (
-      <div style={brandingStyle} className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
-        <div className="size-1 bg-[var(--color-accent)] animate-pulse" aria-label="Cargando" />
+      <div style={brandingStyle}>
+        <PlayerLoadingScreen />
       </div>
     );
   }
