@@ -35,31 +35,78 @@ export interface GregmornSyncResult {
 }
 
 /**
- * Estudios de Gregmorn que sabemos que son casino en vivo.
+ * Categoría por nombre de estudio.
  *
- * ⚠️ **Heurística, no dato del proveedor.** Su `GameCatalogItem` NO trae campo
- * de tipo de juego — solo `provider` (el nombre del estudio). Sin eso no hay
- * forma de distinguir una slot de una ruleta en vivo, así que se matchea por
- * nombre de estudio y **todo lo demás cae en `slots`**.
+ * ⚠️ **Heurística, no dato del proveedor.** Su `GameCatalogItem` NO trae tipo de
+ * juego — sólo `provider`, el nombre del estudio. Sin eso no hay forma de
+ * distinguir una slot de una ruleta en vivo. Está pendiente preguntarles si
+ * pueden exponerlo.
  *
- * Está pendiente preguntarles si pueden exponer el tipo de juego. Mientras
- * tanto, una categoría equivocada es cosmética (afecta el filtro del lobby, no
- * el launch ni la plata) y se corrige agregando el estudio a esta lista.
+ * **El costo de que esto falle no es cosmético como parecía.** El 2026-09-08 los
+ * 9.449 juegos de producción estaban catalogados como `slots`: el lobby mostraba
+ * "Todos 9449" y "Slots 9449" —dos chips para lo mismo— y **un jugador que
+ * quería ruleta en vivo no tenía cómo llegar**. Con casi diez mil juegos y sólo
+ * búsqueda por nombre, la categoría es el único camino para el que no sabe de
+ * antemano cómo se llama lo que busca.
+ *
+ * La causa fue una palabra: la lista decía `pragmatic play live` y Gregmorn
+ * manda **`Pragmatic Live`**. `includes` no matcheaba, y 84 juegos de casino en
+ * vivo quedaban archivados como tragamonedas.
+ *
+ * Por eso ahora se compara **normalizado** —sin espacios, guiones ni
+ * apóstrofos— así `Play'nGO`, `Playngo` y `play n go` son la misma cosa. El
+ * emparejamiento no debería depender de cómo escriba el proveedor.
  */
-const LIVE_CASINO_STUDIOS = [
-  'evolution',
-  'ezugi',
-  'pragmatic play live',
-  'playtech live',
-  'vivo gaming',
-  'atmosfera',
-  'lucky streak',
+const ESTUDIOS_POR_CATEGORIA: Array<{
+  categoria: Game['category'];
+  estudios: string[];
+}> = [
+  {
+    categoria: 'live',
+    estudios: [
+      'evolution',
+      'ezugi',
+      'pragmaticlive',
+      'pragmaticplaylive',
+      'playtechlive',
+      'vivogaming',
+      'atmosfera',
+      'luckystreak',
+      'livedealers',
+      'tvbet',
+    ],
+  },
+  // Spribe es Aviator y compañía: el género "crash" entero.
+  { categoria: 'crash', estudios: ['spribe'] },
+  {
+    // Bingo, keno y los juegos de pesca. No son tragamonedas y meterlos ahí los
+    // vuelve invisibles: son de los pocos que alguien busca *por tipo* y no por
+    // nombre. Si "Mini" no te parece el lugar, se cambia esta línea.
+    categoria: 'mini',
+    estudios: ['bingo', 'keno', 'miniduel', 'mininout', 'miniinout', 'fish', 'firekirin', 'fachai'],
+  },
 ];
 
-function mapCategory(providerName: string | null | undefined): Game['category'] {
-  const name = (providerName ?? '').trim().toLowerCase();
-  if (!name) return 'slots';
-  return LIVE_CASINO_STUDIOS.some((studio) => name.includes(studio)) ? 'live' : 'slots';
+/** Sin espacios, guiones, apóstrofos ni mayúsculas: `Play'nGO` → `playngo`. */
+function normalizarEstudio(nombre: string): string {
+  return nombre.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * `table` NO se mapea a propósito: los juegos de mesa (blackjack, ruleta RNG)
+ * vienen de estudios mixtos que también hacen slots, así que el nombre del
+ * estudio no alcanza para distinguirlos. Marcarlos por estudio metería slots en
+ * "Mesa", que es peor que dejarlos donde están.
+ */
+export function mapCategory(
+  providerName: string | null | undefined,
+): Game['category'] {
+  const nombre = normalizarEstudio(providerName ?? '');
+  if (!nombre) return 'slots';
+  for (const { categoria, estudios } of ESTUDIOS_POR_CATEGORIA) {
+    if (estudios.some((e) => nombre.includes(e))) return categoria;
+  }
+  return 'slots';
 }
 
 /**
