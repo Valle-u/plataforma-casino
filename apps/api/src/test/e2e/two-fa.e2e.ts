@@ -38,60 +38,83 @@ import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { getTestTenantUrl } from '../setup/db-helpers';
 import { fundWalletForTests } from '../helpers/fund-wallet';
 
+/**
+ * UNA conexión para toda la suite.
+ *
+ * Antes cada helper abría la suya y la cerraba: con `beforeEach` corriendo en
+ * los 17 tests más los lectores de cada prueba, la suite abría entre 30 y 45
+ * conexiones. En CI eso rompía el teardown de una forma difícil de leer:
+ *
+ *   Test suite failed to run: Exceeded timeout of 30000 ms for a hook
+ *
+ * El 30000 no era casual. **`connect_timeout` de postgres.js es 30 segundos**
+ * y el límite del hook de Jest es el mismo: bastaba con que UNA conexión no se
+ * estableciera —78 suites en serie contra el Postgres de un contenedor— para
+ * que esperara los 30 s justos y Jest matara el hook. El error no decía nada de
+ * Postgres, así que parecía un problema del `afterAll`.
+ *
+ * Con una sola conexión reutilizada el problema no puede darse: se establece una
+ * vez, al principio, cuando no hay presión.
+ */
+let conexion: ReturnType<typeof postgres> | null = null;
+
+function db() {
+  conexion ??= postgres(getTestTenantUrl(), {
+    max: 1,
+    // Más corto que el timeout del hook de Jest, a propósito: si algún día no
+    // se puede conectar, que falle diciendo QUÉ falló en vez de agotar el hook
+    // y dejar un "Exceeded timeout" que no menciona la base.
+    connect_timeout: 10,
+  });
+  return conexion;
+}
+
+/** Cierra la conexión compartida. Idempotente. */
+async function cerrarConexion(): Promise<void> {
+  if (!conexion) return;
+  const c = conexion;
+  conexion = null;
+  await c.end({ timeout: 5 });
+}
+
 /** Limpia el 2FA del admin para asegurar partir de estado conocido. */
 async function resetAdminTwoFa(): Promise<void> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
-  try {
-    await sql.unsafe(
-      `UPDATE users SET two_fa_secret = NULL, two_fa_enabled = false WHERE username = $1`,
-      [TEST_TENANT.admin.username],
-    );
-  } finally {
-    await sql.end();
-  }
+  const sql = db();
+  await sql.unsafe(
+    `UPDATE users SET two_fa_secret = NULL, two_fa_enabled = false WHERE username = $1`,
+    [TEST_TENANT.admin.username],
+  );
 }
 
 /** Lee el secret 2FA actual del admin (después de init). */
 async function readAdminTwoFaSecret(): Promise<string | null> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
-  try {
-    const rows = await sql<{ two_fa_secret: string | null }[]>`
-      SELECT two_fa_secret FROM users WHERE username = ${TEST_TENANT.admin.username}
-    `;
-    return rows[0]?.two_fa_secret ?? null;
-  } finally {
-    await sql.end();
-  }
+  const sql = db();
+  const rows = await sql<{ two_fa_secret: string | null }[]>`
+    SELECT two_fa_secret FROM users WHERE username = ${TEST_TENANT.admin.username}
+  `;
+  return rows[0]?.two_fa_secret ?? null;
 }
 
 /** Lee enabled flag del admin. */
 async function readAdminTwoFaEnabled(): Promise<boolean> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
-  try {
-    const rows = await sql<{ two_fa_enabled: boolean }[]>`
-      SELECT two_fa_enabled FROM users WHERE username = ${TEST_TENANT.admin.username}
-    `;
-    return rows[0]?.two_fa_enabled ?? false;
-  } finally {
-    await sql.end();
-  }
+  const sql = db();
+  const rows = await sql<{ two_fa_enabled: boolean }[]>`
+    SELECT two_fa_enabled FROM users WHERE username = ${TEST_TENANT.admin.username}
+  `;
+  return rows[0]?.two_fa_enabled ?? false;
 }
 
 /** Lee el id del admin (necesario para fondear su wallet vía fundWalletForTests). */
 async function readAdminUserId(): Promise<string> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
-  try {
-    const rows = await sql<{ id: string }[]>`
-      SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}
-    `;
-    const id = rows[0]?.id;
-    if (!id) {
-      throw new Error('readAdminUserId: no se encontró el admin del tenant de test.');
-    }
-    return id;
-  } finally {
-    await sql.end();
+  const sql = db();
+  const rows = await sql<{ id: string }[]>`
+    SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}
+  `;
+  const id = rows[0]?.id;
+  if (!id) {
+    throw new Error('readAdminUserId: no se encontró el admin del tenant de test.');
   }
+  return id;
 }
 
 /**
@@ -172,6 +195,7 @@ describe('2FA TOTP (E2E)', () => {
 
   afterAll(async () => {
     await resetAdminTwoFa();
+    await cerrarConexion();
     await ctx.close();
   });
 
