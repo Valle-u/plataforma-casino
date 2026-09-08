@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useMemo, useState } from 'react';
-import { Crown, Gamepad2, Gift, Users } from 'lucide-react';
+import { Crown } from 'lucide-react';
 import { FilterChip } from '@/components/player/filter-chip';
 import { GameSearch } from '@/components/player/game-search';
 import { HomeGameCard } from '@/components/player/home-game-card';
@@ -28,12 +28,30 @@ const GameModal = dynamic(
   { ssr: false },
 );
 
-const FALLBACK_SLIDES: HeroSlide[] = [
-  { id: 'fallback-1', image: '/hero/welcome.webp', href: '/play/lobby', icon: Crown, accentColor: '#ff2ea0', glow: 'rgba(255,46,160,0.5)', kicker: 'Bienvenido', title: 'El dueño de la noche', body: 'Viví la mejor experiencia.', cta: 'Jugar ahora' },
-  { id: 'fallback-2', image: '/hero/slots.webp', href: '/play/lobby?category=slots', icon: Gamepad2, accentColor: '#00e5ff', glow: 'rgba(0,229,255,0.5)', kicker: 'Slots', title: 'Girás y ganás', body: 'Los mejores slots con jackpots.', cta: 'Ver slots' },
-  { id: 'fallback-3', image: '/hero/live.webp', href: '/play/lobby?category=live', icon: Users, accentColor: '#9b4dff', glow: 'rgba(155,77,255,0.5)', kicker: 'En vivo', title: 'Acción en tiempo real', body: 'Crupiés en vivo.', cta: 'Jugar en vivo' },
-  { id: 'fallback-4', image: '/hero/bonus.webp', href: '/play/account?tab=dinero', icon: Gift, accentColor: '#f0c46a', glow: 'rgba(240,196,106,0.5)', kicker: 'Bonus', title: 'Hasta $200.000 + 200 giros', body: 'Depositá y recibí bonus.', cta: 'Reclamar bonus' },
-];
+
+
+/**
+ * Espacio del banner mientras llega la configuración del casino.
+ *
+ * **Mide exactamente lo mismo que `LobbyBanner`** (372px / 552px en desktop).
+ * Si midiera distinto, al aparecer el carrusel todo lo de abajo saltaría — se
+ * cambiaría un parpadeo de color por uno de layout, que molesta más porque
+ * mueve aquello en lo que el ojo ya se apoyó.
+ *
+ * Usa los colores del tema, que a esta altura ya son los del casino: el
+ * servidor los dejó en `:root`.
+ */
+function BannerCargando() {
+  return (
+    <div
+      className="relative h-[372px] w-full overflow-hidden bg-[var(--color-bg-subtle)] lg:h-[552px]"
+      role="status"
+      aria-label="Cargando"
+    >
+      <div className="absolute inset-0 animate-pulse bg-gradient-to-b from-transparent via-[var(--color-bg-elevated)] to-[var(--color-bg)]" />
+    </div>
+  );
+}
 
 type DesignConfig = {
   slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number; align?: 'left' | 'right' }>;
@@ -103,13 +121,17 @@ export default function PlayLobbyPage() {
   }, [tenantInfo.data?.design?.colors, tenantInfo.data?.branding?.primaryColor]);
 
   const slides: HeroSlide[] = useMemo(() => {
-    if (!designConfig?.slides || designConfig.slides.length === 0) {
-      return FALLBACK_SLIDES.map((s) => ({
-        ...s,
-        accentColor: accentHex,
-        glow: hexToRgba(accentHex, 0.5),
-      }));
-    }
+    // Sin slides configurados NO se muestran los de muestra.
+    //
+    // Antes, mientras llegaba la configuración se pintaban cuatro banners de
+    // ejemplo —"El dueño de la noche", "Hasta $200.000 + 200 giros"— y al
+    // llegar la respuesta se reemplazaban por los del casino. Eso confundía:
+    // el jugador alcanzaba a leer una promoción que no existe.
+    //
+    // Ahora, mientras carga se muestra un placeholder (ver `cargando` abajo), y
+    // si el casino no configuró ninguno no se muestra nada. Un carrusel vacío
+    // es mejor que uno que promete algo falso.
+    if (!designConfig?.slides || designConfig.slides.length === 0) return [];
     return designConfig.slides
       .filter((s) => s.imageDesktop)
       .map((s, i) => ({
@@ -152,8 +174,15 @@ export default function PlayLobbyPage() {
 
   return (
     <div className="flex flex-col -mt-14 lg:-mt-16">
-      {/* Banner a sangre (arranca detrás del header translúcido en desktop). */}
-      <LobbyBanner slides={slides} />
+      {/* Banner a sangre (arranca detrás del header translúcido en desktop).
+          Mientras no llegó la configuración se reserva el espacio con un
+          placeholder: sin él la página salta cuando aparece el carrusel, y con
+          banners de ejemplo se le muestra al jugador una promoción falsa. */}
+      {tenantInfo.isPending ? (
+        <BannerCargando />
+      ) : slides.length > 0 ? (
+        <LobbyBanner slides={slides} />
+      ) : null}
 
       {/* Franja "Ganando ahora" — el borde duro del banner. */}
       <WinnersTicker variant="bar" />

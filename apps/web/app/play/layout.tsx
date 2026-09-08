@@ -53,6 +53,18 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   const isImpersonating = !!user?.impersonatedBy;
 
   const brandingStyle = useMemo<CSSProperties>(() => {
+    // ⚠️ MIENTRAS NO SE SABE, NO SE PINTA.
+    //
+    // Un `style` en línea le gana a cualquier regla CSS, incluida la que el
+    // servidor deja en `:root` con la paleta ya resuelta. Si acá se devolvieran
+    // los valores por defecto mientras llega la respuesta, taparían la paleta
+    // buena y el parpadeo volvería — **exactamente lo que pasó**: se pintaba el
+    // HTML correcto y el propio cliente lo pisaba en el primer render.
+    //
+    // Devolviendo un objeto vacío, hasta que haya datos manda el `:root` del
+    // servidor, que ya trae los colores del casino.
+    if (!tenantInfo.data) return {};
+
     const themeVars = themeToStyle(theme);
     const base: Record<string, string> = {};
     for (const [k, v] of Object.entries(themeVars)) {
@@ -61,14 +73,13 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     // El mapeo de colores y los degradados derivados viven en
     // `tenant-color-vars` porque el SERVIDOR usa exactamente los mismos para
     // pintar el primer HTML. Si acá hubiera una copia, cualquier diferencia
-    // entre las dos aparecería como un cambio de color al hidratar — que es
-    // justo el parpadeo que se fue a arreglar.
+    // entre las dos aparecería como un cambio de color al hidratar.
     return variablesDeColorDelTenant(
-      tenantInfo.data?.design?.colors,
+      tenantInfo.data.design?.colors,
       branding?.primaryColor,
       base,
     );
-  }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
+  }, [branding?.primaryColor, theme, tenantInfo.data]);
 
   // Diseño del socio en los PORTALES (modales/menús/drawers). El `style`
   // inline de abajo cubre el contenido in-tree, pero los portales de Radix
@@ -87,7 +98,11 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    injectPlayerVars((brandingStyle ?? {}) as Record<string, string>);
+    const vars = (brandingStyle ?? {}) as Record<string, string>;
+    // Vacío = todavía no hay datos. No se inyecta la regla `.player-themed`
+    // para no competir con el `:root` que dejó el servidor; se espera.
+    if (Object.keys(vars).length === 0) return;
+    injectPlayerVars(vars);
   }, [brandingStyle]);
 
   // Favicon dinámico
