@@ -47,7 +47,24 @@ export function optimizedStorageUrl(
 ): string {
   const normalizada = normalizeStorageUrl(url);
   if (!normalizada.startsWith('/')) return normalizada;
-  return `/_next/image?url=${encodeURIComponent(normalizada)}&w=${width}&q=${quality}`;
+  return `/_next/image?url=${encodeURIComponent(normalizada)}&w=${anchoPermitido(width)}&q=${quality}`;
+}
+
+/**
+ * Anchos que `/_next/image` acepta: `imageSizes` + `deviceSizes` de Next.
+ *
+ * ⚠️ **Cualquier otro valor devuelve 400 y la imagen no se muestra.** No es una
+ * sugerencia: es una lista blanca, y existe para que nadie pueda usar el
+ * optimizador como generador de miniaturas a medida. Pasó el 2026-09-07 al
+ * optimizar el logo: se pidió `w=260` (130 × 2) y el logo desapareció.
+ */
+const ANCHOS_DE_NEXT = [
+  16, 32, 48, 64, 96, 128, 256, 384, 640, 750, 828, 1080, 1200, 1920, 2048, 3840,
+];
+
+/** El permitido más chico que alcance para `deseado`. */
+function anchoPermitido(deseado: number): number {
+  return ANCHOS_DE_NEXT.find((a) => a >= deseado) ?? ANCHOS_DE_NEXT[ANCHOS_DE_NEXT.length - 1]!;
 }
 
 export function normalizeStorageUrl(url: string | null | undefined): string {
