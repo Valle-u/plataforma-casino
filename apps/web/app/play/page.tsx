@@ -7,10 +7,13 @@ import { FilterChip } from '@/components/player/filter-chip';
 import { GameSearch } from '@/components/player/game-search';
 import { HomeGameCard } from '@/components/player/home-game-card';
 import { StudioRows } from '@/components/player/home/studio-rows';
+import { CategoriesRow } from '@/components/player/lobby/categories-row';
+import { DestacadosRow } from '@/components/player/lobby/destacados-row';
 import { LobbyBanner } from '@/components/player/lobby/lobby-banner';
 import { WinnersTicker } from '@/components/player/lobby/winners-ticker';
 import type { HeroSlide } from '@/components/player/hero-carousel';
 import { useAuth } from '@/lib/auth-context';
+import { cn } from '@/lib/cn';
 import {
   useActiveGames,
   useGameFacets,
@@ -172,8 +175,21 @@ export default function PlayLobbyPage() {
   const total = gamesQuery.data?.total ?? 0;
   const buscando = searchDebounced !== "";
 
+  // ¿Hay algo ocupando la franja del banner? De eso depende el margen negativo
+  // de abajo.
+  const hayBanner = tenantInfo.isPending || slides.length > 0;
+
   return (
-    <div className="flex flex-col -mt-14 lg:-mt-16">
+    <div
+      className={cn(
+        'flex flex-col',
+        // El margen negativo mete el banner DETRÁS del header translúcido, que
+        // es el efecto buscado... siempre que haya un banner. Sin él se comía
+        // la altura del header y la franja "Ganando ahora" quedaba pisada por
+        // los botones de Iniciar sesión y Registrarse.
+        hayBanner && '-mt-14 lg:-mt-16',
+      )}
+    >
       {/* Banner a sangre (arranca detrás del header translúcido en desktop).
           Mientras no llegó la configuración se reserva el espacio con un
           placeholder: sin él la página salta cuando aparece el carrusel, y con
@@ -196,6 +212,15 @@ export default function PlayLobbyPage() {
             {announcement}
           </div>
         )}
+
+        {/* Categorías y destacados van ARRIBA de la grilla.
+            Sin banner son lo primero que se ve, así que la home deja de
+            arrancar en un buscador vacío. Los dos se ocultan solos cuando no
+            hay nada que mostrar (`CategoriesRow` devuelve null sin categorías;
+            `DestacadosRow` lo mismo sin juegos marcados), así que no dejan un
+            hueco en un casino recién montado. */}
+        <CategoriesRow />
+        <DestacadosRow onGameClick={handleGameClick} />
 
         {/*
           Catálogo principal: buscador + categorías, los dos server-side.
