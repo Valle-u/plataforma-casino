@@ -484,11 +484,16 @@ no cubre.
 **Con WhatsApp esto se multiplica**: mandar fotos por WhatsApp es lo normal, no
 la excepción.
 
-**No es cambiar una constante.** `crm_messages.attachments` guarda **la URL
-dentro del mensaje**. Una URL firmada vence a los 15 minutos, así que un mensaje
-de la semana pasada mostraría un adjunto roto. El mensaje tiene que guardar
-**sólo la `storageKey`** y la URL firmarse **al leer**. Es un cambio en cómo se
-persiste el adjunto, no en cómo se sirve.
+> **Corrección (2026-09-08, al implementarlo).** Al decidir esto se dijo que
+> `crm_messages.attachments` guardaba la URL dentro del mensaje y que había que
+> cambiar cómo se persiste el adjunto. **Es falso.** Se leyó el código al
+> implementar: `chat.types.ts` documenta que la `url` **no se persiste**,
+> `sanitizeAttachments` la descarta al guardar, y `hydrateMessage` la regenera
+> con `storage.getUrl(storageKey)` en cada lectura. O sea que el livechat ya
+> estaba preparado para URLs que vencen desde que se construyó.
+>
+> **El arreglo era, efectivamente, cambiar una constante en cada lado**, más los
+> tests. Sin migración, sin cambio de datos y sin tocar el flujo de mensajes.
 
 **Se descartó:**
 

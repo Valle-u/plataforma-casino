@@ -27,8 +27,10 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
  * Qué archivos son documentos privados y no pueden cachearse en el borde.
  *
  * Los comprobantes —transferencias bancarias, depósitos— llevan nombre, CBU,
- * banco y monto de personas reales. Con el `immutable` de un año que había
- * antes pasaban dos cosas malas:
+ * banco y monto de personas reales. Y los adjuntos del chat llevan lo mismo o
+ * peor: la gente manda por ahí fotos del DNI y capturas de transferencias.
+ *
+ * Con el `immutable` de un año que había antes pasaban dos cosas malas:
  *
  *   1. Quedaba una copia en el caché de Cloudflare, servible por URL.
  *   2. **Borrar el archivo de R2 no lo sacaba de circulación**: verificado el
@@ -43,12 +45,31 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
  * (ver `docs/12-seguridad-compliance.md`). Este cambio sólo corta que se
  * acumulen copias imborrables en el borde.
  */
-const CARPETA_PRIVADA = '/proofs/';
+/**
+ * ⚠️ **Esta lista tiene un gemelo.** `CARPETAS_PRIVADAS` en
+ * `apps/api/src/storage/cloudflare-worker-driver.ts` decide qué URLs se firman;
+ * ésta decide qué URLs se exigen firmadas y qué se cachea. **Si divergen, el
+ * fallo es silencioso**: una carpeta que la API firma y el Worker no considera
+ * privada sale igual (nadie se entera), y al revés corta el acceso.
+ *
+ * No se puede compartir el código: el Worker es un bundle aparte, sin acceso a
+ * `apps/api`. Así que se duplica a propósito, con este aviso en los dos lados.
+ *
+ * `chat/attachments` se sumó el 2026-09-08: estaba fuera de la regla desde que
+ * se construyó el livechat, así que sus adjuntos se venían sirviendo públicos y
+ * con caché de un año. Ver `docs/crm/14-decisiones.md` D12.
+ */
+const CARPETAS_PRIVADAS = ['/proofs/', '/chat/attachments/'];
+
+/** ¿Es un documento privado? (comprobantes, adjuntos del chat) */
+function esPrivada(key) {
+  return CARPETAS_PRIVADAS.some((c) => key.includes(c));
+}
 
 /** Cache-Control según el tipo de archivo. */
 function cacheControlPara(key) {
   // Documentos: nunca en el borde, poco en el navegador.
-  if (key.includes(CARPETA_PRIVADA)) return 'private, max-age=300';
+  if (esPrivada(key)) return 'private, max-age=300';
   // Marca (logos, hero): la key es un UUID y el archivo nunca cambia.
   return 'public, max-age=31536000, immutable';
 }
@@ -160,7 +181,11 @@ export default {
     // prende. Si se prendiera de una y algo quedó sin firmar, el operador deja
     // de ver los comprobantes y no puede aprobar depósitos — o sea, se corta un
     // flujo de plata.
-    if (key.includes(CARPETA_PRIVADA) && env.REQUIRE_SIGNED_PROOFS === '1') {
+    // El nombre de la variable es histórico: nació para los comprobantes y hoy
+    // gobierna todas las CARPETAS_PRIVADAS. No se renombra porque el valor vive
+    // en `wrangler.toml` y un nombre nuevo leído contra el viejo daría
+    // `undefined` — o sea, la validación apagada sin que nadie lo note.
+    if (esPrivada(key) && env.REQUIRE_SIGNED_PROOFS === '1') {
       if (!env.CF_WORKER_SIGNING_SECRET) {
         console.error('REQUIRE_SIGNED_PROOFS=1 pero falta CF_WORKER_SIGNING_SECRET');
         return jsonResponse({ error: 'Server misconfigured' }, 500);

@@ -1,16 +1,28 @@
-# Runbook — cerrar el acceso público a los comprobantes
+# Runbook — cerrar el acceso público a los documentos privados
 
-> Escrito el 2026-09-06. **El código ya está; falta desplegarlo.**
+> Escrito el 2026-09-06. **Ampliado el 2026-09-08** para incluir los adjuntos
+> del chat. **El código ya está; falta desplegarlo.**
 > Contexto y por qué: `docs/12-seguridad-compliance.md`, al final.
 
 ## Qué se está arreglando
 
-Los comprobantes —PDF de transferencias, fotos de depósitos— se descargan hoy
-**con sólo tener la URL**, sin autenticación, y con un `Cache-Control` de **un
-año** que hace que borrar uno no lo saque de circulación.
+Dos clases de archivo se descargan hoy **con sólo tener la URL**, sin
+autenticación, y con un `Cache-Control` de **un año** que hace que borrar uno no
+lo saque de circulación:
+
+| Carpeta | Qué hay adentro |
+|---|---|
+| `bank-transactions/proofs/` · `deposits/proofs/` | comprobantes: nombre, CUIT, CBU y monto |
+| `chat/attachments/` | lo que la gente manda por el livechat: fotos del DNI, capturas de transferencias |
 
 Al terminar este runbook: sólo se abren con una URL firmada que **vive 15
 minutos**, y borrar un archivo tiene efecto inmediato.
+
+> **Los adjuntos del chat se sumaron el 2026-09-08.** Estaban fuera desde que se
+> construyó el livechat: la regla de privacidad miraba una sola carpeta
+> (`/proofs/`) y ésta no matcheaba. **Terminar este runbook en su versión vieja
+> los habría dejado exactamente como estaban**, con la sensación de haber cerrado
+> el tema. Ver `docs/crm/14-decisiones.md` D12.
 
 ## Estado antes de empezar (medido el 2026-09-06)
 
@@ -18,7 +30,14 @@ minutos**, y borrar un archivo tiene efecto inmediato.
 GET /storage/files/tenants/miamihub/bank-transactions/proofs/<uuid>.pdf
 → 200 OK
 → Cache-Control: public, max-age=31536000, immutable
+
+GET /storage/files/tenants/miamihub/chat/attachments/<uuid>.jpg
+→ 200 OK
+→ Cache-Control: public, max-age=31536000, immutable
 ```
+
+Medido el 2026-09-08: `REQUIRE_SIGNED_PROOFS` sigue en `"0"`, o sea que **la
+firma todavía no se exige**. Una URL vieja sin firmar abre igual.
 
 ---
 
@@ -74,6 +93,17 @@ curl -sI "https://miamihub.vip/storage/files/tenants/miamihub/bank-transactions/
 - ✅ `private, max-age=300` → seguir.
 - ❌ `public, ... immutable` → el deploy no tomó. **No avanzar.**
 
+Y lo mismo con un adjunto del chat — hay que sacar una key real de
+`crm_messages.attachments`, o abrir una conversación con foto en el panel y
+copiar la URL:
+
+```bash
+curl -sI "https://miamihub.vip/storage/files/tenants/miamihub/chat/attachments/<uuid>.jpg?cb=$(date +%s)" | grep -i cache-control
+```
+
+- ✅ `private, max-age=300` → seguir.
+- ❌ `public, ... immutable` → está corriendo el Worker viejo. **No avanzar.**
+
 ---
 
 ## Paso 2 — Purgar el caché
@@ -120,7 +150,15 @@ Con la validación todavía **apagada**, así que si algo falla no corta nada.
 
 - [ ] Panel → **Depósitos** → abrir un comprobante. Se ve.
 - [ ] Panel → **Transferencias bancarias** → abrir un comprobante. Se ve.
+- [ ] Panel → **Soporte** → abrir una conversación **con una foto**. Se ve.
+- [ ] Interfaz del jugador → el widget de chat muestra sus adjuntos.
 - [ ] El logo del casino sigue cargando (no se firma, es público a propósito).
+
+> Los dos del chat son nuevos y hay que mirarlos en las **dos puntas**: el
+> operador y el jugador leen los adjuntos por caminos distintos, y los dos pasan
+> por `hydrateMessage`, que regenera la URL desde la `storageKey` en cada
+> lectura. Si esa función fallara, el adjunto se ve roto — no se cae la
+> pantalla, así que hay que mirarlo a propósito.
 
 > Transferencias es el que hay que mirar con más atención: hasta este cambio
 > devolvía la URL guardada sin regenerarla, y fue lo que hubo que arreglar para
@@ -143,15 +181,26 @@ Y desplegar:
 cd worker; npx wrangler deploy   # PowerShell 5.1 no soporta &&
 ```
 
-**Verificar** — sin firma tiene que dar 403, con firma 200:
+**Verificar** — sin firma tiene que dar 403, con firma 200. **Las dos carpetas:**
 
 ```bash
-# sin firma → 403
+# comprobante sin firma → 403
 curl -s -o /dev/null -w "%{http_code}\n" \
   "https://miamihub.vip/storage/files/tenants/miamihub/bank-transactions/proofs/5cc16a08-5b0c-46a8-84e0-b87f0e480e3f.pdf"
 ```
 
-Y volver a abrir un comprobante desde el panel: **tiene que seguir funcionando**.
+```bash
+# adjunto del chat sin firma → 403
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "https://miamihub.vip/storage/files/tenants/miamihub/chat/attachments/<uuid>.jpg"
+```
+
+Y volver a abrir, desde el panel, **un comprobante y una conversación con foto**:
+las dos tienen que seguir funcionando.
+
+> Con este paso, cualquier URL de estas dos carpetas que haya salido de la
+> plataforma —reenviada, pegada en un chat, en una captura— **deja de servir**.
+> Ese es todo el punto del runbook.
 
 ---
 
@@ -174,3 +223,14 @@ pide. Son 15 minutos y hay que tener el link, muchísimo menos que "público y
 para siempre", pero no es lo mismo que un endpoint que chequea permisos.
 
 Esa es la opción 2 de `docs/12-seguridad-compliance.md` y queda pendiente.
+
+**Los archivos ya subidos siguen donde están.** Este runbook cierra el acceso,
+no borra nada. La retención de adjuntos del chat a 6 meses es una decisión
+aparte (`docs/crm/14-decisiones.md` D15) y todavía no está implementada.
+
+**Y la regla de qué es privado vive duplicada** en `worker/src/index.js`
+(`CARPETAS_PRIVADAS`) y `apps/api/src/storage/cloudflare-worker-driver.ts`
+(idem). No se puede compartir el código: el Worker es un bundle aparte. **Si
+divergen, el fallo es silencioso** — que es exactamente cómo los adjuntos del
+chat pasaron meses sin que nadie lo notara. Al agregar una carpeta privada
+nueva, tocar los dos.

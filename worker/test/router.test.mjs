@@ -22,6 +22,10 @@ const CONTENIDO = new TextEncoder().encode('x'.repeat(1234));
 const ARCHIVOS = new Map([
   ['tenants/t/hero/logo.png', { size: 1234, tipo: 'image/png' }],
   ['tenants/t/deposits/proofs/x.pdf', { size: 99, tipo: 'application/pdf' }],
+  ['tenants/t/chat/attachments/y.jpg', { size: 77, tipo: 'image/jpeg' }],
+  // Un tenant cuyo nombre contiene "chat": la carpeta privada es
+  // `/chat/attachments/`, no la palabra suelta.
+  ['tenants/chat-royale/hero/logo.png', { size: 5, tipo: 'image/png' }],
 ]);
 
 function objeto(meta, conCuerpo) {
@@ -85,6 +89,75 @@ check('DELETE sin token -> 401', sinAuth.status === 401, `(${sinAuth.status})`);
 
 const otro = await pedir('PUT', '/files/x');
 check('metodo no soportado -> 404', otro.status === 404, `(${otro.status})`);
+
+// ── Adjuntos del chat ───────────────────────────────────────────────────────
+//
+// Entraron a la carpeta privada el 2026-09-08. Antes la regla miraba sólo
+// `/proofs/`, así que las fotos que la gente manda por el livechat —DNI,
+// capturas de transferencias— se servían públicas y con caché de un año.
+
+const adj = await pedir('GET', '/files/tenants/t/chat/attachments/y.jpg');
+check(
+  'adjunto del chat usa Cache-Control privado',
+  adj.headers.get('Cache-Control') === 'private, max-age=300',
+  `(${adj.headers.get('Cache-Control')})`,
+);
+
+const falsoPositivo = await pedir('GET', '/files/tenants/chat-royale/hero/logo.png');
+check(
+  'un tenant llamado "chat" NO vuelve privado su logo',
+  falsoPositivo.headers.get('Cache-Control') === 'public, max-age=31536000, immutable',
+  `(${falsoPositivo.headers.get('Cache-Control')})`,
+);
+
+// ── Con la firma exigida ────────────────────────────────────────────────────
+
+const SECRETO = 'secreto-de-prueba';
+const envFirmado = { ...env, REQUIRE_SIGNED_PROOFS: '1', CF_WORKER_SIGNING_SECRET: SECRETO };
+
+async function firmar(key, exp) {
+  const llave = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(SECRETO),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    llave,
+    new TextEncoder().encode(`${key}:${exp}`),
+  );
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const pedirFirmado = (ruta) =>
+  worker.fetch(new Request('https://x.test' + ruta, { method: 'GET' }), envFirmado);
+
+const KEY_CHAT = 'tenants/t/chat/attachments/y.jpg';
+const sinFirma = await pedirFirmado('/files/' + KEY_CHAT);
+check('adjunto del chat sin firma -> 403', sinFirma.status === 403, `(${sinFirma.status})`);
+
+const exp = Math.floor(Date.now() / 1000) + 900;
+const sig = await firmar(KEY_CHAT, exp);
+const conFirma = await pedirFirmado(`/files/${KEY_CHAT}?exp=${exp}&sig=${sig}`);
+check('adjunto del chat con firma -> 200', conFirma.status === 200, `(${conFirma.status})`);
+
+// La firma de un archivo NO sirve para otro, aunque el vencimiento sea el mismo.
+const cruzada = await pedirFirmado(
+  `/files/tenants/t/deposits/proofs/x.pdf?exp=${exp}&sig=${sig}`,
+);
+check('firma de un archivo no abre otro -> 403', cruzada.status === 403, `(${cruzada.status})`);
+
+// Una URL vencida no abre, aunque la firma sea correcta para ese vencimiento.
+const expViejo = Math.floor(Date.now() / 1000) - 10;
+const sigViejo = await firmar(KEY_CHAT, expViejo);
+const vencida = await pedirFirmado(`/files/${KEY_CHAT}?exp=${expViejo}&sig=${sigViejo}`);
+check('adjunto con firma vencida -> 403', vencida.status === 403, `(${vencida.status})`);
+
+// La marca sigue abierta aunque la firma esté exigida: es pública a propósito.
+const marcaFirmado = await pedirFirmado('/files/tenants/t/hero/logo.png');
+check('la marca sigue abierta con la firma exigida -> 200', marcaFirmado.status === 200, `(${marcaFirmado.status})`);
 
 console.log(fallas === 0 ? '\nTodo bien.' : `\n${fallas} fallas`);
 process.exit(fallas === 0 ? 0 : 1);
