@@ -44,9 +44,9 @@ un CRM y no un chat.
 | 03 | `03-canales.md` | Web, WhatsApp y Telegram, uno por uno | **decidido** (bloque 1), falta escribir |
 | 04 | `04-identidad-y-fusion.md` | Quién es quién, y por qué NO se fusiona | **decidido** (bloque 2), falta escribir |
 | 05 | `05-ruteo-y-bandejas.md` | Quién atiende qué — el corazón | **decidido** (bloque 1), falta escribir |
-| 06 | `06-operacion-diaria.md` | Estados, transferencias, no leídos | pendiente |
-| 07 | `07-crear-usuarios.md` | Alta de jugador desde una conversación | pendiente |
-| 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | pendiente |
+| 06 | `06-operacion-diaria.md` | Estados, transferencias, no leídos | **decidido** (bloque 3), falta escribir |
+| 07 | `07-crear-usuarios.md` | Alta de jugador desde una conversación | **decidido** (bloque 3), falta escribir |
+| 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | **decidido** (bloques 2 y 3), falta escribir |
 | 09 | `09-plantillas-y-bots.md` | Respuestas rápidas y automatismos | pendiente |
 | 10 | `10-metricas.md` | Tiempos de respuesta, volumen, por agente | pendiente |
 | 11 | `11-cumplimiento.md` | Reglas de WhatsApp, retención, privacidad | pendiente |

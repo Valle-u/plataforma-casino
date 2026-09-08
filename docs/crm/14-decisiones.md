@@ -79,6 +79,9 @@ entrar *es* la información de a quién buscaba.
 
 ### D3 · El staff central atiende a jugadores de otras redes, sin ver su plata
 
+> **Matizada por D8.** El punto de "derivar" NO es mover la conversación:
+> es mandar un aviso sin contenido. El resto de D3 sigue en pie.
+
 Cuando un jugador de una **red independiente** escribe a un canal **central**, el
 staff central:
 
@@ -291,3 +294,183 @@ disfrazado de número.
   precisamente lo que R6 protege. Y la derivación ya funciona sin ese dato.
 
 **Leyes que aplican:** R6 (visibilidad), P1 (permiso + scope).
+---
+
+## Bloque 3 — La operación: derivar, dar de alta, supervisar, cerrar
+
+**Decidido el 2026-09-08** con el dueño.
+
+Los bloques 1 y 2 definieron de quién es cada canal y de quién es cada persona.
+Este define **qué se puede hacer** con eso.
+
+> **Estado del código al decidir esto.** Se leyó `apps/api/src/chat/` antes de
+> preguntar. Lo que existe: notas, etiquetas, plantillas y la ficha de contexto.
+> Lo que **no** existe: transferencia (ningún endpoint, ningún campo), y ningún
+> cambio de estado de la conversación — `status` está en la tabla y nada lo
+> escribe.
+
+---
+
+### D8 · Derivar es avisar, no mandar la conversación
+
+Cuando el staff central atiende a un jugador de una red independiente y lo manda
+a su red, lo único que llega a la otra bandeja es **un aviso**: quién escribió y
+cuándo. **Ni una palabra del contenido.**
+
+```
+BANDEJA DEL CAJERO
+── Aviso ────────────────────────────────
+Juan Pérez escribió al casino hoy 14:32.
+Se le pidió que te contacte.
+(sin contenido)
+```
+
+**Por qué.** Es lo que **D6 ya implicaba**: si el contacto del casino y el
+contacto del cajero son dos fichas distintas, nunca hubo una conversación que
+mover. "Derivar" era, en realidad, *copiar* — y copiar es la decisión que se
+está tomando acá, en su forma más restringida.
+
+**Se descartó:**
+
+- *Un resumen escrito a mano por el staff central.* Da control fino sobre qué se
+  comparte, pero depende de que alguien lo redacte bien **cada vez**, y un
+  resumen mal escrito filtra igual.
+- *La conversación entera.* Cero pérdida de contexto, pero el cajero leería la
+  queja que el jugador hizo **sobre él**. Un jugador que sabe que su cajero va a
+  leer lo que dijo deja de escribir al central — y ahí se pierde la única señal
+  que el casino tiene sobre cómo se atiende en las redes independientes.
+
+**⚠️ Corrección a D3.** D3 dice que el staff central *puede derivar la
+conversación a la bandeja que corresponde*. **La palabra estaba mal elegida:** no
+se deriva una conversación, se avisa. La decisión de D3 no cambia —el staff sigue
+atendiendo, viendo la identidad y el cartel de red, y sigue pudiendo señalar el
+caso— pero el mecanismo es un aviso.
+
+**A quién le llega el aviso:** al **operador directo** del jugador (su cajero),
+que es a quien el ruteo ya le asigna todo lo suyo. No al socio de esa red — ver
+D10.
+
+---
+
+### D9 · El alta cuelga del dueño del canal, y no se elige
+
+Un jugador creado desde una conversación **cuelga del panel dueño del canal por
+el que entró**. El campo es fijo: no hay desplegable, no se puede elegir otro.
+
+Escribió al WhatsApp del cajero Pérez → jugador de Pérez. Punto.
+
+**Por qué.** Es D5 llevado hasta el final: el canal por el que alguien entra
+define de quién es. Y sin desplegable **no hay forma de colgarse un jugador que
+no corresponde** — ni por error ni a propósito. En un sistema donde de quién
+cuelga un jugador determina comisiones, un campo editable es una tentación
+permanente.
+
+**Se descartó:**
+
+- *Editable dentro de la propia bajada.* Le permitiría a un socio repartir
+  jugadores entre sus cajeros desde el chat. Cómodo, pero abre exactamente la
+  puerta que la opción elegida cierra: un alta puede terminar colgada de quien
+  convenga, no de quien atendió. Si algún día hace falta, que sea una acción
+  aparte, explícita y auditada — no un desplegable en el formulario de alta.
+- *No crear nada, mandar un link de registro.* Menos código y cero riesgo, pero
+  es justo la fricción que este CRM viene a sacar.
+
+**⚠️ Consecuencia comercial.** Alguien que escribe **primero al número central**
+—aunque se lo haya recomendado un amigo que juega con Pérez— se da de alta como
+jugador **de la red central**. No hay error: por D5 el lead es del casino. Pero
+es un efecto real sobre el árbol de comisiones y conviene que los operadores lo
+sepan: **el que quiere el jugador tiene que hacer que le escriba a su número.**
+
+Si el caso se vuelve frecuente, la salida NO es abrir el desplegable: es que el
+staff central le pida que escriba al número de su cajero **antes** de crear nada.
+
+---
+
+### D10 · Un socio no ve las conversaciones de sus cajeros
+
+Cada operador ve **lo suyo y nada más**. Un socio independiente no lee las
+conversaciones de sus distribuidores ni de sus cajeros.
+
+**Por qué.** Es lo que el código ya hace —`resolveInboxOwner` le devuelve su
+propio id— y se confirma como decisión, no como accidente. La conversación entre
+un cajero y su jugador es la relación comercial del cajero.
+
+**Se descartó:**
+
+- *Que vea todo lo de su bajada.* Defendible por P2 (regla del techo) y no
+  violaría R6 —que protege a la red independiente del admin, no al cajero de su
+  propio socio—. Se descartó igual: es una capacidad de vigilancia que nadie
+  pidió.
+- *Que vea la lista sin el contenido* (quién habló, cuánto tardaron en
+  responder, cuántos quedaron sin contestar). Era el intermedio: supervisar la
+  atención sin leer nada. **Queda anotado como candidato para `10-metricas.md`**
+  — si algún día hace falta supervisión, esta es la forma que no lee
+  conversaciones privadas.
+
+**⚠️ El hueco que dejan D8 + D10 juntos.** Un cajero que atiende mal queda
+**invisible para todos**:
+
+- el jugador se queja al central, pero por D8 esa queja no viaja;
+- el socio podría notarlo, pero por D10 no ve nada de su cajero;
+- el cajero recibe un aviso que puede ignorar igual que ignoró al jugador.
+
+El único que se entera es el staff central, y sólo si presta atención a que el
+mismo jugador vuelve. **No es un error en las decisiones** —cada una es correcta
+por separado— pero el efecto combinado hay que tenerlo presente. La salida, si
+aparece el problema, es la opción descartada de arriba: métricas de atención
+para el socio, sin contenido.
+
+---
+
+### D11 · Un solo hilo por contacto y canal, para siempre
+
+Una conversación cerrada **se reabre** si la persona vuelve a escribir. No se
+crea un hilo nuevo.
+
+**Por qué.** Es exactamente lo que el schema ya describe —*hilo CONTINUO por
+contacto y canal*—, así que no hay nada que migrar. Y el operador ve todo lo que
+esa persona habló con él de un vistazo, sin abrir nada.
+
+**Se descartó:**
+
+- *Un hilo nuevo por vuelta, con los anteriores listados.* Más prolijo para medir
+  y para saber qué está realmente pendiente. Se descartó por no agregar una capa
+  de navegación a algo que hoy funciona.
+
+**⚠️ Dos cosas que esto rompe, y hay que resolver en su momento:**
+
+1. **Las métricas pierden sentido.** Con un hilo eterno, "conversaciones
+   abiertas" y "tiempo de respuesta" no significan nada: el hilo de Juan lleva
+   ocho meses abierto. Cualquier métrica va a tener que calcularse sobre
+   **tramos** —del primer mensaje entrante hasta que se marca resuelto—, no sobre
+   la conversación. Va a `10-metricas.md`.
+2. **La ventana de 24 horas de WhatsApp no se reabre con el hilo.** Reabrir una
+   conversación de hace tres semanas no habilita a escribir libremente: si el
+   último mensaje del cliente pasó las 24 h, sólo sale una **plantilla aprobada**.
+   La pantalla tiene que mostrarlo **antes** de que el operador escriba, no
+   después de que el mensaje falle.
+
+**Falta construir:** nada cambia el `status` hoy. Cerrar, marcar pendiente y
+reabrir son tres acciones que no existen.
+
+---
+
+## Deuda técnica detectada, no resuelta
+
+Salió de leer el código al decidir el bloque 3. No son decisiones: son cosas que
+ya están escritas y hay que arreglar.
+
+### 🔴 `getContext` devuelve la plata sin mirar de qué red es
+
+`apps/api/src/chat/chat-crm.service.ts` arma la ficha del contacto con **saldo,
+últimos 5 depósitos y últimos 5 retiros**, sin ninguna comprobación de red.
+
+**Hoy no filtra nada** porque el ruteo lo hace inalcanzable: el único canal es el
+widget web y las conversaciones de un jugador independiente van siempre a su
+operador directo, nunca a la bandeja central.
+
+**Pero D3 abre esa puerta a propósito.** El día que exista un número de WhatsApp
+central, el staff central va a poder abrir la ficha de un jugador de otra red — y
+con el código actual va a ver su saldo y sus movimientos. Eso es **R6**.
+
+Arreglarlo es requisito para el primer canal externo, no algo para después.
