@@ -10649,3 +10649,95 @@ Y sigue siendo **sólo visual**: no manda alerta por Telegram.
 > historial viejo que se marque en masa por haberse jugado antes del cambio. La
 > muestra vuelve a juntarse recién con las rondas nuevas, para entonces con el
 > 82% ya aplicado.
+---
+
+## 2026-09-08 — Excepción a R6: heredar las conversaciones de una red que se cierra
+
+**Contexto**: planificando el CRM (`docs/crm/`), el bloque 4 preguntó qué pasa
+con los contactos y conversaciones de un socio independiente cuando deja de
+operar. Los bloques 2 y 3 habían decidido el aislamiento más estricto posible
+entre bandejas: fichas de contacto separadas por dueño de canal (D6), y ni
+siquiera mencionarle al staff central que existen conversaciones en otra red
+(D7).
+
+**Opciones consideradas**:
+
+- **A — Archivo aparte, de sólo lectura y auditado.** Sección separada, visible
+  sólo para el admin, con registro de cada apertura. **No requería excepción**:
+  es literalmente la vía que R6 ya describe (*"puede intervenir en todo, pero por
+  un mecanismo separado y auditado, nunca por los botones normales de
+  operación"*). Fue la recomendación.
+- **B — Sólo los contactos, sin los mensajes.** D8 aplicado acá: heredar quién es
+  la persona para poder atenderla, no lo que se habló. Lo más consistente con el
+  resto del bloque 3.
+- **C — Todo a la bandeja normal.** Las conversaciones entran como chats
+  comunes, con etiqueta de red de origen.
+
+**Decisión**: **C**, mantenida por el dueño después de que se le planteara
+explícitamente que contradice D7 y que requiere autorizar una excepción a R6.
+
+**Razón**: los jugadores se quedan y hay que seguir atendiéndolos; sin historial
+el staff arranca de cero con gente que viene con problemas abiertos. Las
+alternativas se descartaron por costo de construcción (A) y por dejar al staff
+atendiendo a ciegas (B).
+
+**Lo que se autorizó, explícito**: el staff central —**incluidos los
+empleados**, no sólo el admin— pasa a leer todo lo que ese socio y sus cajeros
+hablaron con sus jugadores durante todos los años que operó. Una salida no
+siempre es en buenos términos.
+
+**Implicaciones**:
+
+- `docs/LEYES.md` — segunda excepción anotada bajo R6, con sus límites. La
+  primera es la de auditoría de pagos del 2026-08-13.
+- `docs/crm/14-decisiones.md` — D14.
+- **El cierre de una red pasa a ser un evento de seguridad.** Es lo único que
+  separa lo permitido de lo prohibido, así que tiene que ser explícito y
+  auditado (quién lo cerró y cuándo). Si se puede cerrar y reabrir sin registro,
+  la excepción se convierte en un interruptor para leer la red de cualquiera.
+  Esto hay que tenerlo presente al implementar la baja de un socio, que hoy no
+  existe como flujo.
+- **E8 y P3 siguen intactos**: la excepción es sólo de visibilidad del CRM.
+
+**Alternativa abierta**: sí. Si en la práctica resulta incómodo —o si un socio lo
+objeta al irse— la opción A sigue disponible y es estrictamente más restrictiva:
+mover el archivo heredado fuera de la bandeja no rompe nada que dependa de él.
+
+---
+
+## 2026-09-08 — Los adjuntos del chat quedaron fuera del arreglo de comprobantes
+
+**Contexto**: al planificar el bloque 4 del CRM se leyó cómo se sirven los
+archivos. Tanto `apps/api/src/storage/cloudflare-worker-driver.ts` como
+`worker/src/index.js` deciden qué es privado con la misma constante:
+`CARPETA_PRIVADA = '/proofs/'`.
+
+Los adjuntos del chat se guardan bajo `chat/attachments` (ver
+`apps/api/src/chat/chat.controller.ts`), que **no contiene `/proofs/`**. Salen
+con `Cache-Control: public, max-age=31536000, immutable` y sin firma.
+
+**El punto**: el runbook `docs/runbooks/firmar-comprobantes.md`, que está
+pendiente, **no los cubre**. Terminarlo deja los adjuntos del chat exactamente
+como están hoy. Y el livechat ya está prendido en producción: una foto de DNI o
+un comprobante mandado por el widget queda en una URL pública permanente. No es
+enumerable (la clave es un UUID), pero el link, una vez fuera de la plataforma,
+sirve para siempre y no hay forma de revocarlo. Con WhatsApp el volumen se
+multiplica.
+
+**Decisión**: firmarlos igual que los comprobantes (D12).
+
+**Implicaciones**:
+
+- **No alcanza con ampliar la constante.** `crm_messages.attachments` guarda **la
+  URL** dentro del mensaje. Una URL firmada vence a los 15 minutos, así que un
+  mensaje viejo mostraría un adjunto roto. El mensaje tiene que guardar sólo la
+  `storageKey` y la URL firmarse **al leer**. Es un cambio en cómo se persiste el
+  adjunto.
+- **El orden de despliegue no es negociable**, por el mismo motivo que en el
+  runbook de comprobantes: primero el Worker, después la API. Al revés, cada URL
+  firmada crea una entrada de caché pública de un año.
+- Hay adjuntos ya subidos con caché de un año en el borde. Cambiar la regla no
+  los saca de la caché: hay que purgar, igual que se hizo con los comprobantes.
+
+**Alternativa abierta**: no. Es la misma decisión ya tomada para los
+comprobantes, aplicada a una carpeta que la regla no miraba.

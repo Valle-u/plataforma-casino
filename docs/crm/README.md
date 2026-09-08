@@ -49,8 +49,8 @@ un CRM y no un chat.
 | 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | **decidido** (bloques 2 y 3), falta escribir |
 | 09 | `09-plantillas-y-bots.md` | Respuestas rápidas y automatismos | pendiente |
 | 10 | `10-metricas.md` | Tiempos de respuesta, volumen, por agente | pendiente |
-| 11 | `11-cumplimiento.md` | Reglas de WhatsApp, retención, privacidad | pendiente |
-| 12 | `12-infraestructura.md` | Webhooks, colas, límites, medios | pendiente |
+| 11 | `11-cumplimiento.md` | Reglas de WhatsApp, retención, privacidad | **decidido** (bloque 4), falta escribir |
+| 12 | `12-infraestructura.md` | Webhooks, colas, límites, medios | **decidido** en parte (bloque 4: medios), falta escribir |
 | 13 | `13-roadmap.md` | En qué orden se construye | pendiente |
 | 14 | [`14-decisiones.md`](14-decisiones.md) | **Bitácora de decisiones y por qué** | vivo |
 

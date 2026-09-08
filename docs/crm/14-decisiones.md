@@ -474,3 +474,182 @@ central, el staff central va a poder abrir la ficha de un jugador de otra red �
 con el código actual va a ver su saldo y sus movimientos. Eso es **R6**.
 
 Arreglarlo es requisito para el primer canal externo, no algo para después.
+---
+
+## Bloque 4 — Los canales externos de verdad: archivos, altas, bajas y retención
+
+**Decidido el 2026-09-08** con el dueño.
+
+Los bloques anteriores definieron quién atiende a quién. Este define **qué pasa
+con las cosas**: los archivos que manda la gente, los números de teléfono, y qué
+queda cuando alguien se va.
+
+---
+
+### D12 · Los adjuntos del chat se firman, igual que los comprobantes
+
+Las fotos y PDFs que se mandan por chat pasan a servirse con **URL firmada de 15
+minutos** y caché privada, como ya se hace con los comprobantes de depósito.
+
+**El hallazgo que lo motivó.** Tanto la API como el Worker deciden qué es privado
+con la misma regla: que la ruta contenga `/proofs/`.
+
+| Carpeta | Hoy |
+|---|---|
+| `bank-transactions/proofs/…` | firmado, `private, max-age=300` |
+| `deposits/proofs/…` | firmado, `private, max-age=300` |
+| `chat/attachments/…` | **público, `max-age=31536000, immutable`** |
+
+Los adjuntos del chat **no** contienen `/proofs/`. Consecuencia: cuando se
+termine el runbook `docs/runbooks/firmar-comprobantes.md`, **los adjuntos del
+chat van a seguir siendo públicos**, porque la regla no mira esa carpeta.
+
+Y el livechat ya está prendido en producción. Un jugador que manda por el widget
+una foto del DNI o un comprobante de transferencia deja esa imagen en una URL
+pública permanente. No es enumerable —la clave es un UUID— pero es el mismo
+problema que se decidió arreglar en los comprobantes, en una carpeta que la regla
+no cubre.
+
+**Con WhatsApp esto se multiplica**: mandar fotos por WhatsApp es lo normal, no
+la excepción.
+
+**No es cambiar una constante.** `crm_messages.attachments` guarda **la URL
+dentro del mensaje**. Una URL firmada vence a los 15 minutos, así que un mensaje
+de la semana pasada mostraría un adjunto roto. El mensaje tiene que guardar
+**sólo la `storageKey`** y la URL firmarse **al leer**. Es un cambio en cómo se
+persiste el adjunto, no en cómo se sirve.
+
+**Se descartó:**
+
+- *Sacarles sólo la caché eterna.* Cambio chico y sin tocar el modelo de datos,
+  y al menos borrar un archivo tendría efecto. Pero el link seguiría abriendo la
+  foto para siempre y sin forma de revocarlo.
+- *Dejarlo como está.* La clave es un UUID imposible de adivinar, así que nadie
+  llega por casualidad. El problema no es que lo adivinen: es que el link, una
+  vez que sale de la plataforma —reenviado, pegado en un chat, en una captura—,
+  sirve para siempre.
+
+**Cómo se implementa, sin repetir el error del runbook:** el orden es el mismo
+que en `firmar-comprobantes.md` — **primero el Worker** (que acepte firma y deje
+de mandar `immutable` para esa carpeta), **después** la API. Al revés, cada URL
+firmada crearía una entrada de caché pública de un año.
+
+---
+
+### D13 · Cada socio da de alta su propio número, con sus papeles
+
+Un socio independiente que quiera WhatsApp **abre su propia cuenta de Meta
+Business y hace su propia verificación**. El casino sólo conecta el número al
+CRM. No lo paga y no responde por él.
+
+**Por qué.** Es coherente con que una red independiente sea un negocio aparte
+(R4). Y evita el riesgo real de la alternativa: con todos los números bajo la
+empresa del casino, **una denuncia contra el número de un socio cae sobre la
+cuenta del casino** y complica a todos los demás — incluido el central.
+
+**Se descartó:**
+
+- *Todos los números bajo la empresa del casino.* Arranca mucho más rápido y le
+  saca el trámite de encima al socio. Se descartó por el riesgo compartido: una
+  sola cuenta de Meta para todos significa que el peor operador define el
+  destino del canal de todos.
+
+**⚠️ Lo que esto cuesta, y hay que decirlo de entrada.** El socio **no tiene
+canal hasta que Meta lo verifique**. Eso es un trámite con documentación de
+empresa y tiempos que no controlamos. Un socio chico, o uno que no tiene la
+empresa a su nombre, simplemente **no va a poder usar WhatsApp**.
+
+**Consecuencia de producto:** para esos casos, **Telegram es la puerta de
+entrada** — un bot es gratis, se crea en cinco minutos y no pide papeles. Vale la
+pena que el CRM lo trate como un canal de primera y no como el hermano menor de
+WhatsApp: para buena parte de los operadores va a ser el único que puedan usar.
+
+**Consecuencia al construir:** el alta de un canal es un flujo del **socio**, no
+del admin. La pantalla tiene que poder explicarle el trámite y mostrarle en qué
+paso está, porque el casino no puede resolvérselo.
+
+---
+
+### D14 · Cuando una red se cierra, sus conversaciones pasan al staff central
+
+⚠️ **Esto es una excepción autorizada a la LEY R6.** Está anotada también en
+`docs/LEYES.md` y en `docs/DEVLOG.md` 2026-09-08.
+
+Cuando un socio independiente deja de operar, sus contactos y conversaciones
+**pasan a la bandeja central como chats normales**, con una etiqueta que marca la
+red de origen. El staff central —**incluidos los empleados**— lee el historial
+completo.
+
+**Por qué.** Los jugadores se quedan y hay que seguir atendiéndolos. Sin el
+historial, el staff arranca de cero con gente que viene con problemas abiertos, y
+la etiqueta de origen alcanza para saber de dónde vienen.
+
+**Lo que se está autorizando, dicho sin vueltas.** El staff central pasa a leer
+**todo lo que ese socio y sus cajeros hablaron con sus jugadores**, durante todos
+los años que operó. Y una salida no siempre es en buenos términos: un socio que
+se va peleado descubre que el casino ahora lee todo.
+
+**Se descartó** (las dos alternativas se plantearon explícitamente y el dueño
+mantuvo su elección):
+
+- *Archivo aparte, de sólo lectura y auditado.* Era la vía que **R6 ya
+  contempla** —*"puede intervenir en todo, pero por un mecanismo separado y
+  auditado, nunca por los botones normales de operación"*— y no habría requerido
+  ninguna excepción: sección separada, visible sólo para el admin, con registro
+  de cada apertura. Se descartó por ser más pantalla y más código para algo que
+  pasa pocas veces.
+- *Sólo los contactos, sin los mensajes.* Era D8 aplicado acá —avisar quién es,
+  no copiar lo que se habló— y lo más consistente con el resto del bloque 3. Se
+  descartó porque deja al staff atendiendo a gente sin saber qué le pasó.
+
+**Los límites de la excepción** (fuera de esto, R6 sigue entero):
+
+1. Alcanza **sólo a redes cerradas**. Mientras el socio opera, valen D6 y D7 sin
+   matices: el staff central no ve ni que esas conversaciones existen.
+2. Es **sólo visibilidad del CRM**. **E8 y P3 quedan intactos**: el CRM no mueve
+   fichas, y cerrar una red no habilita a nadie a tocar su plata.
+3. El disparador es el **cierre de la red**, no una decisión discrecional. No hay
+   un botón de "ver las conversaciones de Litoral" mientras Litoral opera.
+
+**Consecuencia en el modelo de datos:** cerrar una red tiene que ser un evento
+explícito y auditado —quién la cerró y cuándo—, porque **ese evento es lo único
+que separa lo permitido de lo prohibido**. Si el cierre se puede hacer y deshacer
+sin registro, la excepción se convierte en un interruptor para leer la red de
+cualquiera.
+
+**Nota sobre D13:** el socio **se lleva su número** (la cuenta de Meta es suya).
+Se va el canal, queda el historial.
+
+---
+
+### D15 · El texto se guarda para siempre; los adjuntos, seis meses
+
+Los mensajes escritos no se borran nunca. Las fotos y PDFs se eliminan a los
+**6 meses**, y el mensaje conserva la marca de que había un archivo.
+
+```
+[12-mar] Juan: "te mando el comprobante"
+         📎 (archivo eliminado · retención)
+```
+
+**Por qué.** El riesgo no está en el texto: está en las imágenes. Ahí es donde
+viajan el DNI, el CBU y la cara de la gente. El texto pesa poco y sirve para
+reclamos; la foto pesa, no se busca, y es lo único que hace daño si se filtra.
+
+**Se descartó:**
+
+- *Todo para siempre.* Cada foto de DNI que entró alguna vez sigue guardada, y
+  R2 crece sin techo.
+- *Todo se borra al año.* Más prolijo y más barato, pero un reclamo por algo
+  hablado hace 14 meses se queda sin respaldo escrito.
+
+**⚠️ Lo que NO borra esta regla.** El comprobante oficial de un depósito
+(`deposits/proofs/…`) es **otro archivo, con su propio ciclo de vida**. Que se
+borre la foto que el jugador mandó por chat no toca el comprobante con el que se
+aprobó el depósito. Son dos cosas distintas y conviene no confundirlas al
+implementar el borrado.
+
+**Falta construir:** un proceso que borre los adjuntos vencidos **de R2 y de la
+base**. El borrado en R2 recién funciona desde el 2026-09-06 —antes sólo
+escribía un warning y los archivos se acumulaban—, así que este proceso se apoya
+en algo que es nuevo y conviene verificar de verdad, no dar por hecho.
