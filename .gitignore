@@ -139,3 +139,7 @@ design_handoff_*/
 
 # Imágenes subidas por la plataforma en dev (van al storage en prod, NO al repo).
 apps/web/public/hero/hero-*
+
+# Cache y estado local de wrangler (lo crea `wrangler deploy`/`dev`).
+# No es del proyecto: son credenciales cacheadas y builds temporales.
+worker/.wrangler/
