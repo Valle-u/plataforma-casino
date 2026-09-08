@@ -32,6 +32,15 @@ import { Injectable, Logger } from '@nestjs/common';
 /** Cuánto se calla una alerta ya mandada, por clave. */
 const SILENCIO_POR_DEFECTO_MIN = 30;
 
+/**
+ * Cuánto se espera antes de reintentar una alerta que NO se pudo mandar.
+ *
+ * Corto a propósito: si Telegram falló, el aviso se perdió y hay que volver a
+ * intentarlo pronto. Pero no cero, o un cron de un minuto machacaría a un
+ * servicio caído sesenta veces por hora.
+ */
+const REINTENTO_MIN = 2;
+
 /** Marca visual del nivel. Se lee de un vistazo en el celular. */
 const ICONO = {
   critico: '🔴',
@@ -92,8 +101,11 @@ export class AlertsService {
       return;
     }
 
-    // Se marca ANTES de mandar: si Telegram está caído no queremos reintentar
-    // en loop contra un servicio que no responde.
+    // Se marca ANTES de mandar para no reintentar en loop contra un Telegram
+    // caído. Pero si el envío falla se **acorta** el silencio (ver abajo): con
+    // la versión anterior, un error de red transitorio hacía dos cosas malas a
+    // la vez —perdía el aviso y lo callaba media hora—, y en un aviso crítico
+    // eso es exactamente lo que no puede pasar.
     this.ultimoEnvio.set(a.clave, ahora);
 
     const texto = [
@@ -127,12 +139,35 @@ export class AlertsService {
       this.logger.warn(
         `Telegram rechazó la alerta \`${a.clave}\`: HTTP ${r.status} ${r.cuerpo.slice(0, 200)}`,
       );
+      this.permitirReintento(a);
     } catch (err) {
       // Sin re-lanzar: ver la cabecera del archivo.
       this.logger.warn(
         `No se pudo mandar la alerta \`${a.clave}\`: ${(err as Error).message}`,
       );
+      this.permitirReintento(a);
     }
+  }
+
+  /**
+   * El aviso no salió: se recorta el silencio para que el próximo intento no
+   * espere la ventana entera.
+   *
+   * **Por qué no se borra la marca directamente.** Sin ninguna espera, un cron
+   * que corre cada minuto machacaría a un Telegram caído sesenta veces por hora.
+   * Con `REINTENTO_MIN` se reintenta pronto pero no en loop.
+   *
+   * El caso que esto arregla: una alerta `critico` —plata en riesgo— que se
+   * pierde por un error de red y encima queda callada 30 minutos. Perder el
+   * aviso es malo; perderlo *y* silenciarlo es el peor de los dos mundos.
+   */
+  private permitirReintento(a: Alerta): void {
+    const silencio = (a.silencioMin ?? SILENCIO_POR_DEFECTO_MIN) * 60_000;
+    const reintento = REINTENTO_MIN * 60_000;
+    // Si la ventana pedida ya era más corta que el reintento, se respeta: nadie
+    // que pidió menos silencio quiere que un fallo se lo alargue.
+    if (reintento >= silencio) return;
+    this.ultimoEnvio.set(a.clave, Date.now() - (silencio - reintento));
   }
 
   /** Un POST a Telegram. Devuelve lo que hace falta para decidir qué hacer. */
