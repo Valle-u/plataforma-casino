@@ -25,8 +25,18 @@ import {
 import { users } from './users';
 
 /**
- * Contacto unificado: un jugador registrado O un lead anónimo/externo. El
- * `phone` (E.164) es la llave de auto-merge (lead web + WhatsApp + jugador = 1).
+ * Contacto: un jugador registrado O un lead anónimo/externo.
+ *
+ * ⚠️ **El contacto es de una bandeja, no del casino.** Un mismo teléfono puede
+ * tener MÁS DE UNA fila: una por dueño de canal. Si Juan le escribe al WhatsApp
+ * de su cajero y también al del casino, son dos contactos distintos que pueden
+ * apuntar al mismo `user_id` — lo que se comparte es el jugador, no la
+ * conversación. Es la lectura estricta de la LEY R6: sin ficha compartida no hay
+ * superficie por la que se filtre la operación de una red independiente.
+ *
+ * Por eso el `phone` **NO es llave de merge** y su índice no es único. Decisión
+ * D6 en `docs/crm/14-decisiones.md`; si algún día hace falta unicidad, es por
+ * (dueño, teléfono), nunca por teléfono solo.
  */
 export const crmContacts = pgTable(
   'crm_contacts',
@@ -37,7 +47,12 @@ export const crmContacts = pgTable(
       onDelete: 'set null',
     }),
     displayName: text('display_name'),
-    /** Teléfono normalizado E.164 — llave de merge para omnicanal. */
+    /**
+     * Teléfono normalizado a E.164. Sirve para encontrar al jugador y vincularlo
+     * solo (D4), NO para unir contactos entre bandejas (D6). Si matchea con más
+     * de un jugador no se vincula ninguno: mostrar el nombre equivocado es peor
+     * que no mostrar ninguno.
+     */
     phone: text('phone'),
     email: text('email'),
     /** true hasta que se linkea a un `user_id`. */

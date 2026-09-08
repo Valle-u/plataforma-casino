@@ -41,9 +41,9 @@ un CRM y no un chat.
 | 00 | `00-vision-y-alcance.md` | Qué es y, sobre todo, qué **no** es | pendiente |
 | 01 | `01-glosario.md` | Contacto, canal, cuenta, conversación, bandeja | pendiente |
 | 02 | `02-modelo-de-datos.md` | Tablas, marcando lo que ya existe | pendiente |
-| 03 | `03-canales.md` | Web, WhatsApp y Telegram, uno por uno | pendiente |
-| 04 | `04-identidad-y-fusion.md` | Cuándo dos contactos son la misma persona | pendiente |
-| 05 | `05-ruteo-y-bandejas.md` | Quién atiende qué — el corazón | pendiente |
+| 03 | `03-canales.md` | Web, WhatsApp y Telegram, uno por uno | **decidido** (bloque 1), falta escribir |
+| 04 | `04-identidad-y-fusion.md` | Quién es quién, y por qué NO se fusiona | **decidido** (bloque 2), falta escribir |
+| 05 | `05-ruteo-y-bandejas.md` | Quién atiende qué — el corazón | **decidido** (bloque 1), falta escribir |
 | 06 | `06-operacion-diaria.md` | Estados, transferencias, no leídos | pendiente |
 | 07 | `07-crear-usuarios.md` | Alta de jugador desde una conversación | pendiente |
 | 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | pendiente |
@@ -53,6 +53,10 @@ un CRM y no un chat.
 | 12 | `12-infraestructura.md` | Webhooks, colas, límites, medios | pendiente |
 | 13 | `13-roadmap.md` | En qué orden se construye | pendiente |
 | 14 | [`14-decisiones.md`](14-decisiones.md) | **Bitácora de decisiones y por qué** | vivo |
+
+> **Ojo con el nombre de `04-identidad-y-fusion.md`.** El bloque 2 decidió que
+> los contactos **no se fusionan** entre bandejas (D6). El archivo se llama así
+> por el diseño viejo; cuando se escriba, conviene renombrarlo.
 
 ---
 
