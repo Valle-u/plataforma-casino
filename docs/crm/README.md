@@ -40,12 +40,12 @@ un CRM y no un chat.
 
 | # | Archivo | Qué contesta | Estado |
 |---|---|---|---|
-| 00 | `00-vision-y-alcance.md` | Qué es y, sobre todo, qué **no** es | pendiente |
-| 01 | `01-glosario.md` | Contacto, canal, cuenta, conversación, bandeja | pendiente |
-| 02 | `02-modelo-de-datos.md` | Tablas, marcando lo que ya existe | pendiente |
-| 03 | `03-canales.md` | Web, WhatsApp y Telegram, uno por uno | **decidido** (bloque 1), falta escribir |
-| 04 | `04-identidad-y-fusion.md` | Quién es quién, y por qué NO se fusiona | **decidido** (bloque 2), falta escribir |
-| 05 | `05-ruteo-y-bandejas.md` | Quién atiende qué — el corazón | **decidido** (bloque 1), falta escribir |
+| 00 | [`00-vision-y-alcance.md`](00-vision-y-alcance.md) | Qué es y, sobre todo, qué **no** es | ✅ escrito |
+| 01 | [`01-glosario.md`](01-glosario.md) | Contacto, canal, conversación, bandeja, tramo | ✅ escrito |
+| 02 | [`02-modelo-de-datos.md`](02-modelo-de-datos.md) | Tablas, marcando lo que ya existe | ✅ escrito |
+| 03 | [`03-canales.md`](03-canales.md) | Web, WhatsApp y Telegram, uno por uno | ✅ escrito |
+| 04 | [`04-identidad-y-fusion.md`](04-identidad-y-fusion.md) | Quién es quién, y por qué NO se fusiona | ✅ escrito |
+| 05 | [`05-ruteo-y-bandejas.md`](05-ruteo-y-bandejas.md) | Quién atiende qué — el corazón | ✅ escrito |
 | 06 | `06-operacion-diaria.md` | Estados, transferencias, no leídos | **decidido** (bloque 3), falta escribir |
 | 07 | `07-crear-usuarios.md` | Alta de jugador desde una conversación | **decidido** (bloque 3), falta escribir |
 | 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | **decidido** (bloques 2 y 3), falta escribir |
