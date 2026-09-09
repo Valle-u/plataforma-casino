@@ -15,6 +15,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
+import { useAuth } from '../auth-context';
 import { invalidateAllBalances } from '../query-balances';
 
 export interface WalletView {
@@ -62,9 +63,18 @@ interface TransactionsResponse {
  *   - `refetchOnReconnect: true` → si se reconecta la red, también.
  *   - `staleTime: 5_000` → bajado de 10s a 5s: muchas acciones disparan
  *     invalidate y queremos que el primer paint sea fresco.
+ *
+ * ⚠️ **Sin sesión no se pregunta nada.** Es la wallet *propia*: un visitante
+ * anónimo no tiene ninguna. Y el sitio del jugador se navega sin cuenta —la
+ * barra y el menú lateral se montan igual—, así que sin este freno el polling
+ * de 20 s salía a pedir el saldo de nadie y volvía 401 en cada vuelta, para
+ * siempre. Se vio el 2026-09-09 mirando la red de un link de referido recién
+ * abierto: `GET /tenant/wallet/me → 401`, una y otra vez.
  */
 export function useMyWallet() {
+  const { user } = useAuth();
   return useQuery({
+    enabled: !!user,
     queryKey: ['my-wallet'],
     queryFn: () => apiGet<WalletView>('/tenant/wallet/me'),
     staleTime: 5_000,
@@ -91,9 +101,12 @@ export function useMyTransactions(
   offset = 0,
   excludeTypes: string[] = [],
 ) {
+  const { user } = useAuth();
   const excludeQuery =
     excludeTypes.length > 0 ? `&excludeTypes=${excludeTypes.join(',')}` : '';
   return useQuery({
+    // Mismo motivo que `useMyWallet`: sin sesión no hay movimientos propios.
+    enabled: !!user,
     queryKey: ['my-transactions', limit, offset, excludeQuery],
     queryFn: () =>
       apiGet<TransactionsResponse>(
@@ -117,7 +130,9 @@ export interface MyWalletStatsResponse {
 }
 
 export function useMyWalletStats(windowDays = 7) {
+  const { user } = useAuth();
   return useQuery({
+    enabled: !!user,
     queryKey: ['my-wallet-stats', windowDays],
     queryFn: () =>
       apiGet<MyWalletStatsResponse>(

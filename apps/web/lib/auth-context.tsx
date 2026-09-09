@@ -48,6 +48,7 @@ import {
   SESSION_EXPIRED_EVENT,
 } from './api-client';
 import { cacheAdminAppearance } from './admin-appearance';
+import { panelDeLaRuta } from './panel-de-la-ruta';
 
 export interface TenantUser {
   id: string;
@@ -256,7 +257,7 @@ export function AuthProvider({
   // admin y player son 100% independientes.
   const pathname = usePathname();
   const activePanel: 'admin' | 'player' =
-    pathname.startsWith('/play') ? 'player' : 'admin';
+    panelDeLaRuta(pathname);
 
   // Bootstrap: al montar (y al cambiar de panel) validar la sesión si hay hint
   // de sesión para ESE panel. El token vive en cookie httpOnly (JS no la ve);
@@ -426,9 +427,12 @@ export function AuthProvider({
       // Solo si todavía había sesión (evita redirigir estando ya deslogueado
       // o disparar dos veces ante una ráfaga de 401 simultáneos).
       if (!hasSessionHint(getPanel())) return;
-      const dest = window.location.pathname.startsWith('/play')
-        ? '/play/login'
-        : '/login';
+      // El login del panel y el del jugador son pantallas distintas; se elige
+      // por el mismo criterio con el que se eligió la sesión que expiró.
+      const dest =
+        panelDeLaRuta(window.location.pathname) === 'player'
+          ? '/play/login'
+          : '/login';
       toast.error('Tu sesión expiró', {
         description: 'Volvé a iniciar sesión para continuar.',
       });
