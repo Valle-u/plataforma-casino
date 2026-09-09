@@ -10,6 +10,7 @@
 
 import { Module } from '@nestjs/common';
 import { UserHierarchyModule } from '../user-hierarchy/user-hierarchy.module';
+import { TenantUsersModule } from '../tenant-users/tenant-users.module';
 import { ChatController } from './chat.controller';
 import { ChatCrmController } from './chat-crm.controller';
 import { ChatGateway } from './chat.gateway';
@@ -19,7 +20,7 @@ import { CrmNetworkService } from './crm-network.service';
 import { CrmAccessGuard } from './crm-access.guard';
 
 @Module({
-  imports: [UserHierarchyModule],
+  imports: [UserHierarchyModule, TenantUsersModule],
   controllers: [ChatController, ChatCrmController],
   providers: [
     ChatGateway,

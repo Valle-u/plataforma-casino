@@ -31,6 +31,8 @@ import {
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { ChatCrmService } from './chat-crm.service';
 import { ChatService } from './chat.service';
+import { PermissionsGuard } from '../permissions/permissions.guard';
+import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { CrmAccessGuard, type RequestWithCrmInbox } from './crm-access.guard';
 
 type Operator = { id: string; username: string };
@@ -142,6 +144,55 @@ export class ChatCrmController {
     const inboxOwnerId = this.owner(req);
     const contact = await this.crm.assertAccess(db, contactId, inboxOwnerId);
     return this.crm.notifyDirectOperator(db, { contact, inboxOwnerId });
+  }
+
+  // ── Alta de jugador desde el chat (D9) ────────────────────────────────────
+
+  /**
+   * Crea un jugador a partir de un lead que escribió.
+   *
+   * **No recibe de quién cuelga**: sale de la bandeja por la que esa persona
+   * escribió (**D9**). El campo es fijo por diseño — con un desplegable, un
+   * alta podría terminar colgada de quien convenga y no de quien atendió, y eso
+   * es plata.
+   *
+   * Usa `users.create`, el mismo permiso que el alta del panel.
+   */
+  @Post('contacts/:contactId/create-player')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('users.create')
+  @HttpCode(HttpStatus.CREATED)
+  async createPlayer(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() actor: Operator,
+    @Body() body: { username?: unknown; displayName?: unknown; password?: unknown },
+  ) {
+    const username =
+      typeof body?.username === 'string' ? body.username.trim().toLowerCase() : '';
+    if (!/^[a-z0-9_.-]{3,30}$/.test(username)) {
+      throw new BadRequestException({
+        message:
+          'El usuario tiene que tener entre 3 y 30 caracteres: letras, números, punto, guión o guión bajo.',
+        error: 'INVALID_USERNAME',
+      });
+    }
+
+    const db = this.db(req);
+    const contact = await this.crm.assertAccess(db, contactId, this.owner(req));
+    return this.crm.createPlayerFromChat(db, {
+      contact,
+      actorId: actor.id,
+      username,
+      displayName:
+        typeof body?.displayName === 'string' && body.displayName.trim()
+          ? body.displayName.trim()
+          : undefined,
+      password:
+        typeof body?.password === 'string' && body.password
+          ? body.password
+          : undefined,
+    });
   }
 
   // ── Notas ─────────────────────────────────────────────────────────────────

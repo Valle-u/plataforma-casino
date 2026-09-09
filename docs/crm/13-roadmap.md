@@ -70,7 +70,7 @@ Sobre el livechat que ya funciona, sin canales nuevos.
 | 1.3 | ~~🔴 `getContext` filtrado por red~~ | ✅ **hecho el 2026-09-08** |
 | 1.4 | ~~Cerrar / marcar pendiente / reabrir~~ | ✅ **hecho** |
 | 1.5 | ~~El aviso de derivación (D8)~~ | ✅ **hecho** |
-| 1.6 | Alta de jugador desde el chat (D9) | [`07`](07-crear-usuarios.md) |
+| 1.6 | ~~Alta de jugador desde el chat (D9)~~ | ✅ **hecho** |
 | 1.7 | El cartel de red en la lista y en la ficha | [`06`](06-operacion-diaria.md) |
 | 1.8 | Los seis tests de aislamiento | [`08`](08-permisos.md) |
 
@@ -88,10 +88,13 @@ rompiendo el filtro a propósito para confirmar que fallan.
 - 🔴 **Dónde viven los secretos de canal** ([`02`](02-modelo-de-datos.md) punto
   2). No decidirlo es elegir texto plano — de credenciales que, por **D13**, son
   de los socios.
-- **Cómo se le da la contraseña** a un jugador creado desde el chat
-  ([`07`](07-crear-usuarios.md)).
-- **El alta cuelga del dueño del canal, no del actor** — el endpoint actual hace
-  lo segundo, y con empleados los dos difieren ([`07`](07-crear-usuarios.md)).
+- ~~Cómo se le da la contraseña a un jugador creado desde el chat.~~ ✅
+  Resuelto: se genera y se muestra una vez en el panel. Queda pendiente que la
+  plataforma sepa **forzar el cambio al primer ingreso**, que hoy no existe.
+- ~~El alta cuelga del dueño del canal, no del actor.~~ ✅ El alta del CRM pasa
+  el padre explícito. 🔴 Pero queda **reportado un bug del endpoint del panel**:
+  un empleado de un socio independiente cuelga al jugador del admin principal,
+  o sea **fuera de la red independiente** (ver [`07`](07-crear-usuarios.md)).
 
 ---
 

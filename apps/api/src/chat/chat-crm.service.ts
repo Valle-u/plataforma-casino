@@ -23,6 +23,8 @@ import {
   crmTags,
   crmTemplates,
   deposits,
+  roles,
+  userRoles,
   users,
   wallets,
   withdrawals,
@@ -36,6 +38,8 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { ChatService } from './chat.service';
 import { CrmNetworkService } from './crm-network.service';
 import { textoDelAviso } from './aviso-derivacion';
+import { generarPassword } from './password-temporal';
+import { TenantUsersService } from '../tenant-users/tenant-users.service';
 
 export interface ContactContext {
   contact: {
@@ -89,6 +93,7 @@ export class ChatCrmService {
     private readonly hierarchy: UserHierarchyService,
     private readonly chat: ChatService,
     private readonly net: CrmNetworkService,
+    private readonly tenantUsers: TenantUsersService,
   ) {}
 
   /**
@@ -195,6 +200,139 @@ export class ChatCrmService {
     await this.chat.bumpUnreadForOperator(db, conv.id);
 
     return { operatorId: bandejaDestino, conversationId: conv.id };
+  }
+
+  /**
+   * Da de alta un jugador desde una conversación (**D9**).
+   *
+   * ## El jugador cuelga del dueño de la bandeja, y no se elige
+   *
+   * No hay parámetro para el operador padre: sale de `contact.owner_user_id`,
+   * o sea de la bandeja por la que esa persona escribió. **Sin desplegable no
+   * hay forma de colgarse un jugador que no corresponde** — ni por error ni a
+   * propósito. En un sistema donde de quién cuelga un jugador determina las
+   * comisiones, un campo editable es una tentación permanente.
+   *
+   * ## Por qué NO se reusa la inferencia de `POST /tenant/users`
+   *
+   * Ese endpoint deduce el padre **del rol del que crea**, y tiene un caso mal
+   * resuelto: un `empleado` de un socio **independiente** matchea el mismo
+   * chequeo que el staff central, así que el jugador que crea termina colgado
+   * del **admin principal** — o sea, **fuera de la red independiente**. Eso
+   * cambia de red al jugador y de quién cobra por él.
+   *
+   * Acá el padre es explícito, así que ese camino no existe. El bug del otro
+   * endpoint queda reportado aparte: no se toca desde el CRM.
+   *
+   * ## La contraseña
+   *
+   * Si no se manda una, se genera y **se devuelve una sola vez** en la
+   * respuesta, para que el operador la copie. **No se manda por el chat**: en
+   * WhatsApp quedaría escrita en el teléfono del jugador y en el del operador,
+   * para siempre.
+   *
+   * ⚠️ La plataforma **no sabe forzar el cambio al primer ingreso** — no existe
+   * ninguna columna para eso. Mientras no exista, una contraseña temporal es
+   * temporal sólo por convención.
+   */
+  async createPlayerFromChat(
+    db: TenantDb,
+    params: {
+      contact: CrmContact;
+      actorId: string;
+      username: string;
+      displayName?: string;
+      password?: string;
+    },
+  ): Promise<{ userId: string; username: string; generatedPassword?: string }> {
+    const { contact, actorId } = params;
+
+    if (contact.userId) {
+      throw new BadRequestException({
+        message: 'Este contacto ya está vinculado a un jugador.',
+        error: 'CONTACT_ALREADY_LINKED',
+      });
+    }
+
+    // El dueño de la ficha ES la bandeja por la que escribió (D6), así que ya
+    // es la respuesta a "de quién cuelga". `null` = central → el admin
+    // principal, que es la raíz de esa red.
+    const padre =
+      contact.ownerUserId ?? (await this.hierarchy.getPrimaryAdminUserId(db));
+    if (!padre) {
+      throw new BadRequestException({
+        message: 'No se pudo resolver de qué operador cuelga el jugador.',
+        error: 'OWNER_NOT_RESOLVED',
+      });
+    }
+
+    const relationType = await this.relacionDeJugadorCon(db, padre);
+    const generada = params.password ? undefined : generarPassword();
+
+    const creado = await db.transaction(async (tx) => {
+      const txDb = tx as unknown as TenantDb;
+      const nuevo = await this.tenantUsers.create(txDb, {
+        username: params.username,
+        password: params.password ?? generada!,
+        displayName: params.displayName ?? params.username,
+        // El teléfono viene del contacto y no se edita: es la llave con la que
+        // D4 va a reconocerlo la próxima vez que escriba.
+        phone: contact.phone ?? undefined,
+        roleCode: 'usuario_final',
+        createdBy: actorId,
+      });
+
+      await this.hierarchy.setParent(txDb, {
+        userId: nuevo.id,
+        parentUserId: padre,
+        relationType,
+        actorUserId: actorId,
+      });
+
+      // El contacto deja de ser lead. La bandeja NO cambia: ya era del dueño
+      // del canal por D5, y darlo de alta no lo mueve a ningún lado.
+      await txDb
+        .update(crmContacts)
+        .set({ userId: nuevo.id, isLead: false, updatedAt: new Date() })
+        .where(eq(crmContacts.id, contact.id));
+
+      return nuevo;
+    });
+
+    return {
+      userId: creado.id,
+      username: creado.username,
+      ...(generada ? { generatedPassword: generada } : {}),
+    };
+  }
+
+  /**
+   * `jugador_de_<rol>` según el rol del **operador padre**, no del que crea.
+   *
+   * Es la diferencia que importa: en `POST /tenant/users` la etiqueta sale del
+   * rol del actor, y acá el actor puede ser un empleado que atiende la bandeja
+   * de otro.
+   */
+  private async relacionDeJugadorCon(
+    db: TenantDb,
+    padreId: string,
+  ): Promise<string> {
+    const codigos = (
+      await db
+        .select({ code: roles.code })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(eq(userRoles.userId, padreId))
+    ).map((r) => r.code);
+
+    if (codigos.includes('admin_tenant')) return 'jugador_de_admin';
+    if (codigos.includes('socio')) return 'jugador_de_socio';
+    if (codigos.includes('distribuidor')) return 'jugador_de_distribuidor';
+    if (codigos.includes('cajero')) return 'jugador_de_cajero';
+    // `relation_type` es una etiqueta libre y no puede ser NULL. Si el padre
+    // tuviera un rol inesperado, es mejor una etiqueta genérica que romper el
+    // alta: el vínculo —que es lo que define comisiones— queda igual.
+    return 'jugador_de_operador';
   }
 
   /** Cómo nombrar la bandeja de origen en el aviso. Nunca su contenido. */

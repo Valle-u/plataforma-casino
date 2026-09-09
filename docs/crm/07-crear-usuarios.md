@@ -38,28 +38,55 @@ O sea que el 80% del alta ya está. Lo que falta es el pedazo del CRM.
 
 ## ⚠️ El detalle donde no coinciden
 
-El endpoint actual cuelga al jugador **del que lo crea**. D9 dice que tiene que
-colgar **del dueño del canal**.
+> **Corrección (2026-09-08, al implementarlo).** La primera versión de esta
+> sección decía que `POST /tenant/users` cuelga al jugador **del empleado que
+> lo crea**. **Es falso.** El código mapea al staff central al **admin
+> principal** (`adminId = admin_tenant ? actor.id : getPrimaryAdminUserId()`),
+> así que para la red central hace lo correcto.
+>
+> Lo que sí hay es **otro problema, peor**, que sólo apareció leyendo el código
+> entero. Va abajo.
 
-Casi siempre es lo mismo — el que atiende es el dueño del canal — **pero no
-siempre**:
+El endpoint del panel deduce el padre **del rol del que crea**. D9 dice que
+tiene que salir **del dueño del canal**. Casi siempre coinciden, salvo cuando
+atiende un **empleado** — y los socios independientes pueden tener empleados
+(**R7**).
 
-| Quién atiende | Canal | Cuelga hoy de… | Debería colgar de… |
-|---|---|---|---|
-| El cajero Pérez | el suyo | Pérez | Pérez ✅ |
-| Un **empleado de Litoral** | el de Litoral | **el empleado** ❌ | Litoral |
-| Un **empleado del casino** | el central | **el empleado** ❌ | el admin (root) |
+### 🔴 El bug real: un empleado independiente saca al jugador de su red
 
-Los socios independientes pueden tener empleados (**R7**), así que el caso no es
-teórico.
+El chequeo de "staff de la casa" es por **código de rol**:
 
-**La consecuencia si no se corrige:** el jugador queda colgado de un empleado, y
-la cadena de comisiones se calcula sobre un árbol equivocado. No es un problema
-de pantalla: es plata.
+```
+actorIsCasaStaff = roles.includes('admin_tenant') || roles.includes('empleado')
+```
 
-**Cómo se resuelve:** el alta desde el CRM no usa "el actor" como padre, usa
-`crm_channels.owner_user_id` de la conversación. Es un parámetro explícito, no la
-inferencia por defecto del endpoint.
+Un empleado **de un socio independiente** también tiene el rol `empleado`. Así
+que entra por esa rama, y el jugador que crea cuelga del **admin principal**:
+
+| Quién crea | Cuelga hoy de… | Debería |
+|---|---|---|
+| El cajero Pérez | Pérez ✅ | Pérez |
+| Un empleado del casino | el admin ✅ | el admin |
+| **Un empleado de Litoral** | **el admin** ❌ | **Litoral** |
+
+**No es que quede colgado del empleado: es que se va de la red independiente.**
+El jugador pasa a ser de la red central, y con él las comisiones que genere.
+
+Y no rompe nada visible — el jugador se crea, entra y juega. Se descubre cuando
+alguien mira una liquidación y no cierra.
+
+**Está reportado y NO se toca desde el CRM**: es un bug de
+`tenant-users.controller.ts`, de un flujo que existe desde antes y que se usa
+todos los días. Arreglarlo es un cambio aparte, con su propio riesgo.
+
+### Cómo lo evita el alta del CRM
+
+**Pasando el padre explícito**, sin inferir nada: sale de
+`crm_contacts.owner_user_id`, o sea de la bandeja por la que esa persona
+escribió (que por **D6** ya es el dueño del canal). El rol del que crea no
+participa de la decisión, así que ese camino no existe acá.
+
+La etiqueta `jugador_de_<rol>` también sale del rol **del padre**, no del actor.
 
 ---
 
@@ -94,11 +121,21 @@ WhatsApp**.
 | Que el jugador la elija por un link | Un paso más, pero la contraseña no pasa por ningún chat |
 | Temporal, con cambio obligatorio al primer ingreso | Intermedio: si se filtra, sirve una sola vez |
 
-**Recomendación: la tercera**, que es además lo que la plataforma ya sabe hacer
-(`POST /tenant/users/:id/reset-password` existe).
+**Lo implementado (2026-09-08):** si el operador no manda una contraseña, el
+sistema **genera una y la devuelve una sola vez** en la respuesta, para que la
+copie del panel. **No se manda por el chat** desde el backend: en WhatsApp
+quedaría escrita en el teléfono del jugador y en el del operador, para siempre —
+qué hace el operador con ella es decisión suya.
 
-> **Queda como decisión abierta.** No se planteó en ningún bloque y hay que
-> resolverla antes de construir el alta — no después, porque cambia la pantalla.
+La contraseña generada evita los caracteres que se confunden al dictarlos
+(`0`/`O`, `1`/`l`/`I`): alguien que tipea `O` en vez de `0` no entra y
+vuelve a escribir, que es justo el trabajo que este alta viene a ahorrar.
+
+> ⚠️ **Lo que falta.** La plataforma **no sabe forzar el cambio al primer
+> ingreso**: no existe ninguna columna para eso, se verificó. Mientras no
+> exista, "temporal" es una convención y no un mecanismo — la contraseña que se
+> genere puede quedar siendo la definitiva del jugador. Es el candidato natural
+> a mejorar esto.
 
 ---
 
