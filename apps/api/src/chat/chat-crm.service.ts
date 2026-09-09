@@ -57,6 +57,16 @@ export interface ContactContext {
     currency: string;
   } | null;
   upline: { operatorId: string; username: string } | null;
+  /**
+   * De qué red es el jugador, respecto de quien pregunta.
+   *
+   * `same: false` significa que **no se devolvió la plata**: ni `wallet`, ni
+   * los movimientos, ni el `upline`. La pantalla usa `label` para el cartel
+   * que pide `D3` ("este jugador es de la red de Litoral").
+   *
+   * `null` en un lead que todavía no está vinculado a ningún jugador.
+   */
+  network: { same: boolean; label: string | null } | null;
   recentDeposits: MovementRow[];
   recentWithdrawals: MovementRow[];
 }
@@ -111,10 +121,36 @@ export class ChatCrmService {
     throw new ForbiddenException('No tenés acceso a este contacto.');
   }
 
-  /** Contexto del jugador: identidad + saldo + upline + últimos movimientos. */
+  /**
+   * Contexto del jugador para la ficha del contacto.
+   *
+   * ## ⚠️ Lo que este método NO puede devolver
+   *
+   * **La plata de un jugador de otra red.** La **LEY R6** dice que de una red
+   * independiente se ven agregados, no el detalle interno — y el saldo, los
+   * depósitos y los retiros de una persona son el detalle más interno que hay.
+   * **P1** lo completa: permiso *y* scope, nunca cruzando redes.
+   *
+   * Hasta el 2026-09-08 esto devolvía todo eso **sin mirar de qué red era el
+   * jugador**. En la práctica no filtraba nada porque el ruteo lo hacía
+   * inalcanzable: el único canal era el widget web y las conversaciones de un
+   * jugador independiente van siempre a su operador directo, nunca a la bandeja
+   * central.
+   *
+   * **Pero `D3` abre esa puerta a propósito** — el staff central atiende a
+   * quien le escriba al número del casino, sea de la red que sea. Por eso esto
+   * es **requisito del primer canal externo**, no una mejora para después.
+   *
+   * ## Lo que SÍ se devuelve de otra red
+   *
+   * Quién es y de qué red viene (`D3`), para poder responderle y avisarle a su
+   * operador (`D8`). El `upline` tampoco viaja: el cartel ya dice la red, y
+   * *qué operador concreto* lo tiene es detalle interno.
+   */
   async getContext(
     db: TenantDb,
     contact: CrmContact,
+    solicitanteId: string,
   ): Promise<ContactContext> {
     const base: ContactContext = {
       contact: {
@@ -130,11 +166,12 @@ export class ChatCrmService {
       upline: null,
       recentDeposits: [],
       recentWithdrawals: [],
+      network: null,
     };
     if (!contact.userId) return base; // lead anónimo: solo lo del contacto
 
     const userId = contact.userId;
-    const [identity, wallet, dep, wd, parent] = await Promise.all([
+    const [identity, parent, red] = await Promise.all([
       db
         .select({
           username: users.username,
@@ -147,6 +184,19 @@ export class ChatCrmService {
         .from(users)
         .where(eq(users.id, userId))
         .limit(1),
+      this.hierarchy.getActiveParent(db, userId),
+      this.redDelJugador(db, userId, solicitanteId),
+    ]);
+
+    base.identity = identity[0] ?? null;
+    base.network = red;
+
+    // Otra red: hasta acá llega. Las consultas de plata NI SE CORREN — no
+    // alcanza con no devolver el dato si igual se trajo: lo que no se lee no se
+    // puede filtrar por descuido en un log o en un campo nuevo.
+    if (!red.same) return base;
+
+    const [wallet, dep, wd] = await Promise.all([
       db
         .select({
           balance: wallets.balance,
@@ -181,10 +231,8 @@ export class ChatCrmService {
         .where(eq(withdrawals.userId, userId))
         .orderBy(desc(withdrawals.createdAt))
         .limit(5),
-      this.hierarchy.getActiveParent(db, userId),
     ]);
 
-    base.identity = identity[0] ?? null;
     base.wallet = wallet[0] ?? null;
     base.recentDeposits = dep;
     base.recentWithdrawals = wd;
@@ -202,6 +250,62 @@ export class ChatCrmService {
         : null;
     }
     return base;
+  }
+
+  /**
+   * ¿Están el jugador y quien pregunta en la misma red?
+   *
+   * Se compara la **rama independiente** de cada uno —`null` para la red
+   * central y la dependiente— con la misma función que usa el ruteo
+   * (`CrmNetworkService.classify`), para que visibilidad y ruteo no puedan
+   * discrepar.
+   *
+   * Los tres casos:
+   *
+   * | jugador | quien pregunta | ¿ve la plata? |
+   * |---|---|---|
+   * | misma rama (o los dos centrales) | — | sí |
+   * | rama independiente A | rama B, o staff central | **no** — R6 |
+   * | red central | rama independiente | **no** — P1, cruza igual |
+   *
+   * El tercero no está en `D3` pero se protege igual: si un jugador de la red
+   * central le escribe al WhatsApp de un socio independiente, ese socio lo va a
+   * atender (`D2`) y **no tiene por qué ver su saldo**.
+   *
+   * ⚠️ Con redes independientes **anidadas**, esta función hereda el criterio de
+   * `getIndependentBranchAncestor`, que no ordena por cercanía. Es a propósito:
+   * el mismo criterio que ya usa el ruteo. Si algún día se cambia uno, cambiar
+   * los dos.
+   */
+  private async redDelJugador(
+    db: TenantDb,
+    jugadorId: string,
+    solicitanteId: string,
+  ): Promise<{ same: boolean; label: string | null }> {
+    const [ramaJugador, ramaSolicitante] = await Promise.all([
+      this.hierarchy.getIndependentBranchAncestor(db, jugadorId),
+      this.hierarchy.getIndependentBranchAncestor(db, solicitanteId),
+    ]);
+
+    // Cubre los dos casos de "misma red": la misma rama independiente, o los
+    // dos sin rama (central/dependiente, que para la plata es una sola).
+    if (ramaJugador === ramaSolicitante) return { same: true, label: null };
+
+    // El jugador es de la red central y pregunta alguien de una independiente.
+    // No se nombra la red del casino: no hay nada que aclararle.
+    if (!ramaJugador) return { same: false, label: null };
+
+    const socio = (
+      await db
+        .select({ username: users.username, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, ramaJugador))
+        .limit(1)
+    )[0];
+    return {
+      same: false,
+      label: socio?.displayName ?? socio?.username ?? null,
+    };
   }
 
   // ── Notas ───────────────────────────────────────────────────────────────

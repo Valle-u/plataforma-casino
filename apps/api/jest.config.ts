@@ -69,6 +69,11 @@ const config: Config = {
   globalSetup: '<rootDir>/src/test/setup/global-setup.ts',
   globalTeardown: '<rootDir>/src/test/setup/global-teardown.ts',
 
+  // Env que hay que fijar ANTES de que se importe la app: hay flags que se
+  // leen una sola vez, al cargar el módulo, y para cuando corre un `beforeAll`
+  // la decisión ya está tomada. Ver el archivo.
+  setupFiles: ['<rootDir>/src/test/setup/env.ts'],
+
   // Orden determinista de archivos (alfabético por path). Sin esto, jest
   // elige heurísticamente y la contaminación cross-suite es no determinística.
   testSequencer: '<rootDir>/src/test/setup/sequencer.ts',

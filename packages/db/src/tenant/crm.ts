@@ -42,6 +42,20 @@ export const crmContacts = pgTable(
   'crm_contacts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * **De qué bandeja es esta ficha. `NULL` = central.**
+     *
+     * Es lo que hace cierto **D6**: el mismo teléfono tiene **una ficha por
+     * dueño de canal**. Si Juan le escribe al WhatsApp de su cajero y también
+     * al del casino, hay dos filas acá — que pueden apuntar al mismo `user_id`,
+     * porque lo que se comparte es el **jugador**, no la conversación.
+     *
+     * Mismo criterio que `crm_channels.owner_user_id`, incluida la advertencia
+     * sobre `set null`.
+     */
+    ownerUserId: uuid('owner_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     /** FK al jugador si ya se registró; null = lead anónimo/externo. */
     userId: uuid('user_id').references(() => users.id, {
       onDelete: 'set null',
@@ -69,6 +83,18 @@ export const crmContacts = pgTable(
   (t) => ({
     phoneIdx: index('crm_contacts_phone_idx').on(t.phone),
     userIdx: index('crm_contacts_user_idx').on(t.userId),
+    /**
+     * La búsqueda de D6 al llegar un mensaje: *el contacto de ESTA bandeja con
+     * ESTE teléfono*. El orden importa — `(dueño, teléfono)` sirve para esa
+     * consulta **y** para listar una bandeja; `(teléfono, dueño)` sólo para la
+     * primera.
+     *
+     * No es `unique`: el mismo teléfono existe a propósito en varias bandejas.
+     */
+    ownerPhoneIdx: index('crm_contacts_owner_phone_idx').on(
+      t.ownerUserId,
+      t.phone,
+    ),
   }),
 );
 
@@ -76,15 +102,43 @@ export const crmContacts = pgTable(
  * Instancia de canal. Hoy una fila `web-livechat` por tenant; a futuro una por
  * número de WhatsApp, etc. `type` ∈ web-livechat|whatsapp|sms|telegram|email.
  */
-export const crmChannels = pgTable('crm_channels', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  type: text('type').notNull(),
-  config: jsonb('config').notNull().default({}),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const crmChannels = pgTable(
+  'crm_channels',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: text('type').notNull(),
+    /**
+     * **De qué panel es este canal. `NULL` = central** (del casino).
+     *
+     * Es la **LEY D1**: un número de WhatsApp o un bot de Telegram pertenece a
+     * un panel concreto —el socio, un distribuidor, un cajero—, no al casino en
+     * general. Y de acá sale casi todo lo demás: quién atiende lo que entra por
+     * este canal (D2), de quién es un desconocido que escribe (D5), y de quién
+     * cuelga un jugador que se da de alta desde acá (D9).
+     *
+     * Una sola columna nullable, no `owner_user_id` + `is_central`: con dos se
+     * pueden escribir estados imposibles (central **y** con dueño); con una,
+     * ese estado no se puede ni representar.
+     *
+     * ⚠️ `set null` significa que si se borrara el usuario dueño, **el canal
+     * pasaría a ser central en silencio** — o sea, sus conversaciones a la
+     * bandeja del staff. Hoy no es un riesgo real porque los usuarios **no se
+     * borran**, se desactivan (`users.status`). Si algún día se agrega el
+     * borrado duro, esto hay que revisarlo contra R6.
+     */
+    ownerUserId: uuid('owner_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    config: jsonb('config').notNull().default({}),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    ownerIdx: index('crm_channels_owner_idx').on(t.ownerUserId),
+  }),
+);
 
 /**
  * Conversación (hilo CONTINUO por contacto y canal) con estados por tramo.

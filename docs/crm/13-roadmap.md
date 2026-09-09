@@ -65,19 +65,23 @@ Sobre el livechat que ya funciona, sin canales nuevos.
 
 | | Qué | Doc |
 |---|---|---|
-| 1.1 | `owner_user_id` en `crm_contacts` + migrar los que hay | [`02`](02-modelo-de-datos.md) |
-| 1.2 | `owner_user_id` en `crm_channels` | [`02`](02-modelo-de-datos.md) |
-| 1.3 | 🔴 **`getContext` filtrado por red** | [`08`](08-permisos.md) |
+| 1.1 | ~~`owner_user_id` en `crm_contacts` + migrar los que hay~~ | ✅ **hecho** (migración `0112`) |
+| 1.2 | ~~`owner_user_id` en `crm_channels`~~ | ✅ **hecho** (migración `0112`) |
+| 1.3 | ~~🔴 `getContext` filtrado por red~~ | ✅ **hecho el 2026-09-08** |
 | 1.4 | Cerrar / marcar pendiente / reabrir | [`06`](06-operacion-diaria.md) |
 | 1.5 | El aviso de derivación (D8) | [`05`](05-ruteo-y-bandejas.md) |
 | 1.6 | Alta de jugador desde el chat (D9) | [`07`](07-crear-usuarios.md) |
 | 1.7 | El cartel de red en la lista y en la ficha | [`06`](06-operacion-diaria.md) |
 | 1.8 | Los seis tests de aislamiento | [`08`](08-permisos.md) |
 
-**El 1.3 no es opcional.** Hoy `getContext` devuelve saldo, depósitos y retiros
-**sin mirar de qué red es** el jugador. No filtra nada porque el ruteo lo hace
-inalcanzable — pero **D3 abre esa puerta**, y el día que exista un canal central
-el staff ve la plata de otra red. Es **R6**.
+**El 1.3 ya está hecho** (2026-09-08). `getContext` compara la rama
+independiente del jugador contra la de quien pregunta y, si no coinciden, **las
+consultas de plata ni se corren**: devuelve identidad y el cartel de red, nada
+más.
+
+Cubre los tres cruces —staff central → red independiente, independiente → otra
+independiente, e independiente → red central— con seis tests, verificados
+rompiendo el filtro a propósito para confirmar que fallan.
 
 **Decisiones que hay que tomar en esta etapa** (ninguna está tomada):
 

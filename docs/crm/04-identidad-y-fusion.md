@@ -154,19 +154,17 @@ operación no**.
 > vínculo al jugador (D4), que dice a qué red pertenece sin contar nada de lo que
 > se habló.
 
-### 🔴 Esto hoy no está implementado
+### ✅ Implementado el 2026-09-08
 
-`chat-crm.service.ts` arma la ficha del contacto con **saldo, últimos 5 depósitos
-y últimos 5 retiros, sin ninguna comprobación de red**.
+Hasta el 2026-09-08, `chat-crm.service.ts` armaba la ficha con **saldo, últimos 5
+depósitos y últimos 5 retiros, sin ninguna comprobación de red**. No filtraba
+nada en la práctica porque el ruteo lo hacía inalcanzable, pero **D3 abre esa
+puerta a propósito**.
 
-Hoy no filtra nada porque el ruteo lo hace inalcanzable: el único canal es el
-widget web y las conversaciones de un jugador independiente van siempre a su
-operador directo.
-
-**Pero D3 abre esa puerta a propósito.** El día que exista el WhatsApp central,
-el staff va a poder abrir esa ficha — y con el código actual va a ver la plata.
-
-**Arreglarlo es requisito del primer canal externo, no algo para después.**
+**Ya está arreglado**: si la rama independiente del jugador no coincide con la de
+quien pregunta, las consultas de plata ni se corren y la respuesta trae sólo
+identidad y el cartel de red. Seis tests en `crm-context-r6.e2e.ts`, verificados
+rompiendo el filtro a propósito para confirmar que fallan.
 
 ---
 

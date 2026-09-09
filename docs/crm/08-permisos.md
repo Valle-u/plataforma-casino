@@ -55,21 +55,32 @@ depósitos, últimos 5 retiros y el operador del que cuelga.
 | Conversaciones de la otra bandeja | ❌ **D6** | ❌ **D6** |
 | Que esas conversaciones existan | ❌ **D7** | ❌ **D7** |
 
-### 🔴 Hoy esto no está implementado
+### ✅ Implementado el 2026-09-08
 
 `chat-crm.service.ts` devuelve `wallet`, `recentDeposits` y `recentWithdrawals`
 **sin ninguna comprobación de red**.
 
-**Hoy no filtra nada**, porque el ruteo lo hace inalcanzable: el único canal es el
-widget web y las conversaciones de un jugador independiente van siempre a su
-operador directo, nunca a la bandeja central.
+**Así era hasta el 2026-09-08.** No filtraba nada en la práctica porque el ruteo
+lo hacía inalcanzable —el único canal es el widget web y las conversaciones de un
+jugador independiente van siempre a su operador directo— pero **D3 abre esa
+puerta a propósito**, así que era requisito del primer canal externo.
 
-**Pero D3 abre esa puerta a propósito.** El día que exista un WhatsApp central, el
-staff va a poder abrir la ficha de un jugador de otra red — y con el código actual
-va a ver su plata.
+**Ya está arreglado.** `getContext` recibe quién pregunta y compara su rama
+independiente contra la del jugador. Si no coinciden, **las consultas de plata ni
+se corren**: no alcanza con no devolver el dato si igual se trajo, porque lo que
+se lee puede filtrarse después por un log o un campo nuevo.
 
-**Es requisito del primer canal externo.** No es deuda para después: es la
-condición para prender WhatsApp o Telegram en un canal central.
+Cubre los tres cruces, no sólo el de D3:
+
+| jugador | quien pregunta | ¿ve la plata? |
+|---|---|---|
+| red independiente A | staff central | **no** — R6 |
+| red independiente A | red independiente B | **no** — P1 |
+| red central | red independiente | **no** — P1 |
+
+El tercero no está en D3 y se protege igual: si un jugador de la red central le
+escribe al WhatsApp de un socio independiente, ese socio lo va a atender (D2) y
+**no tiene por qué ver su saldo**.
 
 ### Cómo se arregla
 
@@ -153,7 +164,7 @@ Un fallo de permisos acá no se ve: se filtra. Mirando la pantalla no alcanza.
 1. Un mensaje al canal de Pérez **nunca** aparece en la bandeja del casino.
 2. Un mensaje al canal central **nunca** aparece en la de Pérez.
 3. El staff central, sobre un jugador independiente, **no recibe** `wallet`,
-   `recentDeposits` ni `recentWithdrawals`. ← **el que falta hoy**
+   `recentDeposits` ni `recentWithdrawals`. ← ✅ **hecho** (`crm-context-r6.e2e.ts`)
 4. Un operador dependiente recibe **403** en todo el CRM.
 5. Un socio independiente **no ve** ninguna conversación de sus cajeros.
 6. El aviso de derivación **no contiene** ningún texto del mensaje original.

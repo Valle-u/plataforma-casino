@@ -16,8 +16,8 @@ Nueve tablas, creadas junto con el livechat y **en producción**:
 
 | Tabla | Qué guarda | Estado |
 |---|---|---|
-| `crm_contacts` | La persona vista desde una bandeja | ⚠️ le falta dueño |
-| `crm_channels` | Cada instancia de canal | ⚠️ le falta dueño y no soporta secretos |
+| `crm_contacts` | La persona vista desde una bandeja | ✅ con dueño desde `0112` |
+| `crm_channels` | Cada instancia de canal | ✅ con dueño desde `0112` · ⚠️ secretos sin resolver |
 | `crm_conversations` | El hilo, con su estado y no leídos | ✅ sirve como está |
 | `crm_messages` | Cada mensaje, con adjuntos | ✅ sirve como está |
 | `crm_notes` | Nota interna sobre un contacto | ✅ |
@@ -221,9 +221,9 @@ Vale la pena decirlo, porque es la mayor parte:
 
 | # | Cambio | Tamaño | Bloquea a |
 |---|---|---|---|
-| 1 | `owner_user_id` en `crm_channels` | chico | todo canal externo |
+| 1 | ~~`owner_user_id` en `crm_channels`~~ | ✅ hecho · `0112` | — |
 | 2 | Secretos de canal | **decisión abierta** | todo canal externo |
-| 3 | `owner_user_id` en `crm_contacts` + migración | mediano | D6, o sea todo |
+| 3 | ~~`owner_user_id` en `crm_contacts` + migración~~ | ✅ hecho · `0112` | — |
 | 4 | Aviso de derivación (mensaje `system`) | chico | D8 |
 | 5 | Cierre de red auditado | **grande y delicado** | D14 |
 | 6 | Retención de adjuntos | mediano | D15 |

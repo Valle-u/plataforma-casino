@@ -66,7 +66,13 @@ export class ChatCrmController {
   ) {
     const db = this.db(req);
     const contact = await this.crm.assertAccess(db, contactId, this.owner(req));
-    return this.crm.getContext(db, contact);
+    // El acceso al contacto se autoriza por la BANDEJA (`owner`), pero qué se
+    // ve de la ficha se decide por QUIÉN pregunta: es su red la que define si
+    // puede ver la plata (R6 / P1). Para el staff central son lo mismo; para un
+    // empleado de un socio independiente, no.
+    const solicitanteId = req.tenantUser?.id;
+    if (!solicitanteId) throw new ForbiddenException('No tenés acceso al soporte.');
+    return this.crm.getContext(db, contact, solicitanteId);
   }
 
   // ── Notas ─────────────────────────────────────────────────────────────────
