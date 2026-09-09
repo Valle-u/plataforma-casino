@@ -1,7 +1,13 @@
 # Runbook — cerrar el acceso público a los documentos privados
 
-> Escrito el 2026-09-06. **Ampliado el 2026-09-08** para incluir los adjuntos
-> del chat. **El código ya está; falta desplegarlo.**
+> Escrito el 2026-09-06. Ampliado el 2026-09-08 para incluir los adjuntos del
+> chat. **✅ TERMINADO el 2026-09-09** — los cinco pasos, verificados en
+> producción. Detalle abajo.
+>
+> Se conserva completo porque **describe un procedimiento que se va a repetir**:
+> rotar el secreto, agregar una carpeta privada nueva, o rehacer esto en otro
+> tenant. Lo que cambió es el estado, no las instrucciones.
+>
 > Contexto y por qué: `docs/12-seguridad-compliance.md`, al final.
 
 ## Qué se está arreglando
@@ -66,19 +72,46 @@ circulación. Lo único cacheado es la marca, y corresponde que siga.
 coincidir en el driver de storage. La advertencia sobre el `git merge` que
 devolvía la versión vieja **ya no aplica**.
 
-### Lo único que falta
+### ✅ Terminado el 2026-09-09
 
-**El paso 5: `REQUIRE_SIGNED_PROOFS = "1"`.** Hasta que se prenda, una URL sin
-firma **sigue abriendo** el archivo. Todo lo anterior preparó el terreno; esto
-es lo que cierra la puerta.
+**El paso 5 también está hecho.** `REQUIRE_SIGNED_PROOFS = "1"`, Worker versión
+`68365531`. Una URL sin firma ya no abre.
 
-Está aparte porque es el único paso que puede **cortar un flujo de plata**: si
-algo quedara sin firmar, el operador deja de ver los comprobantes y no puede
-aprobar depósitos. Se revierte volviéndolo a `"0"` y desplegando.
+Verificado de punta a punta, con un archivo de prueba que se borró después:
 
-> Hoy es de bajo riesgo comprobarlo, justamente porque **no hay comprobantes en
-> producción**: no hay nada que se pueda romper para nadie. Cuando empiecen a
-> entrar depósitos con comprobante, prenderlo pasa a tener consecuencias.
+| | |
+|---|---|
+| Comprobante **sin** firma | `403 falta la firma` |
+| Comprobante **con** firma generada por la API | `200` + contenido correcto |
+| Marca del casino | `200 public, immutable` |
+
+> **El 403 importa más de lo que parece: no fue un 500.** Si el Worker no tuviera
+> el secreto cargado, el código responde `500 Server misconfigured`. Un 403
+> prueba que la llave está puesta.
+>
+> Y el 200 con la firma que generó **la API** cierra la otra mitad: las dos
+> puntas usan el mismo secreto. Es lo que este runbook marca como *"el error más
+> fácil de cometer y el más difícil de ver"*.
+
+**Lo que se encontró en el camino, y casi rompe todo:** el Worker **no tenía**
+`CF_WORKER_SIGNING_SECRET`. La API sí. Prender el flag habría devuelto 500 en
+todos los archivos privados. Se generó uno nuevo y se cargó en los dos lados —
+rotar salió gratis porque no había ninguna URL firmada en circulación.
+
+### 🔴 Pendiente aparte: tres secretos con nombre de valor
+
+`wrangler secret list` del Worker muestra tres entradas cuyo **nombre** tiene
+forma de credencial (64 y 32 caracteres hexadecimales). Lo más probable es que
+alguna vez se haya corrido `wrangler secret put <el-valor>` y el valor haya
+quedado como nombre.
+
+**Los nombres de los secretos NO son secretos:** los lista cualquiera con acceso
+a la cuenta, en texto plano.
+
+Si alguno es una credencial real hay que **darla por comprometida y rotarla**, no
+sólo borrar la entrada. Uno tiene 32 caracteres, la forma de un token de subida:
+conviene rotar también `CF_WORKER_UPLOAD_TOKEN`.
+
 
 ---
 ## ⚠️ El orden no es negociable
