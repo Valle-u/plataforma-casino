@@ -129,7 +129,29 @@ export const crmChannels = pgTable(
     ownerUserId: uuid('owner_user_id').references(() => users.id, {
       onDelete: 'set null',
     }),
+    /**
+     * Configuración del canal, según el tipo.
+     *
+     * ⚠️ **El token del bot va acá y va CIFRADO** (**D20**,
+     * `apps/api/src/common/secreto-cifrado.ts`). Es la credencial que deja
+     * actuar **como** el bot, y por **D13** es del socio, no nuestra. Nunca
+     * guardar el valor en claro.
+     */
     config: jsonb('config').notNull().default({}),
+    /**
+     * Lo que el proveedor nos devuelve para probar que el mensaje es suyo.
+     *
+     * Telegram manda en cada update el `secret_token` que se le registró en
+     * `setWebhook`, en el header `X-Telegram-Bot-Api-Secret-Token`. Es lo único
+     * que distingue un update real de cualquiera que le pegue a la URL.
+     *
+     * ⚠️ **No confundir con el token del bot.** Éste sólo sirve para verificar
+     * **quién nos escribe**: si se filtra, alguien puede mandarnos mensajes
+     * falsos — no leer los reales ni escribir como el bot. Por eso va en su
+     * propia columna y sin cifrar: se compara en cada request entrante y una
+     * columna se lee sin desarmar un `jsonb`.
+     */
+    webhookSecret: text('webhook_secret'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -137,6 +159,60 @@ export const crmChannels = pgTable(
   },
   (t) => ({
     ownerIdx: index('crm_channels_owner_idx').on(t.ownerUserId),
+  }),
+);
+
+/**
+ * Lo que llegó de un canal externo, **tal cual, antes de interpretarlo**.
+ *
+ * ## Por qué existe
+ *
+ * El orden al recibir un webhook es: **guardar el crudo → responder 200 →
+ * recién ahí procesar**. Si el proceso falla —o el contenedor se reinicia en el
+ * medio— el mensaje no se perdió: quedó acá y se puede reprocesar.
+ *
+ * Sin esta tabla, un reinicio en el momento equivocado **hace desaparecer el
+ * mensaje de una persona real**, y no queda rastro de que existió.
+ *
+ * Es además el único lugar donde se puede ver qué mandó el proveedor cuando
+ * algo no cuadra: un `body` distinto al esperado no se puede depurar contra lo
+ * que quedó interpretado.
+ */
+export const crmRawEvents = pgTable(
+  'crm_raw_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * De qué canal entró.
+     *
+     * `restrict` y no `cascade`: borrar un canal no puede llevarse la evidencia
+     * de lo que pasó por él.
+     */
+    channelId: uuid('channel_id')
+      .notNull()
+      .references(() => crmChannels.id, { onDelete: 'restrict' }),
+    /**
+     * El id del proveedor, para cortar duplicados **antes** de procesar.
+     * Nullable porque no todo evento trae uno.
+     */
+    externalId: text('external_id'),
+    /** El cuerpo entero, sin tocar. */
+    payload: jsonb('payload').notNull(),
+    /**
+     * `NULL` = todavía no se procesó.
+     *
+     * Buscar los `NULL` viejos es como se detecta que algo se está trabando —
+     * candidato natural a un renglón del parte diario.
+     */
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    /** Por qué falló, si falló. Se guarda para poder reprocesar a mano. */
+    error: text('error'),
+    receivedAt: timestamp('received_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pendientesIdx: index('crm_raw_events_pendientes_idx').on(t.receivedAt),
   }),
 );
 
@@ -198,7 +274,21 @@ export const crmMessages = pgTable(
     body: text('body'),
     /** Array de { storageKey, url, mime, sizeBytes }. */
     attachments: jsonb('attachments').notNull().default([]),
-    /** Id externo del mensaje (ej. WhatsApp) para idempotencia. */
+    /**
+     * Id del mensaje en el proveedor. **Es la idempotencia.**
+     *
+     * Telegram y Meta **reintentan** si tardamos en responder o si respondemos
+     * algo que no sea 200. Sin unicidad, un reintento crea el mensaje dos veces
+     * y el operador ve al jugador escribiendo duplicado.
+     *
+     * ⚠️ Chequearlo desde el código **no alcanza**: dos reintentos simultáneos
+     * pasan los dos el `SELECT` antes de que cualquiera inserte. Por eso hay un
+     * **índice único parcial** en la base (migración `0113`), que es lo único
+     * que no tiene carrera.
+     *
+     * Parcial porque los mensajes del widget web no tienen id externo y son
+     * todos `NULL`.
+     */
     channelMessageId: text('channel_message_id'),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     readAt: timestamp('read_at', { withTimezone: true }),
@@ -318,3 +408,5 @@ export type CrmTag = typeof crmTags.$inferSelect;
 export type CrmContactTag = typeof crmContactTags.$inferSelect;
 export type CrmTemplate = typeof crmTemplates.$inferSelect;
 export type CrmTimelineEvent = typeof crmTimelineEvents.$inferSelect;
+export type CrmRawEvent = typeof crmRawEvents.$inferSelect;
+export type NewCrmRawEvent = typeof crmRawEvents.$inferInsert;

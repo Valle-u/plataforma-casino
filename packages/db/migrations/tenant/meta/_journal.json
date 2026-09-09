@@ -799,6 +799,13 @@
       "when": 1789301400000,
       "tag": "0112_crm_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1789301500000,
+      "tag": "0113_crm_canales_externos",
+      "breakpoints": true
     }
   ]
 }
