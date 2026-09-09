@@ -85,9 +85,11 @@ rompiendo el filtro a propósito para confirmar que fallan.
 
 **Decisiones que hay que tomar en esta etapa** (ninguna está tomada):
 
-- 🔴 **Dónde viven los secretos de canal** ([`02`](02-modelo-de-datos.md) punto
-  2). No decidirlo es elegir texto plano — de credenciales que, por **D13**, son
-  de los socios.
+- ~~Dónde viven los secretos de canal.~~ ✅ **D20** (2026-09-09): cifrados en la
+  base con AES-256-GCM, clave en el entorno. Construido y probado; falta la
+  pantalla que lo use (2.1). ⚠️ **Antes del primer canal en producción hay que
+  generar la clave y cargarla en Dokploy** — sin ella no se puede vincular nada,
+  que es el comportamiento buscado.
 - ~~Cómo se le da la contraseña a un jugador creado desde el chat.~~ ✅
   Resuelto: se genera y se muestra una vez en el panel. Queda pendiente que la
   plataforma sepa **forzar el cambio al primer ingreso**, que hoy no existe.

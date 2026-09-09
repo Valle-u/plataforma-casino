@@ -772,6 +772,74 @@ Con las tres adentro, la v1 es grande. **`13-roadmap.md` es el lugar para
 recortar**, ya con el peso de cada una a la vista.
 
 ---
+---
+
+## Bloque 6 — Una decisión que quedó abierta
+
+**Decidida el 2026-09-09**, al desbloquear la etapa 2.
+
+---
+
+### D20 · Los secretos de canal van cifrados en la base
+
+Los tokens de canal —el bot de Telegram, el acceso de WhatsApp— se guardan
+**cifrados con AES-256-GCM**. La clave vive en el entorno
+(`CHANNEL_SECRET_KEY`), como el resto de los secretos de la plataforma.
+
+**Por qué pesa más que las otras credenciales.** Por **D13** esos tokens **son de
+los socios, no nuestros**: una filtración expone credenciales de terceros que
+confiaron en la plataforma. Las credenciales de proveedor que hoy están en texto
+plano son nuestras y el riesgo es nuestro; éstas no.
+
+**Y hay un camino de salida concreto:** el backup de producción **sale del VPS
+todos los días** (`0 6 * * *` → R2, ver `../24-entornos-deploy.md`). Un token en
+texto plano en la base es un token en texto plano **en otro sistema, con otros
+accesos**, cada mañana.
+
+**Qué protege y qué no.** Protege contra que alguien **lea** la base: un dump, un
+backup, un `SELECT` de más. **No** protege contra alguien que comprometa la
+aplicación corriendo — ahí tiene la clave. No es una caja fuerte: es la
+diferencia entre *"se filtró la base"* y *"se filtró la base **y** las
+credenciales de mis socios"*.
+
+**Se descartó:**
+
+- *Texto plano, como los proveedores.* Cero trabajo y consistente con lo que ya
+  existe. Se descartó por lo de arriba: el riesgo no es nuestro y el backup se
+  va del servidor todos los días.
+- *El secreto en el gestor de Dokploy, con una referencia en la base.* Sin
+  cifrado propio que mantener — pero **por D13 el alta de un canal la hace el
+  socio**, así que cada bot vinculado obligaría al dueño del casino a cargar una
+  variable a mano y redesplegar. Deja de ser autoservicio, que es justo lo que
+  D1 y D13 vinieron a habilitar.
+
+**Las tres decisiones que quedaron dentro de la implementación**
+(`apps/api/src/common/secreto-cifrado.ts`):
+
+1. **Sin clave configurada, `cifrar()` tira.** No hay fallback a texto plano. Un
+   fallback silencioso es peor que un error: nadie se entera hasta que se filtra
+   la base, y para entonces ya está en un backup.
+2. **GCM, no cifrado a secas.** Autentica además de cifrar: si alguien edita la
+   fila, descifrar **falla** en vez de devolver bytes cualquiera que el sistema
+   intentaría usar como token.
+3. **`CHANNEL_SECRET_KEY_PREVIOUS`** para descifrar durante una rotación. Sin
+   ese segundo intento, rotar la clave significa dejar ilegible todo lo
+   guardado — o sea, rotar no sería posible en la práctica.
+
+**Lo que NO se hizo, a propósito:** migrar las credenciales de proveedor que hoy
+están en texto plano. Es un flujo de plata que se usa todos los días y merece su
+propio cambio. El mecanismo queda listo para cubrirlas.
+
+**Lo que falta para usarlo:** la pantalla de vincular un canal (etapa 2.1). El
+cifrado está construido y probado —19 tests— pero todavía no tiene quien lo
+llame. Cuando exista, `crm_channels.config` guarda el token ya cifrado.
+
+**⚠️ Antes del primer canal en producción:** generar la clave
+(`openssl rand -hex 32`) y cargarla en Dokploy. Sin ella no se puede vincular
+ningún canal — que es el comportamiento buscado, pero conviene no descubrirlo en
+el momento.
+
+---
 
 ## Restricciones técnicas que acotan lo que se puede prometer
 

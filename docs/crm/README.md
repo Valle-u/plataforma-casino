@@ -9,11 +9,11 @@
 > escritos. **Lo que sigue es construir** — el orden está en
 > [`13-roadmap.md`](13-roadmap.md).
 >
-> **Tres decisiones quedaron abiertas** y hay que tomarlas durante la etapa 1:
-> dónde viven los secretos de canal ([`02`](02-modelo-de-datos.md) punto 2),
-> cómo se le entrega la contraseña a un jugador creado desde el chat
-> ([`07`](07-crear-usuarios.md)), y si las respuestas rápidas siguen siendo
-> compartidas entre bandejas ([`09`](09-plantillas-y-bots.md)).
+> **Las tres decisiones que quedaban abiertas se resolvieron.** Los secretos de
+> canal van cifrados en la base (**D20**), la contraseña de un alta desde el chat
+> se genera y se muestra una vez ([`07`](07-crear-usuarios.md)), y las respuestas
+> rápidas quedan compartidas entre bandejas hasta que moleste
+> ([`09`](09-plantillas-y-bots.md)).
 
 ---
 
