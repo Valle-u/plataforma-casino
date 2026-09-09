@@ -755,33 +755,74 @@ export class TenantUsersController {
       //     de ÉL, armando su red (relaciones _de_socio / _de_distribuidor /
       //     jugador_de_<rol>).
       let relationType: string | null = null;
+
+      // ── 1. De quién cuelga ────────────────────────────────────────────────
+      //
+      // Un `empleado` crea **en nombre de su operador**, no en el suyo: no
+      // arma una red propia, trabaja para la de otro.
+      //
+      // 🔴 **Acá estaba el bug, arreglado el 2026-09-09.** El chequeo era por
+      // CÓDIGO DE ROL:
+      //
+      //     actorIsCasaStaff = roles.includes('admin_tenant')
+      //                     || roles.includes('empleado')
+      //
+      // y a todo eso lo colgaba del **admin primario**. Pero los socios
+      // independientes también tienen empleados (**R7**), y ésos entraban por
+      // la misma rama: el jugador que creaba un empleado de Litoral terminaba
+      // colgado del admin del casino — o sea **fuera de la red independiente**,
+      // y con él las comisiones que generara.
+      //
+      // No rompía nada visible: el jugador se creaba, entraba y jugaba. Se
+      // descubre cuando una liquidación no cierra.
+      //
+      // Ahora el padre de un empleado sale de **su propia jerarquía**, que es
+      // justo el operador para el que trabaja. Para un empleado central ese
+      // operador ES el admin primario, así que ese caso no cambia.
       let parentUserId = actor.id;
+      if (
+        !actorRoleCodes.includes('admin_tenant') &&
+        actorRoleCodes.includes('empleado')
+      ) {
+        const suOperador = await this.hierarchy.getActiveParent(txDb, actor.id);
+        parentUserId =
+          suOperador?.parentUserId ??
+          // Un empleado sin jerarquía no debería existir; si aparece, cae al
+          // admin primario —que es donde estaba antes— en vez de colgar al
+          // nuevo usuario de sí mismo.
+          (await this.hierarchy.getPrimaryAdminUserId(txDb)) ??
+          actor.id;
+      }
 
-      const actorIsCasaStaff =
-        actorRoleCodes.includes('admin_tenant') ||
-        actorRoleCodes.includes('empleado');
+      // ── 2. La etiqueta, según el rol DEL PADRE ────────────────────────────
+      //
+      // Antes salía de los roles del ACTOR. Es lo mismo mientras el actor sea
+      // el padre —que es el caso de un socio, un distribuidor o un cajero— y
+      // deja de serlo justo cuando crea un empleado.
+      const parentRoleCodes =
+        parentUserId === actor.id
+          ? actorRoleCodes
+          : (await this.tenantUsersService.getRoles(txDb, parentUserId)).map(
+              (r) => r.code,
+            );
 
-      if (actorIsCasaStaff) {
-        // El admin es su propio parent; el empleado cuelga del admin primario.
-        const adminId = actorRoleCodes.includes('admin_tenant')
-          ? actor.id
-          : await this.hierarchy.getPrimaryAdminUserId(txDb);
-        if (adminId) {
-          parentUserId = adminId;
-          relationType =
-            dto.roleCode === 'empleado'
-              ? 'empleado'
-              : `${roleRelationBase(dto.roleCode)}_de_admin`;
-        }
+      if (parentRoleCodes.includes('admin_tenant')) {
+        // La Casa: todo lo suyo cuelga del admin con la convención
+        // `<rol>_de_admin`. El motor de comisiones excluye al admin, así que no
+        // genera comisiones (LEYES C intacta).
+        relationType =
+          dto.roleCode === 'empleado'
+            ? 'empleado'
+            : `${roleRelationBase(dto.roleCode)}_de_admin`;
       } else if (dto.roleCode === 'empleado') {
         relationType = 'empleado';
       } else if (dto.roleCode === 'usuario_final') {
-        relationType = playerParentRelation(actorRoleCodes);
+        relationType = playerParentRelation(parentRoleCodes);
       } else if (
         dto.roleCode === 'cajero' ||
         dto.roleCode === 'distribuidor'
       ) {
-        relationType = operatorParentRelation(dto.roleCode, actorRoleCodes);
+        relationType = operatorParentRelation(dto.roleCode, parentRoleCodes);
       }
 
       if (relationType) {
