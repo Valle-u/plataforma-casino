@@ -125,7 +125,7 @@ bandeja.
 > ⚠️ **Falta probarlo con un bot real.** Todo está verificado con tests, pero
 > Telegram va simulado en la suite: pegarle de verdad ataría los tests a una red
 > externa. La primera prueba con un bot vivo es la que confirma que el webhook
-> queda bien registrado desde .
+> queda bien registrado desde `crm-staging.miamihub.vip`.
 
 **Lo que Telegram enseña y hay que reflejar:** casi nunca da el teléfono, así que
 **D4 no funciona ahí**. Un contacto de Telegram nace como **lead**, y eso va a ser
