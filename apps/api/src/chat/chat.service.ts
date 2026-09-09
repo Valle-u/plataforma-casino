@@ -9,7 +9,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   crmChannels,
   crmContacts,
@@ -101,44 +101,94 @@ export class ChatService {
     return inserted[0]!.id;
   }
 
-  /** Contacto del jugador logueado (crm_contact con user_id). Lo crea si no. */
+  /**
+   * El contacto de un jugador **en una bandeja concreta**. Lo crea si no está.
+   *
+   * ⚠️ **La bandeja es parte de la identidad del contacto, no un filtro.** Por
+   * **D6** el mismo jugador tiene **una ficha por dueño de canal**: si Juan le
+   * escribe al WhatsApp de su cajero y también al del casino, son **dos filas**,
+   * que pueden apuntar al mismo `user_id` pero no comparten conversaciones,
+   * notas ni etiquetas.
+   *
+   * Buscar sólo por `user_id` —como hacía esto antes de la migración `0112`—
+   * devolvería la ficha de **otra** bandeja, y a partir de ahí todo lo que se
+   * escriba cae del lado equivocado.
+   *
+   * `ownerUserId === null` es la bandeja **central**, y hay que buscarlo con
+   * `IS NULL`: en SQL `null = null` no matchea nunca, así que un `eq()` acá
+   * crearía una ficha nueva en cada mensaje.
+   */
   async getOrCreateContactForUser(
     db: TenantDb,
     userId: string,
+    ownerUserId: string | null,
   ): Promise<string> {
     const existing = await db
       .select({ id: crmContacts.id })
       .from(crmContacts)
-      .where(eq(crmContacts.userId, userId))
+      .where(
+        and(
+          eq(crmContacts.userId, userId),
+          ownerUserId === null
+            ? isNull(crmContacts.ownerUserId)
+            : eq(crmContacts.ownerUserId, ownerUserId),
+        ),
+      )
       .limit(1);
     if (existing[0]) return existing[0].id;
     const inserted = await db
       .insert(crmContacts)
-      .values({ userId, isLead: false })
+      .values({ userId, ownerUserId, isLead: false })
       .returning({ id: crmContacts.id });
     return inserted[0]!.id;
   }
 
   /**
-   * Conversación ABIERTA (hilo continuo) del contacto en el canal web. Si no
-   * hay una sin resolver, crea una nueva asignada al operador directo.
+   * El hilo del contacto en un canal. **Uno solo, para siempre** (`D11`).
+   *
+   * Si la conversación estaba resuelta y la persona vuelve a escribir, **se
+   * reabre la misma**: no se crea otra. El operador ve todo lo que habló con
+   * esa persona de un vistazo, sin abrir nada.
+   *
+   * ## ⚠️ Antes esto creaba un hilo nuevo
+   *
+   * La consulta filtraba por `status <> 'resolved'`, así que una conversación
+   * resuelta no se encontraba y caía al `INSERT`. **No se notaba porque nada
+   * marcaba una conversación como resuelta** — la columna existía y ningún
+   * código la escribía. Al agregar esa acción (etapa 1.4), el bug habría
+   * aparecido solo: cada vuelta de un jugador abriría un hilo nuevo, que es
+   * exactamente lo que `D11` descartó.
+   *
+   * `ORDER BY created_at DESC` porque puede haber hilos duplicados de antes de
+   * este arreglo: se toma el más nuevo, y el resultado es determinista.
    */
   async getOrCreateOpenConversation(
     db: TenantDb,
     params: { contactId: string; channelId: string; operatorId: string | null },
   ): Promise<CrmConversation> {
-    const open = await db
+    const existente = await db
       .select()
       .from(crmConversations)
       .where(
         and(
           eq(crmConversations.contactId, params.contactId),
           eq(crmConversations.channelId, params.channelId),
-          ne(crmConversations.status, 'resolved'),
         ),
       )
+      .orderBy(desc(crmConversations.createdAt))
       .limit(1);
-    if (open[0]) return open[0];
+
+    const previa = existente[0];
+    if (previa && previa.status !== 'resolved') return previa;
+    if (previa) {
+      const reabierta = await db
+        .update(crmConversations)
+        .set({ status: 'open', updatedAt: new Date() })
+        .where(eq(crmConversations.id, previa.id))
+        .returning();
+      return reabierta[0]!;
+    }
+
     const inserted = await db
       .insert(crmConversations)
       .values({
@@ -332,6 +382,71 @@ export class ChatService {
     await db
       .update(crmConversations)
       .set({ unreadForOperator: 0 })
+      .where(eq(crmConversations.id, conversationId));
+  }
+
+  /**
+   * Cambia el estado de una conversación de la bandeja de `inboxOwnerId`.
+   *
+   * Los tres estados ya existían en la tabla y **nada los escribía**: la
+   * columna estaba puesta desde que se creó el livechat y ninguna acción la
+   * tocaba. Esto es esa acción.
+   *
+   *   `open`      alguien espera respuesta
+   *   `pending`   se respondió y se espera algo de afuera (un comprobante,
+   *               que se acredite una transferencia)
+   *   `resolved`  terminado — hasta que la persona vuelva a escribir, y ahí
+   *               **se reabre este mismo hilo** (`D11`)
+   *
+   * Resolver **marca leído**: el operador acaba de actuar sobre la
+   * conversación, dejarla con no-leídos sería mentir en el badge.
+   *
+   * El filtro por `assigned_operator_id` no es una comodidad: es lo que impide
+   * cerrar una conversación de otra bandeja sabiendo su id.
+   */
+  async setConversationStatus(
+    db: TenantDb,
+    params: {
+      conversationId: string;
+      inboxOwnerId: string;
+      status: 'open' | 'pending' | 'resolved';
+    },
+  ): Promise<CrmConversation | null> {
+    const filas = await db
+      .update(crmConversations)
+      .set({
+        status: params.status,
+        updatedAt: new Date(),
+        ...(params.status === 'resolved' ? { unreadForOperator: 0 } : {}),
+      })
+      .where(
+        and(
+          eq(crmConversations.id, params.conversationId),
+          eq(crmConversations.assignedOperatorId, params.inboxOwnerId),
+        ),
+      )
+      .returning();
+    return filas[0] ?? null;
+  }
+
+  /**
+   * Sube el no-leído del operador de una conversación.
+   *
+   * Existe por el aviso de derivación (`D8`), que es un mensaje `system`:
+   * `postMessage` **no toca ningún contador** para esos, porque un mensaje del
+   * sistema no es de nadie. Pero un aviso sí está dirigido al operador, y sin
+   * badge no lo vería nadie — que es exactamente lo que el aviso viene a
+   * evitar.
+   */
+  async bumpUnreadForOperator(
+    db: TenantDb,
+    conversationId: string,
+  ): Promise<void> {
+    await db
+      .update(crmConversations)
+      .set({
+        unreadForOperator: sql`${crmConversations.unreadForOperator} + 1`,
+      })
       .where(eq(crmConversations.id, conversationId));
   }
 

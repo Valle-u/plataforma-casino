@@ -68,8 +68,8 @@ Sobre el livechat que ya funciona, sin canales nuevos.
 | 1.1 | ~~`owner_user_id` en `crm_contacts` + migrar los que hay~~ | ✅ **hecho** (migración `0112`) |
 | 1.2 | ~~`owner_user_id` en `crm_channels`~~ | ✅ **hecho** (migración `0112`) |
 | 1.3 | ~~🔴 `getContext` filtrado por red~~ | ✅ **hecho el 2026-09-08** |
-| 1.4 | Cerrar / marcar pendiente / reabrir | [`06`](06-operacion-diaria.md) |
-| 1.5 | El aviso de derivación (D8) | [`05`](05-ruteo-y-bandejas.md) |
+| 1.4 | ~~Cerrar / marcar pendiente / reabrir~~ | ✅ **hecho** |
+| 1.5 | ~~El aviso de derivación (D8)~~ | ✅ **hecho** |
 | 1.6 | Alta de jugador desde el chat (D9) | [`07`](07-crear-usuarios.md) |
 | 1.7 | El cartel de red en la lista y en la ficha | [`06`](06-operacion-diaria.md) |
 | 1.8 | Los seis tests de aislamiento | [`08`](08-permisos.md) |

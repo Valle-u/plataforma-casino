@@ -171,9 +171,13 @@ export class ChatGateway
         data.userId,
       );
       const channelId = await this.chat.getOrCreateWebChannel(data.db);
+      // El contacto es de una bandeja (D6), así que hay que decir de cuál. Es
+      // la misma que atiende: `resolveContactOwner` sólo traduce el id del
+      // admin principal a `null`, que es como se representa la central.
       const contactId = await this.chat.getOrCreateContactForUser(
         data.db,
         data.userId,
+        await this.net.resolveContactOwner(data.db, operatorId),
       );
       const conv = await this.chat.getOrCreateOpenConversation(data.db, {
         contactId,

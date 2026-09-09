@@ -64,7 +64,15 @@ const RONDAS_MINIMAS = 100;
  *
  * ## Qué cuenta como "sin responder"
  *
- * La conversación **no está resuelta** y su **último mensaje es del contacto**.
+ * La conversación **no está resuelta** y su último mensaje **no es del
+ * operador**. O sea: escribió el contacto y nadie contestó, o entró un **aviso
+ * de derivación** (`D8`) que el operador todavía no atendió.
+ *
+ * Los avisos cuentan a propósito. Son mensajes `system`, y si se contaran sólo
+ * los `inbound` un aviso ignorado no aparecería en ningún lado — que es
+ * exactamente el agujero que dejan `D8` y `D10` juntos: el jugador se queja al
+ * central, la queja no viaja, el socio no ve nada, y el cajero puede ignorar el
+ * aviso igual que ignoró al jugador. Este renglón es lo único que lo muestra.
  *
  * ⚠️ **A propósito NO se usa `unread_for_operator`.** Ese contador se limpia
  * cuando el operador **abre** la conversación (`markReadForOperator`), no
@@ -96,7 +104,7 @@ export const CONSULTA_CHATS_SIN_RESPONDER = `
      LIMIT 1
   ) m
   WHERE c.status <> 'resolved'
-    AND m.direction = 'inbound'
+    AND m.direction <> 'outbound'
 `;
 
 /** El renglón del parte, a partir de lo que devolvió la consulta. */

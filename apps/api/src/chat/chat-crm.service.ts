@@ -9,6 +9,7 @@
  */
 
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -32,6 +33,9 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { ChatService } from './chat.service';
+import { CrmNetworkService } from './crm-network.service';
+import { textoDelAviso } from './aviso-derivacion';
 
 export interface ContactContext {
   contact: {
@@ -81,7 +85,151 @@ interface MovementRow {
 
 @Injectable()
 export class ChatCrmService {
-  constructor(private readonly hierarchy: UserHierarchyService) {}
+  constructor(
+    private readonly hierarchy: UserHierarchyService,
+    private readonly chat: ChatService,
+    private readonly net: CrmNetworkService,
+  ) {}
+
+  /**
+   * Avisarle al operador de un jugador que escribió a otra bandeja (**D8**).
+   *
+   * ## Derivar es avisar, no mandar la conversación
+   *
+   * A la otra bandeja llega **quién escribió y cuándo**. Ni una palabra del
+   * contenido. Y no es una restricción arbitraria: por **D6** el contacto de
+   * esta bandeja y el de la otra son **dos fichas distintas**, así que nunca
+   * hubo una conversación que mover. Lo que se llamaba "derivar" era, en los
+   * hechos, *copiar*.
+   *
+   * Hay además una razón de producto: si el cajero leyera la queja que el
+   * jugador hizo **sobre él**, el jugador dejaría de escribirle al casino. Y
+   * ahí se pierde la única señal que el casino tiene sobre cómo se atiende en
+   * las redes independientes.
+   *
+   * El texto lo arma `textoDelAviso`, que **no recibe el mensaje** — su firma es
+   * lo que garantiza que no se pueda filtrar.
+   *
+   * ## A quién le llega
+   *
+   * Al **operador directo** del jugador, que es a quien el ruteo ya le asigna
+   * todo lo suyo. No al socio de esa red: por **D10** un socio no ve las
+   * conversaciones de sus cajeros, y un aviso no es la excepción.
+   */
+  async notifyDirectOperator(
+    db: TenantDb,
+    params: {
+      contact: CrmContact;
+      /** La bandeja desde la que se avisa (`crmInboxOwnerId`). */
+      inboxOwnerId: string;
+    },
+  ): Promise<{ operatorId: string; conversationId: string }> {
+    const { contact, inboxOwnerId } = params;
+
+    if (!contact.userId) {
+      throw new BadRequestException({
+        message: 'Este contacto todavía no está vinculado a ningún jugador.',
+        error: 'CONTACT_NOT_LINKED',
+      });
+    }
+
+    const parent = await this.hierarchy.getActiveParent(db, contact.userId);
+    if (!parent?.parentUserId) {
+      throw new BadRequestException({
+        message: 'Este jugador no cuelga de ningún operador.',
+        error: 'PLAYER_HAS_NO_OPERATOR',
+      });
+    }
+
+    // La BANDEJA del operador directo, que no siempre es él mismo: los
+    // operadores de la red dependiente no tienen acceso al CRM, así que a sus
+    // jugadores los atiende el staff central. Sin esta traducción el aviso
+    // caería en una bandeja que nadie puede abrir.
+    const bandejaDestino = await this.net.resolveInboxOwner(
+      db,
+      parent.parentUserId,
+    );
+    if (!bandejaDestino) {
+      throw new BadRequestException({
+        message: 'El operador de este jugador no tiene bandeja de soporte.',
+        error: 'OPERATOR_HAS_NO_INBOX',
+      });
+    }
+
+    if (bandejaDestino === inboxOwnerId) {
+      throw new BadRequestException({
+        message: 'Este jugador ya lo atendés vos: no hay a quién avisarle.',
+        error: 'SAME_INBOX',
+      });
+    }
+
+    const [ownerDestino, origen] = await Promise.all([
+      this.net.resolveContactOwner(db, bandejaDestino),
+      this.etiquetaDeBandeja(db, inboxOwnerId),
+    ]);
+
+    const canalId = await this.chat.getOrCreateWebChannel(db);
+    const contactoDestino = await this.chat.getOrCreateContactForUser(
+      db,
+      contact.userId,
+      ownerDestino,
+    );
+    const conv = await this.chat.getOrCreateOpenConversation(db, {
+      contactId: contactoDestino,
+      channelId: canalId,
+      operatorId: bandejaDestino,
+    });
+
+    await this.chat.postMessage(db, {
+      conversationId: conv.id,
+      direction: 'system',
+      senderUserId: null,
+      body: textoDelAviso({
+        nombre: await this.nombreDelContacto(db, contact),
+        cuando: new Date(),
+        origen,
+      }),
+    });
+    // `postMessage` no toca contadores para los `system`, y sin badge el aviso
+    // no lo ve nadie — que es justo lo que viene a evitar.
+    await this.chat.bumpUnreadForOperator(db, conv.id);
+
+    return { operatorId: bandejaDestino, conversationId: conv.id };
+  }
+
+  /** Cómo nombrar la bandeja de origen en el aviso. Nunca su contenido. */
+  private async etiquetaDeBandeja(
+    db: TenantDb,
+    inboxOwnerId: string,
+  ): Promise<string> {
+    const owner = await this.net.resolveContactOwner(db, inboxOwnerId);
+    if (owner === null) return 'el casino';
+    const fila = (
+      await db
+        .select({ username: users.username, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, owner))
+        .limit(1)
+    )[0];
+    return fila?.displayName ?? fila?.username ?? 'otra bandeja';
+  }
+
+  /** El nombre para mostrar del contacto, cayendo al del jugador. */
+  private async nombreDelContacto(
+    db: TenantDb,
+    contact: CrmContact,
+  ): Promise<string> {
+    if (contact.displayName) return contact.displayName;
+    if (!contact.userId) return 'Un contacto';
+    const fila = (
+      await db
+        .select({ username: users.username, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, contact.userId))
+        .limit(1)
+    )[0];
+    return fila?.displayName ?? fila?.username ?? 'Un contacto';
+  }
 
   /**
    * Verifica que el operador pueda ver el contacto (operador directo del jugador

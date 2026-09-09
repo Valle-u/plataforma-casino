@@ -72,7 +72,7 @@ let canalId = '';
  */
 async function conversacionCon(
   estado: 'open' | 'pending' | 'resolved',
-  mensajes: Array<{ de: 'inbound' | 'outbound'; haceHoras: number }>,
+  mensajes: Array<{ de: 'inbound' | 'outbound' | 'system'; haceHoras: number }>,
 ): Promise<string> {
   const sql = db();
   const contacto = await sql<{ id: string }[]>`
@@ -206,6 +206,28 @@ describe('parte diario · chats sin responder', () => {
     const f = await contar();
     expect(Number(f.total)).toBe(1);
     expect(Number(f.viejos)).toBe(0);
+  });
+
+  /**
+   * Un aviso de derivación (D8) es un mensaje `system`, y tiene que contar: si
+   * el operador lo ignora, este renglón es **lo único** que lo muestra. Por D10
+   * el socio no ve nada de su cajero, y por D8 la queja del jugador no viaja.
+   */
+  it('cuenta un aviso de derivación que el operador no atendió', async () => {
+    await conversacionCon('open', [{ de: 'system', haceHoras: 30 }]);
+
+    const f = await contar();
+    expect(Number(f.total)).toBe(1);
+    expect(Number(f.viejos)).toBe(1);
+  });
+
+  it('pero NO lo cuenta si el operador ya respondió después del aviso', async () => {
+    await conversacionCon('open', [
+      { de: 'system', haceHoras: 5 },
+      { de: 'outbound', haceHoras: 4 },
+    ]);
+
+    expect(Number((await contar()).total)).toBe(0);
   });
 
   it('una conversación sin ningún mensaje no rompe la consulta', async () => {

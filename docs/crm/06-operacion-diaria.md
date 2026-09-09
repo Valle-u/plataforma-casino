@@ -25,11 +25,16 @@ Tres estados, ya presentes en `crm_conversations.status`:
 | `pending` | Se respondió y se espera algo de afuera (que mande un comprobante, que se acredite una transferencia) |
 | `resolved` | Terminado |
 
-### 🔴 Hoy nada de esto funciona
+### ✅ Implementado el 2026-09-08
 
-La columna existe. **Ningún código la escribe.** Cerrar, marcar pendiente y
-reabrir son tres acciones que **hay que construir**. Es lo primero de este
-documento que se convierte en tarea.
+Hasta entonces la columna existía y **ningún código la escribía**. Ahora hay un
+endpoint (`POST /tenant/chat/conversations/:id/status`) y las tres acciones
+funcionan.
+
+Resolver **marca leído**: el operador acaba de actuar sobre la conversación, y
+dejarla con no-leídos sería mentir en el badge. Y con el id de una conversación
+de otra bandeja no se puede hacer nada — responde **404 y no 403**, porque un
+403 confirmaría que esa conversación existe.
 
 ### Reabrir, no duplicar (D11)
 
@@ -163,8 +168,8 @@ Vale decirlo para que nadie lo espere:
 
 | # | Qué | Tamaño |
 |---|---|---|
-| 1 | Cerrar / marcar pendiente / reabrir | chico, y **no existe nada** |
-| 2 | El aviso de derivación | chico |
+| 1 | ~~Cerrar / marcar pendiente / reabrir~~ | ✅ hecho |
+| 2 | ~~El aviso de derivación~~ | ✅ hecho |
 | 3 | El cartel de red en la lista y en la ficha | chico |
 | 4 | El aviso de la ventana de 24 h | chico, pero **hay que acordarse** |
-| 5 | Conversaciones sin responder en el parte diario | chico |
+| 5 | ~~Conversaciones sin responder en el parte diario~~ | ✅ hecho |

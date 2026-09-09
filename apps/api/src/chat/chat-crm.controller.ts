@@ -30,6 +30,7 @@ import {
 } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { ChatCrmService } from './chat-crm.service';
+import { ChatService } from './chat.service';
 import { CrmAccessGuard, type RequestWithCrmInbox } from './crm-access.guard';
 
 type Operator = { id: string; username: string };
@@ -38,7 +39,12 @@ type Operator = { id: string; username: string };
 @UseGuards(TenantJwtGuard, CrmAccessGuard)
 @PanelOnly()
 export class ChatCrmController {
-  constructor(private readonly crm: ChatCrmService) {}
+  constructor(
+    private readonly crm: ChatCrmService,
+    // El ciclo de vida de la conversación (estado, no leídos) vive en
+    // ChatService, junto al resto del hilo; el CRM es la ficha del contacto.
+    private readonly chat: ChatService,
+  ) {}
 
   private db(req: RequestWithTenantUser) {
     const db = req.tenantContext?.db;
@@ -73,6 +79,69 @@ export class ChatCrmController {
     const solicitanteId = req.tenantUser?.id;
     if (!solicitanteId) throw new ForbiddenException('No tenés acceso al soporte.');
     return this.crm.getContext(db, contact, solicitanteId);
+  }
+
+  // ── Estado de la conversación ─────────────────────────────────────────────
+
+  /**
+   * Cerrar, marcar pendiente o reabrir.
+   *
+   * Los tres estados vivían en la tabla desde que se creó el livechat y **nada
+   * los escribía**. Éste es el endpoint que faltaba.
+   *
+   * Reabrir a mano casi no hace falta: por **D11**, si la persona vuelve a
+   * escribir el hilo se reabre solo. Está igual para el caso de resolver por
+   * error.
+   */
+  @Post('conversations/:conversationId/status')
+  @HttpCode(HttpStatus.OK)
+  async setStatus(
+    @Req() req: RequestWithTenantUser,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
+    @Body() body: { status?: unknown },
+  ) {
+    const status = body?.status;
+    if (
+      status !== 'open' &&
+      status !== 'pending' &&
+      status !== 'resolved'
+    ) {
+      throw new BadRequestException({
+        message: 'El estado tiene que ser open, pending o resolved.',
+        error: 'INVALID_STATUS',
+      });
+    }
+
+    const conv = await this.chat.setConversationStatus(this.db(req), {
+      conversationId,
+      inboxOwnerId: this.owner(req),
+      status,
+    });
+    // `null` = la conversación no existe o **no es de esta bandeja**. Se
+    // responde 404 en los dos casos a propósito: un 403 le confirmaría a
+    // alguien que esa conversación existe en otra bandeja.
+    if (!conv) throw new NotFoundException('Conversación no encontrada.');
+    return { id: conv.id, status: conv.status };
+  }
+
+  // ── Derivar = avisar (D8) ─────────────────────────────────────────────────
+
+  /**
+   * Le avisa al operador del jugador que escribió a esta bandeja.
+   *
+   * ⚠️ **No manda la conversación.** A la otra bandeja llega quién escribió y
+   * cuándo, nada más. Ver `ChatCrmService.notifyDirectOperator`.
+   */
+  @Post('contacts/:contactId/notify-operator')
+  @HttpCode(HttpStatus.CREATED)
+  async notifyOperator(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+  ) {
+    const db = this.db(req);
+    const inboxOwnerId = this.owner(req);
+    const contact = await this.crm.assertAccess(db, contactId, inboxOwnerId);
+    return this.crm.notifyDirectOperator(db, { contact, inboxOwnerId });
   }
 
   // ── Notas ─────────────────────────────────────────────────────────────────

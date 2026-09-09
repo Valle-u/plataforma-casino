@@ -75,6 +75,30 @@ export class CrmNetworkService {
   }
 
   /**
+   * El `owner_user_id` de **D6** para una bandeja: **`null` significa central**.
+   *
+   * Traduce entre dos formas de nombrar lo mismo, y por eso existe:
+   *
+   * - `crm_conversations.assigned_operator_id` guarda, para la red central, el
+   *   **id del admin principal** — es a quien se le asigna todo lo dependiente.
+   * - `crm_contacts.owner_user_id` guarda, para la red central, **`null`**: con
+   *   una sola columna nullable no se pueden escribir estados imposibles
+   *   (central *y* con dueño a la vez).
+   *
+   * Usa los mismos dos códigos de rol que el ruteo (`CENTRAL_ROLE_CODES`), y el
+   * **mismo criterio que el backfill de la migración `0112`**. Si alguna vez se
+   * cambia uno, hay que cambiar los tres.
+   */
+  async resolveContactOwner(
+    db: TenantDb,
+    operatorUserId: string | null,
+  ): Promise<string | null> {
+    if (!operatorUserId) return null;
+    const net = await this.classify(db, operatorUserId);
+    return net === 'central' ? null : operatorUserId;
+  }
+
+  /**
    * Qué `assignedOperatorId` puede ver/atender un operador (su bandeja):
    *   - 'central' → la bandeja central (conversaciones del admin principal).
    *   - 'independent' → las suyas (self).
