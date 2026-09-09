@@ -54,6 +54,68 @@ const DEFAULT_CRON = '0 12 * * *';
 /** Rondas mínimas para que la devolución del período signifique algo. */
 const RONDAS_MINIMAS = 100;
 
+/**
+ * Chats que están esperando respuesta.
+ *
+ * **Exportada para que el test corra ESTA consulta y no una copia.** Es código
+ * que se ejecuta una vez por día: un nombre de columna equivocado no se
+ * descubriría hasta la mañana siguiente, y el parte saldría diciendo "ninguno"
+ * —que se lee igual que un casino al día—.
+ *
+ * ## Qué cuenta como "sin responder"
+ *
+ * La conversación **no está resuelta** y su **último mensaje es del contacto**.
+ *
+ * ⚠️ **A propósito NO se usa `unread_for_operator`.** Ese contador se limpia
+ * cuando el operador **abre** la conversación (`markReadForOperator`), no
+ * cuando contesta: alguien que la abre, la lee y no responde quedaría contado
+ * como atendido — que es justo el caso que este renglón viene a mostrar.
+ *
+ * El `LATERAL` trae sólo el último mensaje de cada conversación no resuelta,
+ * apoyado en el índice `(conversation_id, created_at)` que ya existe. Recorrer
+ * todos los mensajes no serviría: esa tabla **no se poda nunca** —D15 borra
+ * adjuntos, no mensajes— y crece para siempre.
+ *
+ * Sin interpolación: es una constante estática, por eso puede ir por `sql.raw`.
+ */
+export const CONSULTA_CHATS_SIN_RESPONDER = `
+  SELECT
+    count(*)::text AS total,
+    count(*) FILTER (
+      WHERE m.created_at < now() - interval '24 hours'
+    )::text AS viejos,
+    COALESCE(
+      floor(EXTRACT(EPOCH FROM (now() - min(m.created_at))) / 3600), 0
+    )::text AS horas
+  FROM crm_conversations c
+  CROSS JOIN LATERAL (
+    SELECT direction, created_at
+      FROM crm_messages
+     WHERE conversation_id = c.id
+     ORDER BY created_at DESC
+     LIMIT 1
+  ) m
+  WHERE c.status <> 'resolved'
+    AND m.direction = 'inbound'
+`;
+
+/** El renglón del parte, a partir de lo que devolvió la consulta. */
+export function renglonDeChats(f: {
+  total: string;
+  viejos: string;
+  horas: string;
+}): string {
+  const total = Number(f.total);
+  if (!total) return '  chats: ninguno';
+
+  const viejos = Number(f.viejos);
+  const detalle =
+    viejos > 0
+      ? ` (${viejos} con más de 24 h ⚠️ · el más viejo hace ${num(f.horas)} h)`
+      : '';
+  return `  chats: ${num(total)}${detalle}`;
+}
+
 @Injectable()
 export class HealthReportCron {
   private readonly logger = new Logger(HealthReportCron.name);
@@ -138,10 +200,11 @@ export class HealthReportCron {
 
   /** El cuerpo del mensaje para un casino. */
   private async parteDe(db: TenantDb, slug: string): Promise<string> {
-    const [juego, plata, colas, catalogo] = await Promise.all([
+    const [juego, plata, colas, chats, catalogo] = await Promise.all([
       this.bloque(() => this.actividadDeJuego(db)),
       this.bloque(() => this.fichas(db)),
       this.bloque(() => this.colas(db)),
+      this.bloque(() => this.chatsSinResponder(db)),
       this.bloque(() => this.catalogo(db)),
     ]);
 
@@ -156,6 +219,7 @@ export class HealthReportCron {
       '',
       'ESPERANDO RESPUESTA',
       colas,
+      chats,
       '',
       'CATÁLOGO',
       catalogo,
@@ -261,6 +325,30 @@ export class HealthReportCron {
       linaDeCola('depósitos', f.dep, f.dep_viejo),
       linaDeCola('retiros', f.ret, f.ret_viejo),
     ].join('\n');
+  }
+
+  /**
+   * Chats esperando respuesta — el renglón que tapa el punto ciego del CRM.
+   *
+   * Por `D16` el aviso de un mensaje nuevo vive sólo en el panel, y por `D17`
+   * el sistema no manda ninguna respuesta automática. Juntas, las dos
+   * decisiones dejan que alguien escriba a las 3 de la mañana y quede horas —o
+   * días— sin que **ninguna de las dos puntas** tenga señal de nada: el que
+   * escribió no recibe acuse, y el operador no se entera hasta que abre el
+   * panel.
+   *
+   * Esto lo convierte en algo que se ve una vez por día, sin construir
+   * notificaciones ni cambiar ninguna decisión. Ver
+   * `docs/crm/14-decisiones.md` y `docs/crm/10-metricas.md`.
+   *
+   * La consulta y el formato viven afuera (`CONSULTA_CHATS_SIN_RESPONDER` y
+   * `renglonDeChats`) para que el test pruebe exactamente lo que corre.
+   */
+  private async chatsSinResponder(db: TenantDb): Promise<string> {
+    const res = await db.execute(sql.raw(CONSULTA_CHATS_SIN_RESPONDER));
+    const f = primeraFila<{ total: string; viejos: string; horas: string }>(res);
+    if (!f) return '  chats: sin datos';
+    return renglonDeChats(f);
   }
 
   private async catalogo(db: TenantDb): Promise<string> {

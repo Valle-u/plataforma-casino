@@ -33,7 +33,7 @@ pendiente.
 | | Qué | Estado |
 |---|---|---|
 | 0.1 | **Adjuntos del chat privados y firmados** (D12) | ✅ código hecho el 2026-09-08 · ⬜ **falta desplegar** |
-| 0.2 | **Chats sin responder en el parte diario** | ⬜ una consulta más en `HealthReportCron` |
+| 0.2 | **Chats sin responder en el parte diario** | ✅ hecho el 2026-09-08 · ⬜ falta mergear a `main` |
 
 ### 0.1 — El despliegue, en orden
 
