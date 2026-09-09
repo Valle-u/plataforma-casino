@@ -75,9 +75,21 @@ El jugador pasa a ser de la red central, y con él las comisiones que genere.
 Y no rompe nada visible — el jugador se crea, entra y juega. Se descubre cuando
 alguien mira una liquidación y no cierra.
 
-**Está reportado y NO se toca desde el CRM**: es un bug de
-`tenant-users.controller.ts`, de un flujo que existe desde antes y que se usa
-todos los días. Arreglarlo es un cambio aparte, con su propio riesgo.
+### ✅ Arreglado el 2026-09-09
+
+Salió por su propia rama desde `main` (`7ec937e`), sin arrastrar nada del CRM.
+Ahora **primero se resuelve el padre y después la etiqueta sale de los roles de
+ESE padre**. Para un empleado el padre es su propio operador — y para un
+empleado central ese operador **es** el admin primario, así que el caso central
+no cambia por construcción, no por un `if` que lo excluya.
+
+**No llegó a costar plata.** Se verificó en producción con dos consultas de sólo
+lectura: ningún usuario quedó mal colgado, y —más contundente— **no existe
+ningún `empleado` en producción**, ni central ni independiente. El bug necesitaba
+uno para dispararse.
+
+7 tests, cuatro de ellos protegiendo lo que NO tenía que cambiar. Verificados
+volviendo el código al comportamiento viejo: falla exactamente el caso nuevo.
 
 ### Cómo lo evita el alta del CRM
 

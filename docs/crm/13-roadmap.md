@@ -92,9 +92,10 @@ rompiendo el filtro a propósito para confirmar que fallan.
   Resuelto: se genera y se muestra una vez en el panel. Queda pendiente que la
   plataforma sepa **forzar el cambio al primer ingreso**, que hoy no existe.
 - ~~El alta cuelga del dueño del canal, no del actor.~~ ✅ El alta del CRM pasa
-  el padre explícito. 🔴 Pero queda **reportado un bug del endpoint del panel**:
-  un empleado de un socio independiente cuelga al jugador del admin principal,
-  o sea **fuera de la red independiente** (ver [`07`](07-crear-usuarios.md)).
+  el padre explícito. ✅ Y el bug del endpoint del panel —un empleado de un socio
+  independiente colgaba al jugador del admin principal— **se arregló el
+  2026-09-09** en `main`, verificado en producción: no llegó a costar plata
+  porque no existe ningún empleado (ver [`07`](07-crear-usuarios.md)).
 
 ---
 
