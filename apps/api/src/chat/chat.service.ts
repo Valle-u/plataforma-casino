@@ -309,8 +309,13 @@ export class ChatService {
 
   /** Rehidrata la `url` de cada adjunto (las de R2 vencen) a partir del storageKey. */
   private async hydrateMessage(msg: CrmMessage): Promise<CrmMessage> {
-    const atts = msg.attachments;
-    if (!Array.isArray(atts) || atts.length === 0) return msg;
+    // `attachments` es jsonb, o sea `unknown` en el esquema. Se anota el tipo
+    // del array para que los elementos sean `unknown` y no `any`: con `any`,
+    // devolver un adjunto sin tocar se cuela sin que nadie lo mire.
+    const atts: unknown[] = Array.isArray(msg.attachments)
+      ? (msg.attachments as unknown[])
+      : [];
+    if (atts.length === 0) return msg;
     const hydrated = await Promise.all(
       atts.map(async (item) => {
         const a = item as ChatAttachment;
@@ -385,6 +390,48 @@ export class ChatService {
       )
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * Anota qué pasó cuando el mensaje salió para un canal externo (**2.7**).
+   *
+   * Se llama **después** de que el mensaje ya está guardado y ya se le mostró
+   * al operador: mandar primero y guardar después le haría perder lo que
+   * escribió cada vez que el proveedor falle.
+   *
+   * Los dos campos son excluyentes por construcción —o lo aceptaron, o no— y
+   * juntos dan los tres estados que documenta la migración `0114`.
+   *
+   * Devuelve el mensaje actualizado para que quien llame pueda re-emitirlo: el
+   * operador tiene que ver la marca de "no llegó" sin recargar nada.
+   */
+  async marcarEntrega(
+    db: TenantDb,
+    messageId: string,
+    resultado: { entregado: boolean; channelMessageId?: string; error?: string },
+  ): Promise<void> {
+    await db
+      .update(crmMessages)
+      .set(
+        resultado.entregado
+          ? {
+              deliveredAt: new Date(),
+              deliveryError: null,
+              ...(resultado.channelMessageId
+                ? { channelMessageId: resultado.channelMessageId }
+                : {}),
+            }
+          : {
+              deliveredAt: null,
+              // Recortado: viene de un proveedor externo y termina en una
+              // columna que se muestra en el panel.
+              deliveryError: (resultado.error ?? 'No se pudo entregar.').slice(
+                0,
+                500,
+              ),
+            },
+      )
+      .where(eq(crmMessages.id, messageId));
   }
 
   /** Resetea el contador de no-leídos del operador (cuando abre la conversación). */

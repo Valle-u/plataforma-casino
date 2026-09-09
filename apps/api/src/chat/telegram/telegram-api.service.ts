@@ -114,6 +114,40 @@ export class TelegramApiService {
     return r.file_path ?? null;
   }
 
+  /**
+   * Manda un mensaje de texto al chat. Devuelve el `message_id` que le asignó
+   * Telegram (**2.7**).
+   *
+   * ## Lo que hay que saber de este método
+   *
+   * **Un bot no puede iniciar una conversación.** Sólo le puede escribir a
+   * quien le escribió primero. Acá siempre es una respuesta a alguien que ya
+   * escribió, así que no es un problema — pero es la razón por la que no existe
+   * ni puede existir un "mandarle un mensaje a este teléfono".
+   *
+   * **No hay ventana de 24 horas.** Eso es de WhatsApp (**D13**, etapa 3). En
+   * Telegram, si la persona escribió alguna vez, el bot le puede contestar
+   * cuando quiera.
+   *
+   * **`parse_mode` va sin setear, a propósito.** Con `Markdown` o `HTML`,
+   * cualquier `_`, `*` o `<` que el operador escriba de forma natural hace que
+   * Telegram rechace el mensaje entero por sintaxis inválida — o peor, se lo
+   * coma y mande el texto mutilado. Sin `parse_mode` el texto sale literal, que
+   * es lo que el operador escribió.
+   */
+  async sendMessage(
+    token: string,
+    chatId: string,
+    texto: string,
+  ): Promise<string> {
+    const r = await this.llamar<{ message_id?: number }>(
+      token,
+      'sendMessage',
+      { chat_id: chatId, text: texto },
+    );
+    return String(r.message_id ?? '');
+  }
+
   /** Corta el webhook. Se usa al desvincular. */
   async deleteWebhook(token: string): Promise<void> {
     await this.llamar(token, 'deleteWebhook', { drop_pending_updates: true });

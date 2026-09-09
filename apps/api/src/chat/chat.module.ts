@@ -21,6 +21,7 @@ import { TelegramApiService } from './telegram/telegram-api.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
 import { TelegramDescargaService } from './telegram/telegram-descarga.service';
 import { TelegramInboundService } from './telegram/telegram-inbound.service';
+import { TelegramOutboundService } from './telegram/telegram-outbound.service';
 import { TelegramWebhookController } from './telegram/telegram-webhook.controller';
 import { CrmAccessGuard } from './crm-access.guard';
 
@@ -36,6 +37,7 @@ import { CrmAccessGuard } from './crm-access.guard';
     TelegramApiService,
     TelegramChannelsService,
     TelegramInboundService,
+    TelegramOutboundService,
     TelegramDescargaService,
   ],
 })

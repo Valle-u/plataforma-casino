@@ -23,6 +23,15 @@ export interface ChatMessage {
   body: string | null;
   attachments: ChatAttachment[];
   createdAt: string;
+  /**
+   * Por qué la respuesta **no llegó** al canal externo (**2.7**).
+   *
+   * Sólo aparece en los canales externos: en el widget web no hay proveedor
+   * que pueda rechazar nada. Si viene, el mensaje se muestra marcado — sin
+   * eso, el operador ve su mensaje en el hilo igual que cualquier otro y da
+   * por hecho que llegó, cuando le está escribiendo a nadie.
+   */
+  deliveryError?: string | null;
 }
 
 export interface ChatConversation {

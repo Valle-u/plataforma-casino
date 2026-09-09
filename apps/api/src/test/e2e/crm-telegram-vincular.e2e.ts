@@ -100,12 +100,29 @@ describe('CRM · vincular un bot de Telegram', () => {
     });
     telegramFalso.setWebhook.mockResolvedValue(undefined);
     telegramFalso.deleteWebhook.mockResolvedValue(undefined);
-    // Los crudos van primero: `crm_raw_events.channel_id` es `RESTRICT`, así
-    // que borrar un canal que recibió algo falla. Esta suite no crea crudos,
-    // pero otra que haya corrido antes sí — y el error saldría acá, lejos de
-    // su causa.
+    // ⚠️ **Todo lo que cuelga de un canal se borra ANTES que el canal.**
+    //
+    // `crm_raw_events.channel_id` y `crm_conversations.channel_id` son los dos
+    // `RESTRICT`: borrar un canal que recibió algo, o que tiene una
+    // conversación, falla. Esta suite no crea ni crudos ni conversaciones —
+    // **pero otra que corrió antes sí**, y el error sale acá, en el `beforeEach`
+    // de catorce tests que no tienen nada que ver.
+    //
+    // Ya pasó dos veces: primero con los crudos, después con las
+    // conversaciones que deja `crm-telegram-responder`. Por eso la limpieza es
+    // de la cadena entera y no de lo que este archivo usa.
     await ctx.tenantDb.execute(
       sql`DELETE FROM crm_raw_events
+           WHERE channel_id IN (SELECT id FROM crm_channels WHERE type = 'telegram')`,
+    );
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM crm_messages
+           WHERE conversation_id IN (
+             SELECT id FROM crm_conversations
+              WHERE channel_id IN (SELECT id FROM crm_channels WHERE type = 'telegram'))`,
+    );
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM crm_conversations
            WHERE channel_id IN (SELECT id FROM crm_channels WHERE type = 'telegram')`,
     );
     await ctx.tenantDb.execute(sql`DELETE FROM crm_channels WHERE type = 'telegram'`);

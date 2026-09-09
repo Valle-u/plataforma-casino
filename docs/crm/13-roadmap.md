@@ -117,10 +117,56 @@ rompiendo el filtro a propósito para confirmar que fallan.
 | 2.3 | ~~Ruteo por dueño de canal~~ | ✅ |
 | 2.4 | ~~Medios: bajarlos antes de que venza el id~~ | ✅ |
 | 2.5 | ~~La pantalla explica que el jugador tiene que escribirle al bot primero~~ | ✅ |
+| 2.6 | ~~La clave de idempotencia tiene que incluir el chat~~ | ✅ 🔴 era un bug |
+| 2.7 | ~~Responder desde el panel por Telegram~~ | ✅ migración `0114` |
+| 2.8 | Mandar **archivos** por Telegram | ⬜ pendiente |
 
 **Etapa 2 terminada el 2026-09-09.** Un operador vincula su bot desde
-`/support/canales`, reparte el link, y los mensajes —con fotos— le entran a su
-bandeja.
+`/support/canales`, reparte el link, los mensajes —con fotos— le entran a su
+bandeja, **y puede contestar**.
+
+### 2.6 — El bug que la suite no veía
+
+`channelMessageId` era `tg:<canal>:<message_id>`, y el `message_id` de Telegram
+es *"unique message identifier inside this chat"*: un contador **por chat**. O
+sea que el primer mensaje de cada persona nueva es `1`.
+
+Sin el chat en la clave, **la segunda persona que le escribía al bot chocaba
+contra el índice único de `0113` y su mensaje se descartaba** — quedaba en
+`crm_raw_events` con el error y no aparecía en ninguna bandeja. En silencio,
+porque el fallo de procesamiento no se propaga a propósito.
+
+No lo agarró la suite porque su helper de updates usa un `message_id` al azar.
+Con ids al azar no hay colisión; con Telegram de verdad la hay el segundo día.
+Hay un test que fija esto, verificado rompiendo el arreglo para confirmar que
+falla.
+
+### 2.7 — Responder
+
+Hasta acá el operador **recibía y no podía contestar**: su respuesta se guardaba
+y se emitía por socket.io, que es donde escucha el widget web — y el jugador de
+Telegram no está ahí.
+
+**El orden es: persistir, después mandar, después anotar el resultado.** Al
+revés, el operador perdería lo que escribió cada vez que Telegram falle. El
+precio es que hay un instante en que el mensaje está guardado y todavía no
+salió, y por eso existe `delivery_error` (migración `0114`): sin esa anotación,
+una respuesta que nunca llegó se vería igual que una entregada y **el operador
+le estaría escribiendo a nadie sin saberlo**.
+
+Dos decisiones tomadas acá:
+
+- **Sólo texto.** Si el operador adjunta un archivo, el panel se lo rechaza
+  explicando por qué. Peor que no poder mandarlo sería que se vea enviado y no
+  llegue nunca — y son comprobantes.
+- **Un rechazo no borra el mensaje.** Queda en el hilo con la marca de "no
+  llegó" y el motivo que dio Telegram, que es lo accionable: *bot was blocked by
+  the user* se resuelve pidiéndole a la persona que lo desbloquee,
+  *Unauthorized* revinculando el bot.
+
+De paso se tapó un agujero viejo de la bandeja: **el error de un envío se
+descartaba en silencio**. El spinner paraba y no pasaba nada; el operador volvía
+a apretar sin entender.
 
 > ⚠️ **Falta probarlo con un bot real.** Todo está verificado con tests, pero
 > Telegram va simulado en la suite: pegarle de verdad ataría los tests a una red

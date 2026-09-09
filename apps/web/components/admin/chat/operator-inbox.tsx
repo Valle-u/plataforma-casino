@@ -25,6 +25,7 @@ import {
   Plus,
   SendHorizontal,
   Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-react';
 import { useChatSocket } from '@/lib/chat/use-chat-socket';
@@ -94,6 +95,8 @@ export function OperatorInbox(): React.ReactElement {
     () => typeof window !== 'undefined' && window.innerWidth >= 1024,
   );
   const [showTemplates, setShowTemplates] = useState(false);
+  /** Por qué no se pudo mandar lo último que intentó. */
+  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
@@ -132,6 +135,8 @@ export function OperatorInbox(): React.ReactElement {
       setContactTyping(false);
       setPending([]);
       setDraft('');
+      // El error es de la conversación anterior: acá ya no significa nada.
+      setErrorEnvio(null);
       socket.emit(
         'conversation:open',
         { conversationId: id },
@@ -287,11 +292,23 @@ export function OperatorInbox(): React.ReactElement {
       (ack: ReplyAck) => {
         setSending(false);
         if (ack?.ok && ack.message) {
+          setErrorEnvio(null);
           addMessage(ack.message);
           setDraft('');
           setPending([]);
           emitTyping(false);
+          return;
         }
+        // ⚠️ Antes esta rama no existía: si el envío se rechazaba, el spinner
+        // paraba y no pasaba **nada**. El operador volvía a apretar sin
+        // entender.
+        //
+        // Ahora hay motivos que sólo se pueden explicar acá — el principal es
+        // que por Telegram todavía no salen archivos (2.7): sin el aviso, el
+        // operador adjunta un comprobante, lo ve desaparecer y no sabe por qué.
+        //
+        // El borrador NO se limpia: lo que escribió sigue ahí para reintentar.
+        setErrorEnvio(ack?.error ?? 'No se pudo enviar el mensaje.');
       },
     );
   }, [draft, pending, socket, selectedId, sending, uploading, addMessage, emitTyping]);
@@ -442,6 +459,15 @@ export function OperatorInbox(): React.ReactElement {
                   onClose={() => setShowTemplates(false)}
                 />
               )}
+              {errorEnvio && (
+                <div style={noLlegoStyle} role="alert">
+                  <TriangleAlert
+                    size={11}
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  />
+                  <span>{errorEnvio}</span>
+                </div>
+              )}
               <AttachmentChips
                 attachments={pending}
                 uploading={uploading}
@@ -574,9 +600,36 @@ function MsgBubble({ message }: { message: ChatMessage }): React.ReactElement {
         justifyContent: mine ? 'flex-end' : 'flex-start',
       }}
     >
-      <div style={mine ? myBubbleStyle : theirBubbleStyle}>
-        {message.body}
-        <MessageAttachments attachments={message.attachments} />
+      {/*
+        El ancho máximo se muda acá porque ahora la burbuja puede venir con un
+        aviso debajo, y los dos tienen que alinearse contra el mismo borde. La
+        burbuja pasa a 100% de este contenedor: el recorte lo hace el de afuera.
+      */}
+      <div style={{ maxWidth: '70%' }}>
+        <div style={{ ...(mine ? myBubbleStyle : theirBubbleStyle), maxWidth: '100%' }}>
+          {message.body}
+          <MessageAttachments attachments={message.attachments} />
+        </div>
+        {/*
+          ⚠️ No llegó (2.7).
+
+          Sin esto, una respuesta que Telegram rechazó —el jugador bloqueó el
+          bot, borró el chat— se ve en el hilo **igual que cualquier otra**: el
+          mensaje se persiste antes de salir, así que el operador lo ve
+          aparecer y da por hecho que llegó. Le estaría escribiendo a nadie.
+
+          El motivo va tal como lo explicó el proveedor porque es lo accionable:
+          "bot was blocked by the user" se resuelve pidiéndole a la persona que
+          lo desbloquee; "Unauthorized", revinculando el bot.
+        */}
+        {message.deliveryError && (
+          <div style={noLlegoStyle} role="alert">
+            <TriangleAlert size={11} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              <b>No llegó.</b> {message.deliveryError}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1043,4 +1096,18 @@ const tplDelBtnStyle: CSSProperties = {
   background: 'transparent',
   color: 'var(--color-fg-muted)',
   cursor: 'pointer',
+};
+
+/** El aviso de "no llegó", debajo de la burbuja del operador (2.7). */
+const noLlegoStyle: CSSProperties = {
+  display: 'flex',
+  gap: 5,
+  marginTop: 4,
+  padding: '4px 8px',
+  fontSize: 11,
+  lineHeight: 1.35,
+  color: 'var(--color-warning)',
+  background: 'var(--color-warning-bg)',
+  borderLeft: '2px solid var(--color-warning)',
+  borderRadius: 'var(--radius-sm)',
 };

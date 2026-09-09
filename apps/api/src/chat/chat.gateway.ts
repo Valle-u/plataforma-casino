@@ -32,6 +32,7 @@ import type { Server, Socket } from 'socket.io';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { ChatService } from './chat.service';
 import { CrmNetworkService } from './crm-network.service';
+import { TelegramOutboundService } from './telegram/telegram-outbound.service';
 
 interface WsTokenPayload {
   sub: string;
@@ -73,6 +74,7 @@ export class ChatGateway
     private readonly jwt: JwtService,
     private readonly chat: ChatService,
     private readonly net: CrmNetworkService,
+    private readonly telegramOut: TelegramOutboundService,
   ) {}
 
   /**
@@ -329,8 +331,27 @@ export class ChatGateway
       data.inboxOwnerId,
     );
     if (!conv) return { ok: false, error: 'no autorizado' };
+
+    // ── ¿Esto sale por un canal externo? (2.7) ───────────────────────────────
+    //
+    // Se pregunta ANTES de persistir, por los adjuntos: en esta versión no
+    // salen para Telegram, y guardar un mensaje con un archivo que nunca va a
+    // viajar sería mostrarle al operador un comprobante "enviado" que el
+    // jugador no va a recibir nunca. Se rechaza y se le dice por qué.
+    const externo = await this.telegramOut.canalExterno(data.db, conv.id);
+    if (externo && attachments.length > 0) {
+      return {
+        ok: false,
+        error:
+          'Todavía no se pueden mandar archivos por Telegram. Escribí la respuesta como texto.',
+      };
+    }
+    if (externo && !body) {
+      return { ok: false, error: 'mensaje vacío' };
+    }
+
     try {
-      const message = await this.chat.postMessage(data.db, {
+      let message = await this.chat.postMessage(data.db, {
         conversationId: conv.id,
         direction: 'outbound',
         // Quién respondió es el operador real (empleado/admin), aunque la
@@ -339,6 +360,28 @@ export class ChatGateway
         body,
         attachments,
       });
+
+      // El mensaje ya está guardado y ya se le va a mostrar al operador. Recién
+      // ahora sale para afuera, y lo que conteste el proveedor se anota encima.
+      // Ver `TelegramOutboundService` para por qué en ese orden.
+      if (externo) {
+        const envio = await this.telegramOut.enviar(data.db, {
+          conversationId: conv.id,
+          texto: body,
+        });
+        await this.chat.marcarEntrega(data.db, message.id, envio);
+        // El resultado también viaja en el evento que se emite: el operador ve
+        // la marca de "no llegó" y el motivo **sin recargar la bandeja**. Si
+        // sólo se guardara en la base, se enteraría la próxima vez que abra.
+        message = envio.entregado
+          ? { ...message, deliveredAt: new Date(), deliveryError: null }
+          : {
+              ...message,
+              deliveredAt: null,
+              deliveryError: envio.error ?? 'No se pudo entregar.',
+            };
+      }
+
       const evt = { conversationId: conv.id, message };
       this.server
         .to(this.convRoom(data.tenantId, conv.id))

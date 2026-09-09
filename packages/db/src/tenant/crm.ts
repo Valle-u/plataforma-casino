@@ -290,7 +290,24 @@ export const crmMessages = pgTable(
      * todos `NULL`.
      */
     channelMessageId: text('channel_message_id'),
+    /**
+     * Cuándo el proveedor **aceptó** el mensaje (migración `0114`).
+     *
+     * Sólo aplica a los canales externos. En el widget web queda `NULL`: ahí no
+     * hay proveedor que acepte nada, el mensaje se emite por socket.io.
+     */
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    /**
+     * Por qué **no** llegó, tal como lo explicó el proveedor.
+     *
+     * Con `delivered_at` forman los tres estados posibles sin ambigüedad: los
+     * dos en `NULL` es "no aplica o en camino", uno u otro seteado es aceptado
+     * o fallado. Un booleano no podría distinguir "todavía no" de "falló", ni
+     * decir la causa — y la causa es lo accionable: *bot was blocked by the
+     * user* se resuelve pidiéndole a la persona que lo desbloquee,
+     * *Unauthorized* revinculando el bot.
+     */
+    deliveryError: text('delivery_error'),
     readAt: timestamp('read_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

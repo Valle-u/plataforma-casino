@@ -806,6 +806,13 @@
       "when": 1789301500000,
       "tag": "0113_crm_canales_externos",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1789387900000,
+      "tag": "0114_crm_entrega",
+      "breakpoints": true
     }
   ]
 }
