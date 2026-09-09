@@ -3,10 +3,17 @@
 > Sistema de atención omnicanal anclado a la plataforma: livechat propio,
 > WhatsApp y Telegram, con la misma jerarquía de redes que el resto del casino.
 >
-> **Estado: decisiones cerradas, documentos por escribir.** Los cinco bloques de
-> decisiones estructurales se tomaron con el dueño el 2026-09-08 y viven en
-> [`14-decisiones.md`](14-decisiones.md) — **D1 a D19**. Lo que falta es bajar
-> esas decisiones a los documentos de la tabla de abajo.
+> **Estado: planificación terminada.** Los cinco bloques de decisiones se
+> tomaron con el dueño el 2026-09-08 (**D1 a D19**, en
+> [`14-decisiones.md`](14-decisiones.md)) y los catorce documentos están
+> escritos. **Lo que sigue es construir** — el orden está en
+> [`13-roadmap.md`](13-roadmap.md).
+>
+> **Tres decisiones quedaron abiertas** y hay que tomarlas durante la etapa 1:
+> dónde viven los secretos de canal ([`02`](02-modelo-de-datos.md) punto 2),
+> cómo se le entrega la contraseña a un jugador creado desde el chat
+> ([`07`](07-crear-usuarios.md)), y si las respuestas rápidas siguen siendo
+> compartidas entre bandejas ([`09`](09-plantillas-y-bots.md)).
 
 ---
 
@@ -46,14 +53,14 @@ un CRM y no un chat.
 | 03 | [`03-canales.md`](03-canales.md) | Web, WhatsApp y Telegram, uno por uno | ✅ escrito |
 | 04 | [`04-identidad-y-fusion.md`](04-identidad-y-fusion.md) | Quién es quién, y por qué NO se fusiona | ✅ escrito |
 | 05 | [`05-ruteo-y-bandejas.md`](05-ruteo-y-bandejas.md) | Quién atiende qué — el corazón | ✅ escrito |
-| 06 | `06-operacion-diaria.md` | Estados, transferencias, no leídos | **decidido** (bloque 3), falta escribir |
-| 07 | `07-crear-usuarios.md` | Alta de jugador desde una conversación | **decidido** (bloque 3), falta escribir |
-| 08 | `08-permisos.md` | Qué ve y qué puede hacer cada rol | **decidido** (bloques 2 y 3), falta escribir |
-| 09 | `09-plantillas-y-bots.md` | Respuestas rápidas y automatismos | **decidido** (bloque 5: no hay bots), falta escribir |
-| 10 | `10-metricas.md` | Tiempos de respuesta, volumen, por agente | pendiente — ver D11 (medir por tramos) |
-| 11 | `11-cumplimiento.md` | Reglas de WhatsApp, retención, privacidad | **decidido** (bloque 4), falta escribir |
-| 12 | `12-infraestructura.md` | Webhooks, colas, límites, medios | **decidido** en parte (bloque 4: medios), falta escribir |
-| 13 | `13-roadmap.md` | En qué orden se construye | **decidido** (bloque 5), falta escribir |
+| 06 | [`06-operacion-diaria.md`](06-operacion-diaria.md) | Estados, avisos, no leídos | ✅ escrito |
+| 07 | [`07-crear-usuarios.md`](07-crear-usuarios.md) | Alta de jugador desde una conversación | ✅ escrito |
+| 08 | [`08-permisos.md`](08-permisos.md) | Qué ve y qué puede hacer cada rol | ✅ escrito |
+| 09 | [`09-plantillas-y-bots.md`](09-plantillas-y-bots.md) | Respuestas rápidas y automatismos | ✅ escrito |
+| 10 | [`10-metricas.md`](10-metricas.md) | Tiempos de respuesta, volumen, sin responder | ✅ escrito |
+| 11 | [`11-cumplimiento.md`](11-cumplimiento.md) | Reglas de WhatsApp, retención, privacidad | ✅ escrito |
+| 12 | [`12-infraestructura.md`](12-infraestructura.md) | Webhooks, colas, límites, medios | ✅ escrito |
+| 13 | [`13-roadmap.md`](13-roadmap.md) | En qué orden se construye | ✅ escrito |
 | 14 | [`14-decisiones.md`](14-decisiones.md) | **Bitácora de decisiones y por qué** | vivo |
 
 > **Ojo con el nombre de `04-identidad-y-fusion.md`.** El bloque 2 decidió que
