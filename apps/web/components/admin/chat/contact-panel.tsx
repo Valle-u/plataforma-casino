@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  Building2,
   Loader2,
   Plus,
   StickyNote,
@@ -226,6 +227,31 @@ export function ContactPanel({
         </div>
       </section>
 
+      {/*
+        Cartel de red (D3). Aparece sólo cuando el jugador es de OTRA red.
+
+        No es decorativo: explica por qué más abajo no hay saldo ni
+        movimientos. Sin esto, el operador ve una ficha a medias y piensa que
+        el jugador no depositó nunca — cuando en realidad el backend no mandó
+        esos datos, por la LEY R6.
+      */}
+      {ctx?.network && !ctx.network.same && (
+        <section style={{ ...sectionStyle, ...avisoDeRed }}>
+          <div style={{ ...labelRow, color: 'inherit' }}>
+            <Building2 size={14} /> Otra red
+          </div>
+          <div style={{ fontSize: 13, marginTop: 2 }}>
+            {ctx.network.label
+              ? `Este jugador es de la red de ${ctx.network.label}.`
+              : 'Este jugador no es de tu red.'}
+          </div>
+          <div style={{ fontSize: 12, marginTop: 6, opacity: 0.85 }}>
+            Podés responderle, pero no ves su saldo ni sus movimientos. Para
+            algo de plata, avisale a su operador.
+          </div>
+        </section>
+      )}
+
       {/* Saldo */}
       {ctx?.wallet && (
         <section style={sectionStyle}>
@@ -421,6 +447,22 @@ const labelRow: CSSProperties = {
   letterSpacing: '0.04em',
 };
 const mutedSm: CSSProperties = { fontSize: 12, color: 'var(--color-fg-subtle)' };
+/**
+ * El cartel de otra red.
+ *
+ * Se despega del resto de la ficha a propósito: es una advertencia sobre lo que
+ * **no** se está viendo, no un dato más del jugador.
+ *
+ * Usa el par semántico que ya tiene el repo —`--color-warning` sobre
+ * `--color-warning-bg`, "ámbar = atención / requiere revisión"—, que está
+ * definido en los dos temas. Inventar un color acá lo dejaría fuera del sistema
+ * y roto en uno de los dos.
+ */
+const avisoDeRed: CSSProperties = {
+  background: 'var(--color-warning-bg)',
+  borderLeft: '3px solid var(--color-warning)',
+  color: 'var(--color-warning)',
+};
 const movRow: CSSProperties = {
   display: 'flex',
   alignItems: 'center',

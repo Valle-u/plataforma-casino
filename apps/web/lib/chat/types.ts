@@ -102,6 +102,20 @@ export interface ContactContext {
     currency: string;
   } | null;
   upline: { operatorId: string; username: string } | null;
+  /**
+   * De qué red es el jugador, respecto de quien está mirando.
+   *
+   * `same: false` significa que el backend **no mandó la plata**: `wallet`,
+   * `recentDeposits`, `recentWithdrawals` y `upline` vienen vacíos por la LEY
+   * R6, no porque el jugador no tenga movimientos. La pantalla usa `label` para
+   * el cartel de red (D3).
+   *
+   * ⚠️ **No es un permiso de la interfaz.** El dato no llega: esconder o
+   * mostrar acá no cambia nada del otro lado.
+   *
+   * `null` en un lead que todavía no está vinculado a ningún jugador.
+   */
+  network: { same: boolean; label: string | null } | null;
   recentDeposits: CrmMovement[];
   recentWithdrawals: CrmMovement[];
 }

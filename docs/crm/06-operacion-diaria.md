@@ -139,12 +139,40 @@ Lo que tiene que estar a la vista, sin clics:
 - Notas internas y etiquetas
 - Acciones: responder, marcar pendiente, resolver, avisar, **dar de alta**
 
+### Por qué el cartel NO va (todavía) en la lista
+
+La ficha lo tiene desde el 2026-09-09. La lista **no**, y es una decisión, no
+un olvido.
+
+**Lo que costaría.** La bandeja se arma con `listOperatorInbox`, una sola
+consulta. Saber de qué red es cada contacto significa, por cada uno, subir la
+jerarquía hasta encontrar un socio independiente: con una bandeja de cien
+conversaciones son cien consultas recursivas **cada vez que el operador abre
+Soporte**.
+
+Se podría hacer en una sola consulta con un CTE recursivo — pero sería una
+**segunda implementación** de la misma regla, al lado de
+`getIndependentBranchAncestor`. Y que la visibilidad y el ruteo usen dos
+criterios distintos es precisamente la clase de divergencia silenciosa que el
+resto de esta sección viene evitando.
+
+**Lo que se gana hoy: nada.** Con el widget web como único canal, una
+conversación de otra red **no puede aparecer en ninguna bandeja** — el ruteo
+manda cada jugador a su operador directo. El cartel en la lista se dibujaría
+cero veces.
+
+**Cuándo hacerlo:** cuando exista un canal externo **central**, que es lo que
+crea esas conversaciones (`D3`). Ahí habrá algo que mostrar y volumen real
+para decidir cómo calcularlo.
+
+---
+
 **Lo que la pantalla tiene que avisar sola:**
 
 | Situación | Qué mostrar |
 |---|---|
 | WhatsApp, pasaron 24 h | *"Sólo podés mandar una plantilla aprobada"* — **antes** de escribir |
-| El contacto es de otra red | El cartel de red, siempre visible |
+| El contacto es de otra red | El cartel de red ✅ *(en la ficha, desde el 2026-09-09)* |
 | El adjunto se borró por retención | *"(archivo eliminado · retención)"*, no un ícono roto |
 | El teléfono matchea con varios jugadores | *"No se pudo identificar"*, sin adivinar |
 
@@ -170,6 +198,6 @@ Vale decirlo para que nadie lo espere:
 |---|---|---|
 | 1 | ~~Cerrar / marcar pendiente / reabrir~~ | ✅ hecho |
 | 2 | ~~El aviso de derivación~~ | ✅ hecho |
-| 3 | El cartel de red en la lista y en la ficha | chico |
+| 3 | ~~El cartel de red **en la ficha**~~ | ✅ hecho · en la lista, diferido |
 | 4 | El aviso de la ventana de 24 h | chico, pero **hay que acordarse** |
 | 5 | ~~Conversaciones sin responder en el parte diario~~ | ✅ hecho |

@@ -4,22 +4,49 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@casino/web", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@casino/web",
+        "dev"
+      ],
       "port": 3001,
       "autoPort": false
     },
     {
       "name": "api",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@casino/api", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@casino/api",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": false
     },
     {
       "name": "jokers-jewels",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@casino/games-jokers-jewels-client", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@casino/games-jokers-jewels-client",
+        "dev"
+      ],
       "port": 4001,
+      "autoPort": false
+    },
+    {
+      "name": "web-sin-turbo",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@casino/web",
+        "exec",
+        "next",
+        "dev",
+        "-p",
+        "3002"
+      ],
+      "port": 3002,
       "autoPort": false
     }
   ]

@@ -71,7 +71,7 @@ Sobre el livechat que ya funciona, sin canales nuevos.
 | 1.4 | ~~Cerrar / marcar pendiente / reabrir~~ | ✅ **hecho** |
 | 1.5 | ~~El aviso de derivación (D8)~~ | ✅ **hecho** |
 | 1.6 | ~~Alta de jugador desde el chat (D9)~~ | ✅ **hecho** |
-| 1.7 | El cartel de red en la lista y en la ficha | [`06`](06-operacion-diaria.md) |
+| 1.7 | ~~El cartel de red **en la ficha**~~ | ✅ **hecho** · en la lista, diferido (ver abajo) |
 | 1.8 | ~~Los seis tests de aislamiento~~ | ✅ **hecho** |
 
 **El 1.3 ya está hecho** (2026-09-08). `getContext` compara la rama
