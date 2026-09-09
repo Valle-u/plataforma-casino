@@ -87,9 +87,15 @@ rompiendo el filtro a propósito para confirmar que fallan.
 
 - ~~Dónde viven los secretos de canal.~~ ✅ **D20** (2026-09-09): cifrados en la
   base con AES-256-GCM, clave en el entorno. Construido y probado; falta la
-  pantalla que lo use (2.1). ⚠️ **Antes del primer canal en producción hay que
-  generar la clave y cargarla en Dokploy** — sin ella no se puede vincular nada,
-  que es el comportamiento buscado.
+  pantalla que lo use (2.1).
+  - ✅ **La clave ya está cargada en staging** (2026-09-09), verificada por largo
+    sin exponerla.
+  - ⚠️ **Producción todavía no tiene la suya, y tiene que ser DISTINTA** — mismo
+    criterio que los `JWT_ACCESS_SECRET`, que ya están separados a propósito: si
+    los dos entornos comparten la clave, una filtración de staging abre los
+    secretos reales. Se genera con `openssl rand -hex 32` y va al entorno de la
+    app `api` en Dokploy. Sin ella no se puede vincular ningún canal, que es el
+    comportamiento buscado.
 - ~~Cómo se le da la contraseña a un jugador creado desde el chat.~~ ✅
   Resuelto: se genera y se muestra una vez en el panel. Queda pendiente que la
   plataforma sepa **forzar el cambio al primer ingreso**, que hoy no existe.
