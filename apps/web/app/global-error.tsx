@@ -18,6 +18,7 @@
 
 'use client';
 
+import * as Sentry from '@sentry/nextjs';
 import { useEffect } from 'react';
 import './globals.css';
 
@@ -29,8 +30,11 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // En producción: window.Sentry?.captureException(error)
     console.error('[GlobalError]', error);
+    // El comentario que había acá decía "en producción: captureException" y
+    // nunca se escribió, así que el peor error posible de la plataforma no se
+    // reportaba a ningún lado. Sin DSN no hace nada; con DSN, reporta.
+    Sentry.captureException(error, { tags: { boundary: 'global' } });
   }, [error]);
 
   return (

@@ -114,7 +114,21 @@ export default function PlayLobbyPage() {
 
   const designConfig: DesignConfig | null = useMemo(() => {
     const raw = tenantInfo.data?.design?.slides;
-    if (!raw || typeof raw !== 'object') return null;
+    // ⚠️ **Tiene que ser un array, no cualquier objeto.**
+    //
+    // Esto es jsonb libre: lo edita el socio desde su panel y lo sirve
+    // `/tenant/info` tal cual. El guard de antes era `typeof raw !== 'object'`,
+    // y ahí `{}` pasaba: se casteaba a array, más abajo `.length` daba
+    // `undefined` —que no es `0`, así que el early return no cortaba— y el
+    // render terminaba llamando `.filter()` sobre un objeto. `TypeError`, salta
+    // el error boundary, y el jugador ve "Ups, esto no salió como esperábamos"
+    // en lugar del casino.
+    //
+    // No es teórico: este camino sólo corre cuando el visitante llega con un
+    // `?ref` que resuelve al diseño de un socio, o sea **por un link de
+    // referido** — la pantalla que menos tolera un error, porque es la primera
+    // que ve alguien que todavía no tiene cuenta.
+    if (!Array.isArray(raw)) return null;
     return { slides: raw as DesignConfig['slides'] };
   }, [tenantInfo.data]);
 
@@ -311,7 +325,14 @@ export default function PlayLobbyPage() {
 }
 
 
-function hexToRgba(hex: string, alpha: number): string {
+/**
+ * `hex` llega de `design.colors` / `slide.accentColor`, que son jsonb libre del
+ * panel: puede no ser un string. Se tipa `unknown` a propósito — con `string`,
+ * un número guardado en la config hacía `.replace is not a function` y volteaba
+ * toda la pantalla, que es justo lo que el `isNaN` de abajo intentaba evitar.
+ */
+function hexToRgba(hex: unknown, alpha: number): string {
+  if (typeof hex !== 'string') return `rgba(255,46,160,${alpha})`;
   const h = hex.replace('#', '');
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
