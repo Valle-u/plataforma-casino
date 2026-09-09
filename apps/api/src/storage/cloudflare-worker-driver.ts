@@ -23,12 +23,29 @@ import type {
 } from './storage.types';
 
 /**
- * Carpeta de los archivos que NO pueden ser públicos: comprobantes de depósito
- * y de transferencias bancarias. Tiene que coincidir con `CARPETA_PRIVADA` del
- * Worker (`worker/src/index.js`) — si divergen, o se firma de más (y el Worker
- * lo rechaza) o de menos (y queda público).
+ * Carpetas cuyos archivos NO pueden ser públicos.
+ *
+ * - `/proofs/` — comprobantes de depósito y de transferencias bancarias:
+ *   nombre, CUIT, CBU y monto de personas reales.
+ * - `/chat/attachments/` — lo que la gente manda por el chat: fotos del DNI,
+ *   capturas de transferencias. Agregado el 2026-09-08; hasta entonces estos
+ *   archivos se servían **públicos y con caché de un año**, porque la regla
+ *   miraba una sola carpeta y ésta no era. Ver `docs/crm/14-decisiones.md` D12.
+ *
+ * ⚠️ **Esta lista tiene un gemelo** en `worker/src/index.js`
+ * (`CARPETAS_PRIVADAS`). Ésta decide qué se firma; la del Worker decide qué se
+ * exige firmado y qué se cachea. **Si divergen, el fallo es silencioso**: una
+ * carpeta que acá se firma y allá no es privada sale igual y nadie se entera.
+ *
+ * No se puede compartir el código —el Worker es un bundle aparte, sin acceso a
+ * `apps/api`— así que se duplica a propósito, con este aviso en los dos lados.
  */
-const CARPETA_PRIVADA = '/proofs/';
+const CARPETAS_PRIVADAS = ['/proofs/', '/chat/attachments/'];
+
+/** ¿La key es de un documento privado? */
+function esPrivada(storageKey: string): boolean {
+  return CARPETAS_PRIVADAS.some((c) => storageKey.includes(c));
+}
 
 /** Cuánto vive una URL firmada. Corto: se regenera en cada lectura. */
 const TTL_POR_DEFECTO_SEG = 900;
@@ -100,9 +117,9 @@ export class CloudflareWorkerDriver implements StorageDriver {
   /**
    * URL para mostrar el archivo.
    *
-   * Los comprobantes salen **firmados y con vencimiento**; el resto (logos,
-   * hero) sigue siendo una URL pública estable, que es lo que corresponde para
-   * la marca del casino.
+   * Los documentos privados —comprobantes y adjuntos del chat— salen
+   * **firmados y con vencimiento**; el resto (logos, hero) sigue siendo una URL
+   * pública estable, que es lo que corresponde para la marca del casino.
    *
    * La firma es HMAC-SHA256 sobre `<key>:<exp>`. El Worker la revalida con el
    * mismo secreto antes de servir. Se firma la key **y** el vencimiento juntos:
@@ -112,7 +129,7 @@ export class CloudflareWorkerDriver implements StorageDriver {
   // porque otros drivers (R2 presigned) sí hacen I/O.
   getUrl(storageKey: string, ttlSeconds?: number): Promise<string> {
     const base = `${this.workerUrl}/files/${storageKey}`;
-    if (!this.signingSecret || !storageKey.includes(CARPETA_PRIVADA)) {
+    if (!this.signingSecret || !esPrivada(storageKey)) {
       return Promise.resolve(base);
     }
     const exp =
