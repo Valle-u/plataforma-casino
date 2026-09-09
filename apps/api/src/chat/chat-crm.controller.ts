@@ -31,6 +31,7 @@ import {
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { ChatCrmService } from './chat-crm.service';
 import { ChatService } from './chat.service';
+import { TelegramChannelsService } from './telegram/telegram-channels.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { CrmAccessGuard, type RequestWithCrmInbox } from './crm-access.guard';
@@ -46,6 +47,7 @@ export class ChatCrmController {
     // El ciclo de vida de la conversación (estado, no leídos) vive en
     // ChatService, junto al resto del hilo; el CRM es la ficha del contacto.
     private readonly chat: ChatService,
+    private readonly telegramChannels: TelegramChannelsService,
   ) {}
 
   private db(req: RequestWithTenantUser) {
@@ -193,6 +195,87 @@ export class ChatCrmController {
           ? body.password
           : undefined,
     });
+  }
+
+  // ── Canales de Telegram (2.1) ─────────────────────────────────────────────
+
+  /**
+   * Los canales de esta bandeja.
+   *
+   * Sólo los suyos: por **D1** los canales son de un panel, y un operador no
+   * tiene por qué saber qué bots tiene otro.
+   */
+  @Get('channels/telegram')
+  async listTelegramChannels(@Req() req: RequestWithTenantUser) {
+    return this.telegramChannels.listar(this.db(req), this.owner(req));
+  }
+
+  /**
+   * Vincula un bot de Telegram a esta bandeja.
+   *
+   * Lo hace el **operador**, no el admin (**D13**). El token se guarda
+   * **cifrado** (**D20**) y no vuelve a salir nunca de la API.
+   */
+  @Post('channels/telegram')
+  @HttpCode(HttpStatus.CREATED)
+  async linkTelegramChannel(
+    @Req() req: RequestWithTenantUser,
+    @Body() body: { token?: unknown },
+  ) {
+    const token = typeof body?.token === 'string' ? body.token.trim() : '';
+    if (!token) {
+      throw new BadRequestException({
+        message: 'Falta el token del bot.',
+        error: 'TOKEN_REQUIRED',
+      });
+    }
+
+    const tenantSlug = req.tenantContext?.tenant.slug;
+    if (!tenantSlug) throw new NotFoundException('Tenant no resuelto.');
+
+    return this.telegramChannels.vincular(this.db(req), {
+      token,
+      inboxOwnerId: this.owner(req),
+      tenantSlug,
+      baseApiPublica: this.baseApiPublica(req),
+    });
+  }
+
+  /** Desvincula un bot: corta el webhook y desactiva el canal. */
+  @Delete('channels/telegram/:channelId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async unlinkTelegramChannel(
+    @Req() req: RequestWithTenantUser,
+    @Param('channelId', ParseUUIDPipe) channelId: string,
+  ) {
+    await this.telegramChannels.desvincular(this.db(req), {
+      channelId,
+      inboxOwnerId: this.owner(req),
+    });
+  }
+
+  /**
+   * El origen público de la API, respetando el proxy de Cloudflare.
+   *
+   * Sale del request y no de una variable de entorno, igual que la callback de
+   * los proveedores de juego (`game-providers.controller.ts`): es una URL menos
+   * que mantener, y no se puede desincronizar del dominio real.
+   */
+  private baseApiPublica(req: RequestWithTenantUser): string {
+    const h = (req.headers ?? {}) as Record<string, string | string[] | undefined>;
+    const primero = (v: string | string[] | undefined): string =>
+      (Array.isArray(v) ? v[0] : v)?.split(',')[0]?.trim() ?? '';
+
+    const proto = primero(h['x-forwarded-proto']) || 'https';
+    const host = primero(h['x-forwarded-host']) || primero(h.host);
+    if (!host) {
+      throw new BadRequestException({
+        message:
+          'No se pudo determinar el host público de la API para registrar el webhook.',
+        error: 'PUBLIC_HOST_UNKNOWN',
+      });
+    }
+    return `${proto}://${host}`;
   }
 
   // ── Notas ─────────────────────────────────────────────────────────────────

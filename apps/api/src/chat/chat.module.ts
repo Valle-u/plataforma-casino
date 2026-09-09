@@ -17,17 +17,24 @@ import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { ChatCrmService } from './chat-crm.service';
 import { CrmNetworkService } from './crm-network.service';
+import { TelegramApiService } from './telegram/telegram-api.service';
+import { TelegramChannelsService } from './telegram/telegram-channels.service';
+import { TelegramInboundService } from './telegram/telegram-inbound.service';
+import { TelegramWebhookController } from './telegram/telegram-webhook.controller';
 import { CrmAccessGuard } from './crm-access.guard';
 
 @Module({
   imports: [UserHierarchyModule, TenantUsersModule],
-  controllers: [ChatController, ChatCrmController],
+  controllers: [ChatController, ChatCrmController, TelegramWebhookController],
   providers: [
     ChatGateway,
     ChatService,
     ChatCrmService,
     CrmNetworkService,
     CrmAccessGuard,
+    TelegramApiService,
+    TelegramChannelsService,
+    TelegramInboundService,
   ],
 })
 export class ChatModule {}

@@ -214,6 +214,18 @@ export class ChatService {
       senderUserId: string | null;
       body: string;
       attachments?: ChatAttachment[];
+      /**
+       * Id del mensaje en el proveedor, para los canales externos.
+       *
+       * **Es la idempotencia**: hay un índice único parcial sobre esta columna
+       * (migración `0113`), así que un reintento de Telegram o Meta choca
+       * contra la base en vez de crear el mensaje dos veces. El insert **tira**
+       * en ese caso, y el que llama tiene que tratarlo como "ya lo teníamos".
+       *
+       * Los mensajes del widget web no lo llevan: el índice es parcial y los
+       * ignora.
+       */
+      channelMessageId?: string;
     },
   ): Promise<CrmMessage> {
     const inserted = await db
@@ -226,6 +238,7 @@ export class ChatService {
         // Guardamos SIN url (se rehidrata al leer). sanitizeAttachments ya
         // devolvió objetos limpios sin url.
         attachments: params.attachments ?? [],
+        channelMessageId: params.channelMessageId ?? null,
       })
       .returning();
     const msg = inserted[0]!;

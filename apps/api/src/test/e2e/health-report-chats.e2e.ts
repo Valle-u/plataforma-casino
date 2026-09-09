@@ -59,6 +59,15 @@ async function limpiar(): Promise<void> {
   await sql`DELETE FROM crm_messages`;
   await sql`DELETE FROM crm_conversations`;
   await sql`DELETE FROM crm_contacts`;
+  // ⚠️ Los eventos crudos van ANTES que los canales.
+  //
+  // `crm_raw_events.channel_id` es `RESTRICT` a propósito: borrar un canal no
+  // puede llevarse la evidencia de lo que pasó por él. Efecto lateral: esta
+  // limpieza —que borra TODOS los canales, no sólo los suyos— empezó a fallar
+  // en cuanto otra suite dejó un crudo. Y como pasa en el `beforeAll`, se caían
+  // los doce tests de este archivo con un error de clave foránea que no tenía
+  // nada que ver con lo que prueban.
+  await sql`DELETE FROM crm_raw_events`;
   await sql`DELETE FROM crm_channels`;
 }
 
