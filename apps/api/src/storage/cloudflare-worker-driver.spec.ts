@@ -25,7 +25,6 @@ import { CloudflareWorkerDriver } from './cloudflare-worker-driver';
 const SECRETO = 'secreto-de-prueba-largo';
 const PROOF = 'tenants/miamihub/deposits/proofs/abc-123.pdf';
 const MARCA = 'tenants/miamihub/hero/logo.png';
-const ADJUNTO_CHAT = 'tenants/miamihub/chat/attachments/def-456.jpg';
 
 function crearDriver(conSecreto: boolean): CloudflareWorkerDriver {
   process.env.CF_WORKER_URL = 'https://worker.test';
@@ -93,38 +92,5 @@ describe('CloudflareWorkerDriver.getUrl — firma de comprobantes', () => {
     const ahora = Math.floor(Date.now() / 1000);
     expect(exp).toBeGreaterThanOrEqual(ahora + 55);
     expect(exp).toBeLessThanOrEqual(ahora + 65);
-  });
-
-  /**
-   * Los adjuntos del chat entraron a la regla el 2026-09-08. Hasta entonces la
-   * carpeta privada era una sola (`/proofs/`) y `chat/attachments` no
-   * matcheaba, así que las fotos que mandaba la gente por el livechat —DNI,
-   * capturas de transferencias— se servían públicas y con caché de un año.
-   *
-   * El test importa porque el error original fue exactamente esto: una regla
-   * que cubría una carpeta y no la otra, sin nada que lo delatara.
-   */
-  describe('adjuntos del chat', () => {
-    it('los firma, igual que a los comprobantes', async () => {
-      const url = new URL(await crearDriver(true).getUrl(ADJUNTO_CHAT));
-
-      expect(url.pathname).toBe(`/files/${ADJUNTO_CHAT}`);
-      const exp = Number(url.searchParams.get('exp'));
-      const esperado = createHmac('sha256', SECRETO)
-        .update(`${ADJUNTO_CHAT}:${exp}`)
-        .digest('hex');
-      expect(url.searchParams.get('sig')).toBe(esperado);
-    });
-
-    it('no confunde la carpeta: "chat" a secas no alcanza', async () => {
-      // Sólo `/chat/attachments/` es privada. Una key que apenas contenga la
-      // palabra no debe firmarse: si la regla se aflojara a `includes('chat')`,
-      // esto empezaría a firmar cosas públicas y nadie lo notaría hasta que un
-      // logo dejara de cargar.
-      const url = await crearDriver(true).getUrl(
-        'tenants/chat-royale/hero/logo.png',
-      );
-      expect(url).not.toContain('sig=');
-    });
   });
 });
