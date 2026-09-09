@@ -6,13 +6,30 @@
  *
  * UX premium consistente con el resto de /play: card-premium glass,
  * lenguaje cercano (no "error técnico XYZ"), CTAs accionables.
+ *
+ * ## Por qué además muestra el detalle técnico
+ *
+ * Esta pantalla apareció en producción, en un link de referido abierto desde
+ * un teléfono, y **no quedó registro en ningún lado**: acá sólo había un
+ * `console.error`, y la consola de un celular ajeno no se puede leer. Sentry
+ * está inicializado pero en producción arranca sin cliente —el DSN está
+ * vacío—, así que tampoco lo recibió.
+ *
+ * Resultado: el error existió, tumbó la primera pantalla que ve alguien que
+ * todavía no tiene cuenta, y no hay forma de saber cuál fue.
+ *
+ * Por eso el detalle es visible: plegado, en gris, sin ruido para quien no lo
+ * busca — pero alcanza con que la persona lo abra y mande una captura. El
+ * `captureException` de abajo es el camino bueno y empieza a funcionar solo en
+ * cuanto el DSN esté cargado; hasta entonces, esto es lo único que hay.
  */
 
 'use client';
 
+import * as Sentry from '@sentry/nextjs';
 import { AlertTriangle, ArrowRight, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 
 export default function PlayError({
@@ -22,8 +39,16 @@ export default function PlayError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [verDetalle, setVerDetalle] = useState(false);
+
   useEffect(() => {
     console.error('[PlayError]', error);
+    // Sin DSN esto no hace nada y no tira: cuando el DSN esté, empieza a
+    // reportar sin tocar el código.
+    Sentry.captureException(error, {
+      tags: { boundary: 'play' },
+      extra: { digest: error.digest, url: window.location.href },
+    });
   }, [error]);
 
   return (
@@ -65,6 +90,26 @@ export default function PlayError({
             <span className="text-[var(--color-fg-muted)]">{error.digest}</span>
           </div>
         )}
+
+        {/*
+          El detalle técnico, plegado. Un error de cliente casi nunca trae
+          `digest` —eso lo pone el servidor—, así que sin esto la persona no
+          tiene NADA que reportar más que "me dio Ups".
+        */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setVerDetalle((v) => !v)}
+            className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] transition-colors"
+          >
+            {verDetalle ? 'Ocultar detalle' : 'Ver detalle técnico'}
+          </button>
+          {verDetalle && (
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] font-mono text-[var(--color-fg-muted)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-2 rounded-[var(--radius-sm)]">
+              {error.name}: {error.message}
+            </pre>
+          )}
+        </div>
 
         <div className="relative flex items-center gap-2 sm:gap-3 flex-wrap pt-2">
           <Button variant="premium" size="lg" onClick={() => reset()}>

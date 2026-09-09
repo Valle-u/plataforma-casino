@@ -10741,3 +10741,56 @@ multiplica.
 
 **Alternativa abierta**: no. Es la misma decisión ya tomada para los
 comprobantes, aplicada a una carpeta que la regla no miraba.
+
+---
+
+## 2026-09-09 — Una sola función decide qué host sirve el panel
+
+**Contexto**: los links de referido quedaron inservibles. Entrando a
+`/r/<code>` desde el teléfono, el formulario de registro aparecía y la página
+se reiniciaba sola, sin parar.
+
+La causa fueron **dos redirects que se apuntaban entre sí**, cada uno escrito
+por separado y ninguno enterado del otro:
+
+- El middleware, en el host del jugador, manda `/dashboard` a `/play`.
+- El layout del jugador manda a los operadores de `/play` a `/dashboard`.
+
+Y no es una navegación suave: el 307 del middleware llega sin los headers de
+redirección de Next, así que el router recarga la página entera. La recarga
+vuelve a montar el layout, el efecto dispara otra vez, y arranca de nuevo.
+
+**Opciones consideradas**:
+
+- A) Sacar el rebote del layout del jugador.
+- B) Que el rebote apunte al host del panel (`admin.` + `/dashboard`).
+- C) Que el rebote pregunte primero si el panel existe en este host, con la
+  misma función que usa el middleware para decidir lo contrario.
+
+**Decisión**: **C**.
+
+**Razón**: **A** deja al operador sin salida desde el panel del jugador en
+`localhost`, que es donde el rebote sí sirve — en dev todo se sirve por path
+desde el mismo host. **B** cruza de host, y las cookies son host-only a
+propósito (ver el bloque del CRM en `middleware.ts`): el operador caería en el
+login del panel, que es peor que quedarse donde estaba.
+
+**C** además ataca la causa y no el síntoma. El bug no fue una condición mal
+escrita: fue que **dos mitades del sistema tenían opiniones distintas sobre el
+mismo hecho**. Con una función compartida no pueden divergir, y el próximo que
+agregue un host —ya pasó con el CRM— toca un solo lugar.
+
+**Implicaciones**:
+
+- `apps/web/lib/host-del-panel.ts` — `elPanelViveEnEsteHost(host)`. La usan el
+  middleware y el layout del jugador.
+- `apps/web/lib/panel-de-la-ruta.ts` — la otra regla duplicada, que estaba
+  copiada en tres lados (middleware, `api-client`, `AuthProvider`) y en los
+  tres decía "todo lo que no sea `/play` es panel". Por eso `/r/`, la landing
+  de los referidos, bootstrapeaba la sesión equivocada.
+- Donde ya no se rebota, la excepción de mantenimiento para operadores pasó a
+  estar escrita explícita en `play/layout.tsx`. Antes se cumplía de rebote.
+
+**Alternativa abierta**: sí, pero angosta. Si algún día el operador tiene que
+llegar al panel desde el sitio del jugador, es **B** con un link visible, no un
+redirect automático.
