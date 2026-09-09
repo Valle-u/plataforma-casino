@@ -41,6 +41,25 @@ firma todavía no se exige**. Una URL vieja sin firmar abre igual.
 
 ---
 
+## 📍 Dónde estamos parados (2026-09-08)
+
+**`main` corre a propósito la versión VIEJA del driver de storage.** El
+arreglo que hace que la API firme los adjuntos del chat está completo y
+probado en `staging` (`0c21270`), pero **no puede ir a producción antes que el
+Worker** — por el motivo de la sección de abajo.
+
+Cuando el Worker esté desplegado (Paso 1), traer esos dos archivos a `main`:
+
+```bash
+git checkout staging -- apps/api/src/storage/cloudflare-worker-driver.ts apps/api/src/storage/cloudflare-worker-driver.spec.ts
+```
+
+> ⚠️ **Un `git merge staging` NO alcanza.** Para git esos archivos ya están
+> resueltos en `main`, así que la versión vieja ganaría en silencio. Hay que
+> traerlos explícitamente con el comando de arriba.
+
+---
+
 ## ⚠️ El orden no es negociable
 
 **Los pasos 1 y 2 van antes que el 3.** Si la API empieza a firmar mientras el
