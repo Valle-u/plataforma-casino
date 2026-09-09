@@ -36,6 +36,17 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../../tenant-resolver/tenant-context';
 import { ChatService } from '../chat.service';
+import {
+  CHAT_ATTACHMENT_MAX_BYTES,
+  type ChatAttachment,
+} from '../chat.types';
+import { descifrar } from '../../common/secreto-cifrado';
+import { TelegramDescargaService } from './telegram-descarga.service';
+import {
+  queBajar,
+  textoDeRechazo,
+  type MensajeConMedios,
+} from './telegram-media';
 import { UserHierarchyService } from '../../user-hierarchy/user-hierarchy.service';
 
 /** Lo que usamos de un update. Telegram manda bastante más. */
@@ -71,6 +82,7 @@ export class TelegramInboundService {
   constructor(
     private readonly chat: ChatService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly descarga: TelegramDescargaService,
   ) {}
 
   /**
@@ -83,6 +95,7 @@ export class TelegramInboundService {
     db: TenantDb,
     canal: CrmChannel,
     body: unknown,
+    tenantSlug: string,
   ): Promise<void> {
     const update = (body ?? {}) as UpdateDeTelegram;
 
@@ -116,7 +129,7 @@ export class TelegramInboundService {
     }
 
     try {
-      await this.procesar(db, canal, update);
+      await this.procesar(db, canal, update, tenantSlug);
       await db
         .update(crmRawEvents)
         .set({ processedAt: new Date() })
@@ -138,6 +151,7 @@ export class TelegramInboundService {
     db: TenantDb,
     canal: CrmChannel,
     update: UpdateDeTelegram,
+    tenantSlug: string,
   ): Promise<void> {
     // Una edición no crea un mensaje nuevo: se ignora, pero el crudo queda
     // guardado por si algún día se quiere reflejar.
@@ -147,11 +161,40 @@ export class TelegramInboundService {
     const chatId = msg.chat?.id;
     if (typeof chatId !== 'number') return;
 
-    // `caption` es el texto de una foto o un archivo. Sin los medios (2.4) al
-    // menos se ve lo que la persona escribió con el adjunto, en vez de un
-    // mensaje vacío que parece un error.
-    const cuerpo = (msg.text ?? msg.caption ?? '').trim();
-    const sinTexto = cuerpo === '';
+    // `caption` es el texto que acompaña a una foto o un archivo.
+    let cuerpo = (msg.text ?? msg.caption ?? '').trim();
+
+    // ── Adjuntos (2.4) ──────────────────────────────────────────────────────
+    //
+    // Se bajan ACÁ, en el camino del webhook, y no en una cola para después:
+    // la ruta de descarga que da Telegram **vence en una hora**, y pasado ese
+    // rato el archivo es irrecuperable. Ver `TelegramDescargaService`.
+    const adjuntos: ChatAttachment[] = [];
+    const decision = queBajar(msg as MensajeConMedios, CHAT_ATTACHMENT_MAX_BYTES);
+
+    if (decision.tipo === 'bajar') {
+      const token = tokenDelCanal(canal);
+      const guardado = token
+        ? await this.descarga.bajarYGuardar({
+            token,
+            fileId: decision.fileId,
+            nombre: decision.nombre,
+            tenantSlug,
+          })
+        : null;
+
+      if (guardado) {
+        adjuntos.push(guardado);
+      } else {
+        // No se pudo traer. Se dice, en vez de dejar un mensaje que parece
+        // incompleto sin explicación.
+        cuerpo = textoDeRechazo('mandó un archivo que no se pudo traer', cuerpo);
+      }
+    } else if (decision.tipo === 'rechazar') {
+      cuerpo = textoDeRechazo(decision.motivo, cuerpo);
+    }
+
+    const sinTexto = cuerpo === '' && adjuntos.length === 0;
 
     const owner = canal.ownerUserId;
     const contactId = await this.contactoDeChat(db, {
@@ -178,7 +221,8 @@ export class TelegramInboundService {
       conversationId: conv.id,
       direction: 'inbound',
       senderUserId: null,
-      body: sinTexto ? '(adjunto sin texto)' : cuerpo,
+      body: sinTexto ? '(mensaje sin texto)' : cuerpo,
+      attachments: adjuntos,
       // Único por bot: es lo que corta los duplicados en `crm_messages`.
       channelMessageId: `tg:${canal.id}:${msg.message_id ?? ''}`,
     });
@@ -254,4 +298,21 @@ function esDuplicado(err: unknown): boolean {
     ?? (err as { cause?: { code?: string } })?.cause?.code;
   // 23505 = unique_violation en Postgres.
   return code === '23505' || /duplicate key|unique/i.test(String(err));
+}
+
+/**
+ * El token del bot, descifrado (**D20**).
+ *
+ * `null` si el canal no lo tiene o si no se pudo abrir —una clave rotada sin
+ * su `_PREVIOUS`, por ejemplo—. En ese caso el mensaje se guarda igual, sin el
+ * adjunto: perder una foto es malo, perder el mensaje entero es peor.
+ */
+function tokenDelCanal(canal: CrmChannel): string | null {
+  const cifrado = (canal.config as { token?: string } | null)?.token;
+  if (!cifrado) return null;
+  try {
+    return descifrar(cifrado);
+  } catch {
+    return null;
+  }
 }

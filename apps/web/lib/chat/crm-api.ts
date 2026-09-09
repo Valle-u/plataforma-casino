@@ -47,3 +47,31 @@ export const createTemplate = (
 
 export const deleteTemplate = (id: string) =>
   apiDelete<{ ok: boolean }>(`/tenant/chat/templates/${id}`);
+
+// ── Canales externos (etapa 2) ───────────────────────────────────────────────
+
+/**
+ * Un canal, como lo ve la pantalla.
+ *
+ * ⚠️ **Nunca trae el token.** La API no lo devuelve en ninguna respuesta: se
+ * guarda cifrado y no vuelve a salir (D20). `link` es lo que el operador le
+ * pasa a sus jugadores.
+ */
+export interface CanalDeTelegram {
+  id: string;
+  type: string;
+  username: string | null;
+  link: string | null;
+  isActive: boolean;
+  esMio: boolean;
+  createdAt: string | null;
+}
+
+export const listarCanalesDeTelegram = () =>
+  apiGet<CanalDeTelegram[]>(`/tenant/chat/channels/telegram`);
+
+export const vincularBotDeTelegram = (token: string) =>
+  apiPost<CanalDeTelegram>(`/tenant/chat/channels/telegram`, { token });
+
+export const desvincularCanalDeTelegram = (channelId: string) =>
+  apiDelete<void>(`/tenant/chat/channels/telegram/${channelId}`);

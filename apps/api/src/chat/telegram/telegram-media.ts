@@ -73,14 +73,15 @@ export function queBajar(msg: MensajeConMedios, maxBytes: number): Decision {
     };
   }
 
-  if (msg.document?.file_id) {
-    const doc = msg.document;
+  const fileIdDoc = msg.document?.file_id;
+  if (fileIdDoc) {
+    const doc = msg.document!;
     if ((doc.file_size ?? 0) > maxBytes) {
       return { tipo: 'rechazar', motivo: 'mandó un archivo demasiado grande' };
     }
     return {
       tipo: 'bajar',
-      fileId: doc.file_id,
+      fileId: fileIdDoc,
       mime: doc.mime_type ?? null,
       nombre: nombreLimpio(doc.file_name) ?? 'archivo',
       bytes: doc.file_size ?? null,

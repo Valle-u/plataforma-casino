@@ -120,7 +120,7 @@ export class TelegramWebhookController {
       return { ok: true };
     }
 
-    await this.inbound.recibir(db, canal, body);
+    await this.inbound.recibir(db, canal, body, tenant.slug);
     return { ok: true };
   }
 

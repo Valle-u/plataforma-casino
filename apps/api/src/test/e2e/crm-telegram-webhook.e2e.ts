@@ -382,22 +382,66 @@ describe('CRM · webhook de Telegram', () => {
     expect(res.status).toBe(200);
   });
 
-  it('una foto sin texto deja algo legible en la bandeja', async () => {
-    const chatId = 559001;
-    await postWebhook(canalLitoral, {
-      update_id: proximoUpdate(),
-      message: {
-        message_id: 1,
-        chat: { id: chatId },
-        from: { id: chatId, first_name: 'Foto' },
-        photo: [{ file_id: 'abc' }],
-      },
+  // ── Adjuntos (2.4) ────────────────────────────────────────────────────────
+
+  describe('adjuntos', () => {
+    /**
+     * El canal de esta suite no tiene token guardado, así que la descarga ni se
+     * intenta. Lo que importa es que **el mensaje llegue igual y diga qué
+     * pasó**: un mensaje vacío haría pensar al operador que se rompió algo.
+     */
+    it('si el archivo no se pudo traer, el mensaje lo dice', async () => {
+      const chatId = 559001;
+      await postWebhook(canalLitoral, {
+        update_id: proximoUpdate(),
+        message: {
+          message_id: 1,
+          chat: { id: chatId },
+          from: { id: chatId, first_name: 'Foto' },
+          photo: [{ file_id: 'abc', file_size: 1000 }],
+        },
+      });
+
+      const msgs = await mensajesDe(chatId, litoral.id);
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]!.body).toContain('no se pudo traer');
     });
 
-    const msgs = await mensajesDe(chatId, litoral.id);
-    expect(msgs).toHaveLength(1);
-    // Hasta que estén los medios (2.4), al menos no es un mensaje vacío que
-    // parezca un error.
-    expect(msgs[0]!.body).toBe('(adjunto sin texto)');
+    /**
+     * Una nota de voz **no se intenta bajar**: se nombra. La gente las manda
+     * todo el tiempo, y tragárselas dejaría al operador sin saber que existió.
+     */
+    it('una nota de voz se nombra y conserva lo que la persona escribió', async () => {
+      const chatId = 559002;
+      await postWebhook(canalLitoral, {
+        update_id: proximoUpdate(),
+        message: {
+          message_id: 2,
+          chat: { id: chatId },
+          from: { id: chatId, first_name: 'Audio' },
+          caption: 'escuchá esto',
+          voice: { file_id: 'v1', file_size: 5000 },
+        },
+      });
+
+      const msgs = await mensajesDe(chatId, litoral.id);
+      expect(msgs[0]!.body).toContain('escuchá esto');
+      expect(msgs[0]!.body).toContain('nota de voz');
+    });
+
+    it('un video también, sin intentar bajarlo', async () => {
+      const chatId = 559003;
+      await postWebhook(canalLitoral, {
+        update_id: proximoUpdate(),
+        message: {
+          message_id: 3,
+          chat: { id: chatId },
+          from: { id: chatId, first_name: 'Video' },
+          video: { file_id: 'vid1', file_size: 900_000 },
+        },
+      });
+
+      expect((await mensajesDe(chatId, litoral.id))[0]!.body).toContain('un video');
+    });
   });
 });

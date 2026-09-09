@@ -19,6 +19,7 @@ import { ChatCrmService } from './chat-crm.service';
 import { CrmNetworkService } from './crm-network.service';
 import { TelegramApiService } from './telegram/telegram-api.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
+import { TelegramDescargaService } from './telegram/telegram-descarga.service';
 import { TelegramInboundService } from './telegram/telegram-inbound.service';
 import { TelegramWebhookController } from './telegram/telegram-webhook.controller';
 import { CrmAccessGuard } from './crm-access.guard';
@@ -35,6 +36,7 @@ import { CrmAccessGuard } from './crm-access.guard';
     TelegramApiService,
     TelegramChannelsService,
     TelegramInboundService,
+    TelegramDescargaService,
   ],
 })
 export class ChatModule {}

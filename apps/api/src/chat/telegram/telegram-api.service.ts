@@ -99,6 +99,21 @@ export class TelegramApiService {
     });
   }
 
+  /**
+   * La ruta temporal para descargar un archivo. `null` si no vino.
+   *
+   * ⚠️ **Esta ruta vence** —alrededor de una hora— y ahí el archivo es
+   * irrecuperable: el `file_id` sigue existiendo pero ya no resuelve a nada
+   * descargable. Es la razón por la que los adjuntos se bajan en el mismo
+   * camino del webhook y no en una cola para después.
+   */
+  async getFilePath(token: string, fileId: string): Promise<string | null> {
+    const r = await this.llamar<{ file_path?: string }>(token, 'getFile', {
+      file_id: fileId,
+    });
+    return r.file_path ?? null;
+  }
+
   /** Corta el webhook. Se usa al desvincular. */
   async deleteWebhook(token: string): Promise<void> {
     await this.llamar(token, 'deleteWebhook', { drop_pending_updates: true });
