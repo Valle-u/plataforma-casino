@@ -109,13 +109,23 @@ rompiendo el filtro a propósito para confirmar que fallan.
 
 ## Etapa 2 — Telegram
 
-| | Qué |
-|---|---|
-| 2.1 | Vincular un bot a un panel (pantalla del **operador**, no del admin) |
-| 2.2 | Webhook: firma verificada, `UNIQUE` en `channel_message_id`, 200 rápido, crudo primero |
-| 2.3 | Ruteo por dueño de canal |
-| 2.4 | Medios: bajarlos antes de que venza el id, con reintento |
-| 2.5 | La pantalla explica que el jugador tiene que escribirle al bot primero |
+| | Qué | |
+|---|---|---|
+| 2.0 | ~~La base: índice único, eventos crudos, secreto de webhook~~ | ✅ migración `0113` |
+| 2.1 | ~~Vincular un bot a un panel~~ | ✅ |
+| 2.2 | ~~Webhook: firma verificada, 200 rápido, crudo primero~~ | ✅ |
+| 2.3 | ~~Ruteo por dueño de canal~~ | ✅ |
+| 2.4 | ~~Medios: bajarlos antes de que venza el id~~ | ✅ |
+| 2.5 | ~~La pantalla explica que el jugador tiene que escribirle al bot primero~~ | ✅ |
+
+**Etapa 2 terminada el 2026-09-09.** Un operador vincula su bot desde
+`/support/canales`, reparte el link, y los mensajes —con fotos— le entran a su
+bandeja.
+
+> ⚠️ **Falta probarlo con un bot real.** Todo está verificado con tests, pero
+> Telegram va simulado en la suite: pegarle de verdad ataría los tests a una red
+> externa. La primera prueba con un bot vivo es la que confirma que el webhook
+> queda bien registrado desde .
 
 **Lo que Telegram enseña y hay que reflejar:** casi nunca da el teléfono, así que
 **D4 no funciona ahí**. Un contacto de Telegram nace como **lead**, y eso va a ser
