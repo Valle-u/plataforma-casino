@@ -17219,3 +17219,152 @@ mostraría nada: con el widget web como único canal, una conversación de otra 
 no puede aparecer en ninguna bandeja. Se hace cuando exista un canal externo
 central, que es lo que las crea. La razón completa está en
 `docs/crm/06-operacion-diaria.md`.
+
+---
+
+## Addendum — El link de referido roto en producción (2026-09-09)
+
+**Modelo**: Claude Code (Opus 5) · **Usuario**: Uriel
+
+El dueño cortó la etapa 2 del CRM con un reporte: *"cuando entro al link de un
+referido de cajero, se me abre el formulario de registro pero como que se
+actualiza la página y se me sale"*. Desde el teléfono.
+
+Tardó **tres despliegues** en cerrarse, y la razón de que tardara es la parte
+que más conviene leer.
+
+### La causa real
+
+El link se reparte por **WhatsApp**, y en iPhone WhatsApp abre los links en su
+navegador interno (un `WKWebView`). Ese WebView **recarga la página sola**
+cuando iOS le reclama memoria, y `/play` no es liviana: 60 juegos, carrusel,
+imágenes, una quincena de chunks.
+
+Del otro lado, el layout del jugador borraba `auth=register` del URL **al abrir
+el modal** — o sea, a los milisegundos de llegar. Así que la recarga volvía a
+`/play?ref=X` sin `auth`, y el formulario no volvía.
+
+Ahora el parámetro se saca recién cuando la persona **cierra el modal a
+propósito**, que es el único momento en que sabemos que no lo quiere.
+
+**Verificado en producción** con el código real del cajero: se abre, se recarga
+a mano, el formulario vuelve; se cierra, el parámetro desaparece y una recarga
+posterior ya no lo reabre.
+
+### Por qué costó tres despliegues
+
+**Porque no se podía ver el error.** Los dos error boundaries del sitio hacían
+sólo `console.error`, y la consola de un celular ajeno no se lee. Sentry está
+inicializado pero en producción **arranca sin cliente**: `NEXT_PUBLIC_SENTRY_DSN`
+está vacío. En `global-error.tsx` había un comentario desde el sprint 53.3 que
+decía *"en producción: captureException"* y nunca se escribió.
+
+O sea: la pantalla que ve alguien que todavía no tiene cuenta se rompía, y no
+quedaba rastro en ningún lado.
+
+Se cerró: los dos boundaries llaman `captureException` (sin DSN no hacen nada y
+no tiran), y la pantalla de "Ups" muestra el detalle técnico plegado — un error
+de cliente casi nunca trae `digest`, así que hasta ahora la persona no tenía
+nada que reportar más que el título.
+
+🔴 **Falta cargar `NEXT_PUBLIC_SENTRY_DSN` en la app `web` de Dokploy.** Es
+variable de build de Next: no alcanza con guardarla, necesita redeploy.
+
+### Lo que se encontró de paso, y era real
+
+**Un bucle de recargas.** El layout del jugador manda a los operadores a
+`/dashboard`, pero en el host del jugador esa ruta la rebota el middleware a
+`/play` con un 307 **sin los headers de redirección de Next**, así que el router
+recarga la página entera; vuelve a montar y dispara otra vez. Dos redirects
+apuntándose entre sí, cada uno escrito por separado.
+
+No era lo que reportó el dueño —sólo se dispara con sesión de operador en el
+sitio del jugador— pero existía. La decisión de fondo está en el DEVLOG: la
+condición vive ahora en `lib/host-del-panel.ts` y **la usan las dos mitades**,
+que es lo que impide que vuelvan a contradecirse.
+
+**El registro se abría encima de una sesión abierta.** El auto-open leía `user`
+en el montaje, cuando el bootstrap todavía no contestó `/tenant/auth/me`.
+Reproducido en staging: "Creá tu cuenta" encima del lobby propio, con el saldo
+asomando detrás.
+
+**`/r/` contaba como ruta de panel.** La regla era "todo lo que no sea `/play`",
+copiada en tres archivos. Ahora vive en `lib/panel-de-la-ruta.ts`.
+
+**Wallet y notificaciones se consultaban sin sesión.** El sitio se navega sin
+cuenta y la barra se monta igual, así que `/tenant/wallet/me` pedía el saldo de
+nadie **cada 20 segundos** y volvía 401 en cada vuelta, para siempre. Medido
+antes y después: de un 401 cada 20 s a **cero consultas** en 40 s.
+
+**`ChunkLoadError` tapaba el casino entero.** Si el WebView muere a mitad de la
+descarga de un chunk, al bundle no le pasó nada: se cortó la bajada. Ahora esa
+pantalla se recarga sola, **una sola vez**, con freno en `sessionStorage` — sin
+el freno serían recargas infinitas, justo el bucle que se arregló arriba.
+
+**El jsonb del socio podía voltear el render.** `design.slides` se casteaba a
+array sin comprobarlo (`{}` pasaba el guard, `.length` daba `undefined`, y el
+render terminaba llamando `.filter()` sobre un objeto), y `hexToRgba` recibía
+`string` por tipo pero le llega el mismo jsonb libre. Los dos caminos sólo
+corren con un `?ref` que resuelve al diseño de un socio, o sea **por un link de
+referido**.
+
+### Commits
+
+Todos en `apps/web`. **El CRM no se movió**: salieron por su propia rama
+(`fix/link-referido-bucle`, sacada de `main`), como manda `docs/24`.
+
+- `1a10e1e` — `fix(web): el link de referido entraba en bucle de recargas`
+- `05013f7` — `fix(web): endurecer el render del link de referido y ver el error`
+- `f41285b` — `fix(web): que la recarga del WebView no se lleve el registro`
+
+`main` = `f41285b`. `staging` los tiene por merge (`d3c990c`) y sigue con el CRM
+encima.
+
+### Lo que se había cerrado antes, en esta misma sesión
+
+La entrada anterior dejaba cuatro pendientes. Tres están hechos:
+
+1. ✅ **El bug de comisiones** (`7ec937e`, en `main`). Un empleado de un socio
+   independiente colgaba al jugador del admin principal, o sea **fuera de su
+   propia red**. Verificado en producción: 0 jugadores mal colgados, y 0
+   empleados existentes — no llegó a costar plata.
+2. ✅ **Los secretos de canal** → **D20**: cifrados en la base con AES-256-GCM,
+   clave en el entorno, sin fallback a texto plano (`cifrar()` tira si no hay
+   clave). La clave está cargada en **staging**.
+   🔴 **Producción todavía no tiene la suya, y tiene que ser DISTINTA.**
+3. ✅ **El Worker desplegado** y las URLs firmadas cerradas de punta a punta:
+   403 sin firma —y no 500, que era el riesgo— y 200 con una firma emitida por
+   la API. Antes de prender el flag se descubrió que el Worker **no tenía**
+   `CF_WORKER_SIGNING_SECRET`: prenderlo habría devuelto 500 en cada archivo
+   privado.
+4. ✅ **Etapa 2 (Telegram)**, 2.0 a 2.5. Un operador vincula su bot desde
+   `/support/canales`, reparte el link, y los mensajes —con fotos— le entran a
+   su bandeja. Sólo en `staging`.
+
+### Próximo paso
+
+1. **Que el dueño pruebe el link desde WhatsApp en el iPhone.** Es el único
+   lugar donde falla de verdad; todo lo demás quedó verificado en producción.
+2. 🔴 **`NEXT_PUBLIC_SENTRY_DSN` en la app `web`** (build var, necesita
+   redeploy). Sin eso la plataforma sigue ciega a los errores de los jugadores.
+3. 🔴 **`CHANNEL_SECRET_KEY` en producción**, distinta de la de staging.
+4. 🔴 **Rotar los tres secretos del Worker con nombre en forma de credencial**
+   (64 y 32 hex). Los nombres los lee cualquiera con acceso a la cuenta: si
+   alguno es real, hay que **rotarlo, no borrarlo**. Y rotar también
+   `CF_WORKER_UPLOAD_TOKEN`.
+5. **Probar Telegram con un bot real.** La suite lo simula a propósito; la
+   primera prueba viva es la que confirma que el webhook queda bien registrado
+   desde `crm-staging.miamihub.vip`.
+6. **Responder desde el panel por Telegram.** Hoy el operador recibe pero no
+   puede contestar — es el hueco más grande de la etapa 2.
+
+### Nota para el próximo agente
+
+Este bug se buscó cuatro veces en el lugar equivocado, y en las cuatro había una
+causa plausible y verificable en el código. **Ninguna era la del dueño.** Lo que
+lo destrabó no fue leer más código: fueron cuatro preguntas sobre el entorno
+—desde dónde toca el link, qué teléfono, si seguía el cartel de error, si tenía
+la app instalada—. Con "WhatsApp + iPhone" el cuadro cerró en un minuto.
+
+Cuando un bug no se reproduce, el dato que falta casi nunca está en el
+repositorio.
