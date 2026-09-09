@@ -16998,3 +16998,224 @@ jugador** (`apps/api/src/chat/chat-crm.service.ts`). Hoy es inalcanzable porque 
 ruteo no lleva jugadores independientes a la bandeja central — **pero D3 abre esa
 puerta a propósito**. Arreglarlo es **requisito del primer canal externo**, no
 deuda para después. Es R6.
+
+---
+
+## Addendum — La etapa 1 del CRM, y su propio subdominio (2026-09-09)
+
+**Modelo**: Claude Opus 5. Continuación directa del addendum anterior.
+
+Se construyó **la etapa 1 completa** del roadmap del CRM —las ocho tareas—, se
+mergeó a producción **sólo lo que correspondía**, y el CRM quedó viviendo en
+`crm-staging.miamihub.vip`.
+
+### La etapa 1, ocho de ocho
+
+| | | |
+|---|---|---|
+| 1.1 | Dueño del contacto | migración `0112` |
+| 1.2 | Dueño del canal | migración `0112` |
+| 1.3 | `getContext` filtrado por red | 6 tests |
+| 1.4 | Cerrar / pendiente / reabrir | endpoint nuevo |
+| 1.5 | El aviso de derivación (D8) | archivo propio + tests |
+| 1.6 | Alta de jugador desde el chat (D9) | 10 tests |
+| 1.7 | El cartel de otra red en la ficha | frontend |
+| 1.8 | Los seis tests de aislamiento | 20 checks |
+
+Al cerrar: **88 suites, 1091 tests en verde**, corridos completos antes de cada
+commit.
+
+### Lo que apareció construyendo, que no estaba planificado
+
+**Resolver estaba a punto de romper D11.** `getOrCreateOpenConversation` buscaba
+conversaciones `<> 'resolved'`, así que una resuelta caía al `INSERT` y se creaba
+un **hilo nuevo**. Nunca se había notado porque **nada marcaba una conversación
+como resuelta**: la columna existía y ningún código la escribía. O sea que
+agregar el botón de 1.4 habría hecho aparecer solo el bug que D11 descartó, en el
+primer jugador que volviera a escribir.
+
+**El aviso llegaba sin badge.** `postMessage` no toca contadores para los
+mensajes `system`, así que el aviso de D8 era invisible — justo lo que venía a
+evitar. Y por el mismo motivo tampoco aparecía en el parte diario: se ajustó la
+consulta para contar el último mensaje `<> 'outbound'` en vez de `= 'inbound'`.
+
+**El operador directo puede no tener bandeja.** Si es un cajero **dependiente**,
+el aviso caería en una bandeja que nadie puede abrir. Ahora se traduce a la que
+realmente atiende, o se rechaza con un error claro.
+
+**🔴 Un bug de comisiones, reportado y NO tocado.** El chequeo de "staff de la
+casa" en `tenant-users.controller.ts` es por código de rol:
+
+```
+actorIsCasaStaff = roles.includes('admin_tenant') || roles.includes('empleado')
+```
+
+Un empleado **de un socio independiente** también tiene el rol `empleado`, así
+que entra por esa rama y el jugador que crea cuelga del **admin principal**: se
+va de la red independiente, y con él las comisiones que genere. No rompe nada
+visible —el jugador se crea, entra y juega— y se descubre cuando una liquidación
+no cierra.
+
+Es un flujo que se usa todos los días desde antes del CRM: arreglarlo es un
+cambio aparte, con su propio riesgo. **El alta del CRM lo evita pasando el padre
+explícito**, sin inferir nada del rol del actor.
+
+### La verificación, y una corrección propia
+
+Cada test se validó **rompiendo a propósito el código que protege**. El de 1.6
+falla si el padre sale del actor; los de 1.8 se caen 15 de 20 si
+`resolveInboxOwner` deja entrar a la red dependiente. *Un test que pasa no prueba
+nada si también pasaría sin el arreglo.*
+
+**Y hubo que corregir algo dicho antes.** El doc 07 afirmaba que
+`POST /tenant/users` cuelga al jugador **del empleado que lo crea**. Es falso:
+mapea al staff central al admin principal. Lo que sí había era el bug de arriba,
+peor y en otro lado. Quedó corregido en el documento.
+
+### El merge parcial a producción
+
+`main` recibió los documentos y el parte diario, **pero no el arreglo de
+storage**: en producción sigue corriendo el Worker viejo, que para
+`chat/attachments` manda `Cache-Control: public, immutable`. Con la API firmando,
+cada lectura de una conversación generaría una URL nueva y **cada una crearía su
+propia entrada de caché pública de un año** — en vez de arreglar el problema, lo
+multiplicaría.
+
+Así que `main` volvió a la versión de producción de dos archivos. El arreglo
+completo sigue intacto en `staging`.
+
+> ⚠️ **`git merge staging` NO lo trae de vuelta.** Para git esos archivos ya
+> están resueltos en `main`. Hay que traerlos explícitamente — el comando está en
+> el runbook y en el mensaje del commit `06ebf94`.
+
+### 🔒 El CRM no va a producción hasta que el dueño lo diga
+
+**Decisión del dueño.** `staging` deja de ser "lo que sale en el próximo merge" y
+pasa a ser **el banco de pruebas del CRM**. Producción se queda con el livechat
+interno, como está.
+
+Un arreglo de plataforma **no puede salir mergeando `staging`**: sale por su
+propia rama desde `main`, y después se baja a `staging`. Documentado en
+`docs/24-entornos-deploy.md`, con la trampa del merge inverso incluida.
+
+### El subdominio propio
+
+`crm-staging.miamihub.vip` sirve **el mismo build** que el panel, recortado:
+adentro sólo existe Soporte. Para el operador es una aplicación aparte; para el
+deploy es la misma imagen y el mismo contenedor.
+
+No hizo falta una app nueva **ni tocar la resolución del tenant**: el backend
+resuelve el casino por `X-Tenant-Host`, que sale de una variable del build y
+**no del host del navegador**.
+
+**La sesión no se comparte con `admin.`** — las cookies van sin atributo
+`Domain`, así que son de un host exacto y el CRM pide su propio login. Decidido
+con el dueño: compartirlas obligaría a abrirlas a todo `.miamihub.vip`, incluido
+el sitio del jugador donde corren los juegos.
+
+**El menú se recorta por CSS**, a partir de `data-crm-only` que el layout del
+**servidor** pone en el `<html>`. Resolverlo en el cliente con `window.location`
+habría pintado el menú completo y lo habría recortado después — el mismo
+parpadeo que costó arreglar en la interfaz del jugador. El recorte es
+**cosmético**: lo que impide llegar a otra pantalla es el redirect, y lo que
+impide leer datos ajenos son los permisos del backend.
+
+### Tres funciones que sólo conocían `admin.`
+
+Agregar un subdominio destapó tres lugares con el mismo hueco. Ninguno rompía
+ese día; los tres estaban puestos para romper:
+
+1. **`esHostDePanel()`** — el CRM se habría pintado con los colores de **marca
+   del casino** (los del jugador) sobre una pantalla de operador. El único que se
+   veía enseguida.
+2. **`playerOrigin()`** — sacaba el prefijo con un `slice(6)` fijo, correcto para
+   `'admin.'` y `'admin-'`. `'crm.'` mide 4: habría dejado `iamihub.vip`. Hoy
+   sólo se usa en pantallas que el CRM no alcanza, **pero `docs/crm/07` ya
+   plantea mandar un link de registro desde el chat** — y ahí habría generado un
+   link roto en silencio. Ahora los prefijos son una lista y se sacan por su
+   propia longitud.
+3. **`manifest.ts`** — instalado como PWA desde el CRM decía el nombre del casino
+   y arrancaba en `/`. Ahora dice `CRM · <casino>` y arranca en `/support`.
+
+### El despliegue, hecho con el dueño
+
+DNS en Cloudflare (`A → 147.93.32.111`, proxied), dominio en Dokploy (`Path /`,
+`Port 3000`, HTTPS, Let's Encrypt) y una fila en `tenant_domains`.
+
+**El `526` del medio no era un error**: significa que Cloudflare llegó al VPS
+pero el VPS no tenía certificado para ese nombre — exactamente el estado
+esperado entre el DNS y Dokploy. Pasó a `200` solo, cuando Let's Encrypt emitió.
+
+Sin la fila en `tenant_domains` el CRM cargaba con los colores por defecto y el
+manifest decía `CRM · Casino`. Con ella: `CRM · Staging` y la paleta en el primer
+HTML.
+
+### Verificado en el subdominio real
+
+```
+crm-staging/support      200
+crm-staging/login        200
+crm-staging/users        307 → /support
+crm-staging/deposits     307 → /support
+admin-staging/users      200      ← el panel intacto
+```
+
+### Lo que enseñó
+
+**Un subdominio nuevo es una auditoría de todos los `startsWith('admin.')` del
+repo.** Fueron tres, y el de `playerOrigin` tenía hasta un comentario explicando
+por qué el `6` estaba bien — cierto cuando se escribió.
+
+**El dev server con turbopack no arranca en la máquina del dueño** (el binario
+nativo de Next falla al cargar y el fallback wasm no soporta turbopack). Se
+agregó una config `web-sin-turbo` a `launch.json` que sí levanta, y con eso se
+pudo verificar frontend por primera vez en la sesión.
+
+### Commits
+
+- `e4f1421` — `feat(health-report): los chats sin responder, en el parte diario`
+- `51eece1` — `docs(runbook): main corre el driver viejo a proposito`
+- `c16bb98` — `feat(crm): etapa 1 · el filtro por red y las columnas de dueño`
+- `698b4e4` — `feat(crm): etapa 1 · estados de la conversacion y el aviso`
+- `baadddd` — `feat(crm): 1.6 · alta de jugador desde el chat (D9)`
+- `4a9271f` — `test(crm): 1.8 · los dos aislamientos que faltaban fijar`
+- `fa3deec` — `feat(web): 1.7 · el cartel de otra red en la ficha`
+- `f242c3c` — `feat(web): el CRM en su propio subdominio (crm.)`
+- `8400e70` — `fix(web): los tres lugares que solo conocian el host admin.`
+
+En `main`: `06ebf94` (`revert(storage): en main, el driver espera al Worker`).
+
+### Estado
+
+`staging` = `8400e70` · `main` = `06ebf94`.
+
+**Las ramas divergen a propósito** en dos archivos del driver de storage, y
+seguirán así hasta que se despliegue el Worker.
+
+### Próximo paso
+
+**El dueño prueba el CRM en `crm-staging.miamihub.vip`.** Lo que más importa
+mirar es que una conversación resuelta **se reabra en el mismo hilo** cuando el
+jugador vuelve a escribir (D11): es el comportamiento que estuvo a punto de salir
+mal.
+
+Después de eso, y en este orden de importancia:
+
+1. 🔴 **El bug de comisiones** del alta desde el panel. No es CRM, corre hoy y
+   toca plata.
+2. 🔴 **Dónde viven los secretos de canal** — decisión abierta, y no decidirla es
+   elegir texto plano para credenciales que, por D13, son de los socios. Bloquea
+   la etapa 2.
+3. **Desplegar el Worker** y traer el driver a `main`. Mientras tanto los
+   adjuntos del chat siguen públicos en producción, como estaban.
+4. **Etapa 2: Telegram.**
+
+### Lo que quedó afuera, a propósito
+
+**El cartel de red en la LISTA** de conversaciones. Costaría una consulta
+recursiva por contacto en cada apertura de la bandeja, o una segunda
+implementación de la regla al lado de `getIndependentBranchAncestor`. Y hoy no
+mostraría nada: con el widget web como único canal, una conversación de otra red
+no puede aparecer en ninguna bandeja. Se hace cuando exista un canal externo
+central, que es lo que las crea. La razón completa está en
+`docs/crm/06-operacion-diaria.md`.
