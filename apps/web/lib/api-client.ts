@@ -18,11 +18,14 @@
  * tenant es su dominio, en dev se usa el default de `NEXT_PUBLIC_TENANT_HOST`.
  */
 
+import { panelDeLaRuta } from './panel-de-la-ruta';
+
 const API_BASE = '/api'; // proxy via next.config.ts rewrites
 
 /**
- * Detecta el panel activo según la ruta actual.
- *   - `/play/*` → 'player'
+ * Detecta el panel activo según la ruta actual (la regla está en
+ * `panel-de-la-ruta.ts`, compartida con el middleware y el AuthProvider).
+ *   - `/play/*` y `/r/*` → 'player'
  *   - todo lo demás → 'admin'
  *
  * Esto permite sesiones aisladas en el mismo dominio:
@@ -30,7 +33,7 @@ const API_BASE = '/api'; // proxy via next.config.ts rewrites
  */
 export function getPanel(): 'admin' | 'player' {
   if (typeof window === 'undefined') return 'player';
-  return window.location.pathname.startsWith('/play') ? 'player' : 'admin';
+  return panelDeLaRuta(window.location.pathname);
 }
 
 /** Key del override manual de tenant host (localStorage) por panel. */

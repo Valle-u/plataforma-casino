@@ -9,13 +9,14 @@
  *   - Mobile: <PlayerMobileAppBar/> + <PlayerBottomNav/>
  *
  * Sesión: comparte el mismo `AuthProvider` que el admin (root layout).
- * Operators (canAccessPanel) are redirected to /dashboard.
+ * Operators (canAccessPanel) are redirected to /dashboard — pero SOLO desde un
+ * host donde el panel exista (ver `lib/host-del-panel.ts`).
  */
 
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LoginModal } from '@/components/player/login-modal';
 import { MaintenanceScreen } from '@/components/player/maintenance-screen';
 import { RegisterModal } from '@/components/player/register-modal';
@@ -32,6 +33,7 @@ import { ChatWidget } from '@/components/player/chat/chat-widget';
 import { CRM_ENABLED } from '@/lib/chat/flag';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
+import { elPanelViveEnEsteHost } from '@/lib/host-del-panel';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 import { normalizeStorageUrl } from '@/lib/storage-url';
@@ -118,8 +120,22 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   }, [branding?.logoUrl, branding?.faviconUrl, tenantInfo.data?.design]);
 
   // Auto-open login/register modal from query params (?auth=login|register, ?ref=, ?next=)
+  //
+  // ⚠️ **Espera a que la sesión esté resuelta.** Antes corría en el montaje con
+  // deps `[]`, y en ese instante `user` todavía es `null` aunque haya sesión:
+  // el bootstrap de `AuthProvider` recién está preguntando `/tenant/auth/me`.
+  // Resultado: quien ya tenía cuenta y abría un link de referido veía el
+  // formulario "Creá tu cuenta" encima de su propio lobby, con su saldo
+  // asomando detrás (verificado en staging el 2026-09-09).
+  //
+  // El `ref` corre igual, y sigue haciendo su trabajo: la marca del socio se
+  // arma con él aunque el modal no se abra.
+  const yaSeAutoAbrio = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // `loading` false = el bootstrap terminó y `user` ya es la verdad.
+    if (loading || yaSeAutoAbrio.current) return;
+    yaSeAutoAbrio.current = true;
     const params = new URLSearchParams(window.location.search);
     const authParam = params.get('auth');
     const refParam = params.get('ref');
@@ -139,16 +155,48 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       // freezado en sessionStorage (ver refFromUrl), pero mantenerlo en el URL
       // es un fallback y hace el link compartible.
       window.history.replaceState({}, '', url.toString());
+    } else if (authParam) {
+      // Hay sesión: el pedido de abrir login o registro no aplica. Se saca del
+      // URL igual, para que no quede colgado en la barra de direcciones ni se
+      // reabra al compartir el link.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('auth');
+      url.searchParams.delete('next');
+      window.history.replaceState({}, '', url.toString());
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, user, openLoginModal, openRegisterModal]);
 
   const isGameFrame = /^\/play\/games\/[^/]+\/play\/iframe/.test(pathname);
 
-  // Redirect operators to /dashboard
+  // ── Rebote de operadores al panel ────────────────────────────────────────
+  //
+  // Un operador que entra al sitio del jugador con su sesión de panel no tiene
+  // nada que hacer acá, así que se lo manda a `/dashboard`.
+  //
+  // ⚠️ **Sólo donde `/dashboard` existe.** En el host del jugador esa ruta la
+  // rebota el middleware a `/play`, y como el 307 llega sin los headers de
+  // redirección de Next el router recarga la página entera. La recarga vuelve
+  // a montar este layout, el efecto dispara otra vez, y la página se recarga
+  // sola sin parar.
+  //
+  // Es el bug que rompió los links de referido el 2026-09-09: el formulario de
+  // registro aparecía un instante y la página se reiniciaba. Ver
+  // `lib/host-del-panel.ts`.
+  //
+  // Se resuelve en un efecto y no en el render porque `window` no existe
+  // durante el SSR; hasta que resuelve vale `false`, o sea "no rebotar", que
+  // es el lado seguro.
+  const [panelAlcanzable, setPanelAlcanzable] = useState(false);
+  useEffect(() => {
+    setPanelAlcanzable(elPanelViveEnEsteHost(window.location.host));
+  }, []);
+
+  const rebotarAlPanel = panelAlcanzable && !!user?.canAccessPanel;
+
   useEffect(() => {
     if (loading) return;
-    if (user?.canAccessPanel) router.replace('/dashboard');
-  }, [user, loading, router]);
+    if (rebotarAlPanel) router.replace('/dashboard');
+  }, [rebotarAlPanel, loading, router]);
 
   // Loading state
   if (loading) {
@@ -159,8 +207,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Operators bouncing to admin panel
-  if (user?.canAccessPanel) {
+  // Operators bouncing to admin panel. En el host del jugador NO se rebota
+  // (ver arriba): el operador ve el casino como cualquiera.
+  if (rebotarAlPanel) {
     return (
       <div style={brandingStyle} className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
         <div className="size-1 bg-[var(--color-accent)] animate-pulse" aria-label="Redirigiendo" />
@@ -168,9 +217,12 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Site maintenance — blocks everything under /play (LEYES: operadores no
-  // afectados; ya fueron redirigidos a /dashboard arriba).
-  if (tenantInfo.data?.site.maintenanceEnabled) {
+  // Site maintenance — blocks everything under /play.
+  //
+  // LEYES: los operadores no quedan afectados. Antes eso se cumplía de rebote
+  // —ya estaban redirigidos a `/dashboard`—, pero en el host del jugador ya no
+  // se los rebota, así que la excepción se escribe explícita.
+  if (tenantInfo.data?.site.maintenanceEnabled && !user?.canAccessPanel) {
     return (
       <div style={brandingStyle} className="relative min-h-screen bg-[var(--color-bg)]">
         <MaintenanceScreen />

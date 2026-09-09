@@ -16,6 +16,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
+import { useAuth } from '../auth-context';
 
 export type NotificationChannel = 'in_app' | 'email' | 'sms' | 'web_push';
 export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'read';
@@ -70,7 +71,12 @@ export function useMyNotifications(filters: MyNotificationsFilters = {}) {
  * sea ~live sin polling agresivo. El backend devuelve `{ count: number }`.
  */
 export function useMyUnreadCount() {
+  const { user } = useAuth();
   return useQuery({
+    // Sin sesión no hay notificaciones propias: el badge se monta igual para
+    // un visitante anónimo y sin este freno pedía el conteo cada 30 s contra
+    // un 401 (ver la nota larga en `use-wallet.ts`).
+    enabled: !!user,
     queryKey: ['my-notifications-unread-count'],
     queryFn: () =>
       apiGet<{ count: number }>('/tenant/notifications/me/unread-count'),

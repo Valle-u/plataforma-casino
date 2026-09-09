@@ -30,6 +30,8 @@ import {
   setSessionCookies,
   type Panel,
 } from '@/lib/auth-cookies';
+import { elPanelViveEnEsteHost } from '@/lib/host-del-panel';
+import { panelDeLaRuta } from '@/lib/panel-de-la-ruta';
 
 const TENANT_HOST = process.env.NEXT_PUBLIC_TENANT_HOST ?? '';
 
@@ -86,7 +88,7 @@ function isJwtExpired(token: string, skewSec = 30): boolean {
 
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
-  const panel: Panel = pathname.startsWith('/play') ? 'player' : 'admin';
+  const panel: Panel = panelDeLaRuta(pathname);
 
   const requestHeaders = new Headers(req.headers);
   const ip = ipDelJugador(req);
@@ -122,13 +124,14 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   //
   // Excepción: dev (localhost) no tiene subdominio admin, así que ahí el panel
   // se accede por path (`/login`).
+  //
+  // La condición vive en `lib/host-del-panel.ts` porque **el cliente también
+  // la necesita**: el layout del jugador manda a los operadores a
+  // `/dashboard`, y si lo hace en un host donde el panel no existe, ese
+  // redirect choca contra el de acá y la página entra en bucle de recargas.
+  // Con una sola función, las dos mitades no pueden contradecirse.
   const host = (req.headers.get('host') ?? '').toLowerCase();
-  const isLocalhost =
-    host.includes('localhost') ||
-    host.startsWith('127.') ||
-    host.includes('0.0.0.0');
-  const isAdminHost = host.startsWith('admin.') || host.startsWith('admin-');
-  if (!isLocalhost && !isAdminHost) {
+  if (!elPanelViveEnEsteHost(host)) {
     const isPlayerRoute =
       pathname.startsWith('/play') || pathname.startsWith('/r/');
     if (!isPlayerRoute) {
