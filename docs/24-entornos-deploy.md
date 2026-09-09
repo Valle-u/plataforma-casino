@@ -6,6 +6,70 @@
 
 ---
 
+## ⚠️ El CRM no va a producción hasta que el dueño lo diga
+
+**Decidido el 2026-09-09.** `staging` dejó de ser "lo que va a salir en el
+próximo merge": es el **banco de pruebas del CRM**, y se queda ahí.
+
+| | |
+|---|---|
+| **Producción** | Sólo el **livechat interno**, como está hoy |
+| **Staging** | El CRM completo, para probarlo sin apuro |
+
+**Por qué.** Es un sistema grande, toca permisos y aislamiento entre redes, y
+no tiene que entrar por arrastre en el merge de otra cosa.
+
+### Cómo se mergea de acá en adelante
+
+Un arreglo de plataforma **no puede salir mergeando `staging`**, porque
+`staging` lleva el CRM adentro. El arreglo sale por su propia rama:
+
+```bash
+git checkout main
+git checkout -b fix/lo-que-sea
+# ... el arreglo ...
+git checkout main && git merge --ff-only fix/lo-que-sea && git push origin main
+```
+
+Y después se baja a `staging`, para que el CRM se siga construyendo encima de
+lo último:
+
+```bash
+git checkout staging && git merge main
+```
+
+### 🔴 La trampa de ese último merge
+
+`main` y `staging` **divergen a propósito** en dos archivos:
+`cloudflare-worker-driver.ts` y su spec. `main` corre la versión vieja porque
+la nueva **no puede salir antes que el Worker** (ver
+[`runbooks/firmar-comprobantes.md`](runbooks/firmar-comprobantes.md)).
+
+Para git esos archivos ya están "resueltos" en `main`, así que **un
+`git merge main` le devuelve a `staging` la versión vieja, en silencio.**
+Después de cada merge de `main` hacia `staging`, verificar:
+
+```bash
+grep -c CARPETAS_PRIVADAS apps/api/src/storage/cloudflare-worker-driver.ts   # tiene que dar 2
+```
+
+Si da `0`, el merge pisó el arreglo. Se recupera con:
+
+```bash
+git checkout 0c21270 -- apps/api/src/storage/cloudflare-worker-driver.ts apps/api/src/storage/cloudflare-worker-driver.spec.ts
+```
+
+> Esta divergencia **desaparece** el día que se despliegue el Worker: ahí los
+> dos archivos vuelven a `main` y las ramas coinciden otra vez.
+
+### Cuándo pasa el CRM a producción
+
+Cuando **el dueño dé la orden**, no cuando esté "listo". Antes de eso, la
+lista de lo que hay que haber probado en staging vive en
+[`crm/13-roadmap.md`](crm/13-roadmap.md).
+
+---
+
 ## Los dos entornos
 
 | | **Staging (prueba)** | **Producción** |
@@ -15,6 +79,7 @@
 | **Deploy** | Dokploy (autoDeploy via webhook) | Dokploy (autoDeploy via webhook) |
 | **Casino (web)** | `staging.miamihub.vip` | `miamihub.vip` |
 | **Panel** | `admin-staging.miamihub.vip` | `admin.miamihub.vip` |
+| **CRM** | `crm-staging.miamihub.vip` | `crm.miamihub.vip` *(sólo staging por ahora)* |
 | **API** | `api-staging.miamihub.vip` | `api.miamihub.vip` |
 | **WebSocket** | `ws-staging.miamihub.vip` | `ws.miamihub.vip` |
 | **Postgres** | `casino-postgres-staging-7qarjo` | `casino-postgres-ribula` |

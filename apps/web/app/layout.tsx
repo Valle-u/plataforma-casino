@@ -11,6 +11,7 @@
  */
 
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import { Geist_Mono, Inter, Outfit } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ErrorBoundary } from '@sentry/nextjs';
@@ -21,6 +22,7 @@ import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import { getServerUser } from '@/lib/server-api';
 import { cssDeLaPaletaDelTenant } from '@/lib/server-tenant-theme';
+import { HOST_CRM } from '@/lib/crm-host';
 import './globals.css';
 
 const outfit = Outfit({
@@ -109,8 +111,20 @@ export default async function RootLayout({
   // los del casino — un salto visible en cada carga. Ver `server-tenant-theme`.
   const cssPaleta = await cssDeLaPaletaDelTenant();
 
+  // ¿Entró por el host del CRM (`crm.` / `crm-`)? Lo marca el middleware.
+  //
+  // Va en el `<html>` del primer HTML a propósito: el menú se recorta con CSS a
+  // partir de esta marca. Resolverlo en el cliente mirando `window.location`
+  // pintaría el menú completo y lo recortaría después — el mismo parpadeo que
+  // costó arreglar en la interfaz del jugador.
+  const soloCrm = (await headers()).get(HOST_CRM) === '1';
+
   return (
-    <html lang="es-AR" className={`${outfit.variable} ${inter.variable} ${geistMono.variable}`}>
+    <html
+      lang="es-AR"
+      {...(soloCrm ? { 'data-crm-only': '1' } : {})}
+      className={`${outfit.variable} ${inter.variable} ${geistMono.variable}`}
+    >
       <head>
         {/* Antes de cualquier pintado. `dangerouslySetInnerHTML` es la forma de
             emitir CSS crudo en React; los valores se filtran en

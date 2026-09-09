@@ -1154,3 +1154,30 @@ body[data-density='compact'] .admin-nav-link {
     animation: none;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────
+ * El host del CRM (`crm.miamihub.vip`)
+ *
+ * Es el mismo build que el panel, servido por otro dominio y recortado a
+ * Soporte. El middleware ya redirige cualquier otra ruta; esto saca del menú
+ * lo que ahí adentro no existe, para que el operador no vea links que rebotan.
+ *
+ * Se hace por CSS y no en el componente a propósito: la marca `data-crm-only`
+ * viaja en el PRIMER HTML (la pone `app/layout.tsx` leyendo el header del
+ * middleware), así que el menú nunca se pinta completo. Resolverlo en el
+ * cliente con `window.location` mostraría todo y lo recortaría después — el
+ * mismo parpadeo que costó arreglar en la interfaz del jugador.
+ *
+ * ⚠️ Esto es COSMÉTICO. Lo que impide llegar a otra pantalla es el redirect del
+ * middleware, y lo que impide leer datos que no corresponden son los permisos
+ * del backend. Si alguien borra estas reglas, el CRM sigue siendo seguro: sólo
+ * queda feo.
+ * ──────────────────────────────────────────────────────────────── */
+[data-crm-only] .admin-nav-link:not([href='/support']) {
+  display: none;
+}
+
+/* Los encabezados de sección quedarían con todo vacío abajo. */
+[data-crm-only] [aria-controls^='sidebar-section-'] {
+  display: none;
+}

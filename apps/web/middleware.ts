@@ -30,8 +30,10 @@ import {
   setSessionCookies,
   type Panel,
 } from '@/lib/auth-cookies';
+import { HOST_CRM, esHostDeCrm, rutaPermitidaEnCrm } from '@/lib/crm-host';
 
 const TENANT_HOST = process.env.NEXT_PUBLIC_TENANT_HOST ?? '';
+
 
 /**
  * Header con el que le pasamos al backend la IP REAL del jugador.
@@ -128,7 +130,31 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     host.startsWith('127.') ||
     host.includes('0.0.0.0');
   const isAdminHost = host.startsWith('admin.') || host.startsWith('admin-');
-  if (!isLocalhost && !isAdminHost) {
+
+  // ── El host del CRM ───────────────────────────────────────────────────────
+  //
+  // `crm.miamihub.vip` sirve **el mismo build** que el panel, recortado: adentro
+  // sólo existe Soporte. Ver `lib/crm-host.ts` para el porqué de cada pieza.
+  //
+  // ⚠️ **La sesión NO se comparte con `admin.`**: las cookies se setean sin
+  // atributo `Domain`, o sea que son de un host exacto. Entrar al CRM pide un
+  // login propio. Es a propósito — compartirlas obligaría a abrirlas a todo
+  // `.miamihub.vip`, incluido el sitio del jugador, que es donde corren los
+  // juegos. Un login más para el operador es mejor que ampliar el alcance de la
+  // sesión del panel.
+  if (esHostDeCrm(host)) {
+    // Se lo pasamos al layout del SERVIDOR para que marque el <html>. El menú
+    // se recorta con CSS a partir de esa marca: sin JS y sin parpadeo, que es
+    // lo que pasaría resolviéndolo en el cliente con `window.location`.
+    requestHeaders.set(HOST_CRM, '1');
+
+    // Todo lo que no sea Soporte redirige, así que el operador no llega a Caja
+    // ni a Usuarios desde acá **aunque escriba la URL a mano**. No reemplaza a
+    // los permisos del backend: es una puerta menos, no la cerradura.
+    if (!rutaPermitidaEnCrm(pathname)) {
+      return NextResponse.redirect(new URL('/support', req.url));
+    }
+  } else if (!isLocalhost && !isAdminHost) {
     const isPlayerRoute =
       pathname.startsWith('/play') || pathname.startsWith('/r/');
     if (!isPlayerRoute) {
