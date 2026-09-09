@@ -164,10 +164,29 @@ Un fallo de permisos acá no se ve: se filtra. Mirando la pantalla no alcanza.
 1. Un mensaje al canal de Pérez **nunca** aparece en la bandeja del casino.
 2. Un mensaje al canal central **nunca** aparece en la de Pérez.
 3. El staff central, sobre un jugador independiente, **no recibe** `wallet`,
-   `recentDeposits` ni `recentWithdrawals`. ← ✅ **hecho** (`crm-context-r6.e2e.ts`)
+   `recentDeposits` ni `recentWithdrawals`. ← ✅ `crm-context-r6.e2e.ts`
 4. Un operador dependiente recibe **403** en todo el CRM.
 5. Un socio independiente **no ve** ninguna conversación de sus cajeros.
 6. El aviso de derivación **no contiene** ningún texto del mensaje original.
 
+**Los seis están escritos** (2026-09-08), repartidos en cuatro archivos:
+
+| # | Dónde |
+|---|---|
+| 1, 2, 5 | `crm-aislamiento.e2e.ts` |
+| 3 | `crm-context-r6.e2e.ts` |
+| 4 | `crm-aislamiento.e2e.ts` — las 14 rutas del CRM, una por una |
+| 6 | `crm-status-aviso.e2e.ts` |
+
 El 3 y el 6 protegen leyes directamente. Si alguno se rompe, es una filtración
 entre redes.
+
+**Cada uno se verificó rompiendo a propósito el código que protege**, para
+confirmar que falla. Un test que pasa no prueba nada si también pasaría sin el
+arreglo.
+
+> ⚠️ **El token de WebSocket no pasa por el guard del CRM.** `ChatController`
+> sólo tiene `TenantJwtGuard`, así que un operador dependiente **sí** puede
+> pedir uno. No es un agujero: el gateway resuelve la bandeja al conectarse y,
+> sin bandeja, rechaza cada acción. Está fijado con un test para que nadie lo
+> "arregle" asumiendo que el token ya autoriza algo.
