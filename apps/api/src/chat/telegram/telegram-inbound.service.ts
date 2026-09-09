@@ -40,7 +40,7 @@ import {
   CHAT_ATTACHMENT_MAX_BYTES,
   type ChatAttachment,
 } from '../chat.types';
-import { descifrar } from '../../common/secreto-cifrado';
+import { tokenDelCanal } from './telegram-token';
 import { TelegramDescargaService } from './telegram-descarga.service';
 import {
   queBajar,
@@ -113,7 +113,7 @@ export class TelegramInboundService {
           .values({
             channelId: canal.id,
             externalId,
-            payload: update as Record<string, unknown>,
+            payload: update,
           })
           .returning({ id: crmRawEvents.id })
       )[0]!;
@@ -223,8 +223,24 @@ export class TelegramInboundService {
       senderUserId: null,
       body: sinTexto ? '(mensaje sin texto)' : cuerpo,
       attachments: adjuntos,
-      // Único por bot: es lo que corta los duplicados en `crm_messages`.
-      channelMessageId: `tg:${canal.id}:${msg.message_id ?? ''}`,
+      // Lo que corta los duplicados en `crm_messages` (índice único parcial,
+      // migración `0113`).
+      //
+      // ⚠️ **El `chat_id` es parte de la clave y no es opcional.** El
+      // `message_id` de Telegram es *"unique message identifier inside this
+      // chat"*: es un contador **por chat**, no por bot. O sea que el primer
+      // mensaje de CADA persona nueva es `message_id: 1`.
+      //
+      // Sin el chat en la clave, la segunda persona que le escribe al bot
+      // choca contra el índice único y **su mensaje se descarta**: queda en
+      // `crm_raw_events` con el error y no aparece en ninguna bandeja. En
+      // silencio, porque el fallo de procesamiento no se propaga a propósito
+      // (ver el encabezado de este archivo).
+      //
+      // La suite no lo agarraba porque su helper de updates usa un
+      // `message_id` al azar, y con ids al azar no hay colisión. Con Telegram
+      // de verdad la hay el segundo día. Hay un test que fija esto.
+      channelMessageId: `tg:${canal.id}:${chatId}:${msg.message_id ?? ''}`,
     });
   }
 
@@ -300,19 +316,3 @@ function esDuplicado(err: unknown): boolean {
   return code === '23505' || /duplicate key|unique/i.test(String(err));
 }
 
-/**
- * El token del bot, descifrado (**D20**).
- *
- * `null` si el canal no lo tiene o si no se pudo abrir —una clave rotada sin
- * su `_PREVIOUS`, por ejemplo—. En ese caso el mensaje se guarda igual, sin el
- * adjunto: perder una foto es malo, perder el mensaje entero es peor.
- */
-function tokenDelCanal(canal: CrmChannel): string | null {
-  const cifrado = (canal.config as { token?: string } | null)?.token;
-  if (!cifrado) return null;
-  try {
-    return descifrar(cifrado);
-  } catch {
-    return null;
-  }
-}

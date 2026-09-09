@@ -294,6 +294,40 @@ describe('CRM · webhook de Telegram', () => {
     expect(msgs).toHaveLength(1);
   });
 
+  /**
+   * El `message_id` de Telegram es un contador **por chat**, no por bot: el
+   * primer mensaje de cada persona nueva es `1`. Si la clave de idempotencia no
+   * incluye el chat, la segunda persona choca contra el índice único de la
+   * migración `0113` y **su mensaje se descarta en silencio** — el fallo de
+   * procesamiento no se propaga a propósito, así que ni siquiera hay error.
+   *
+   * ⚠️ Los `messageId` van fijos y **tienen que ser iguales**. El helper
+   * `update()` usa uno al azar cuando no se lo pasan, y con ids al azar no hay
+   * colisión: por eso esto no se veía en la suite.
+   */
+  it('dos personas con el mismo message_id entran las dos', async () => {
+    const unaPersona = 557101;
+    const otraPersona = 557102;
+
+    await postWebhook(
+      canalLitoral,
+      update({ chatId: unaPersona, messageId: 1, texto: 'soy la primera' }),
+    );
+    const segunda = await postWebhook(
+      canalLitoral,
+      update({ chatId: otraPersona, messageId: 1, texto: 'soy la segunda' }),
+    );
+
+    expect(segunda.status).toBe(200);
+
+    const deUna = await mensajesDe(unaPersona, litoral.id);
+    const deOtra = await mensajesDe(otraPersona, litoral.id);
+    expect(deUna.map((m) => m.body)).toEqual(['soy la primera']);
+    expect(deOtra.map((m) => m.body)).toEqual(['soy la segunda']);
+    // Y las claves tienen que ser distintas, que es la causa de fondo.
+    expect(deUna[0]!.channel_message_id).not.toBe(deOtra[0]!.channel_message_id);
+  });
+
   it('el crudo también se guarda una sola vez', async () => {
     const chatId = 557002;
     const updateId = proximoUpdate();
