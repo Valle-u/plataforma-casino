@@ -38,9 +38,14 @@ lo último:
 git checkout staging && git merge main
 ```
 
-### 🔴 La trampa de ese último merge
+### ✅ La trampa de ese último merge — resuelta el 2026-09-09
 
-`main` y `staging` **divergen a propósito** en dos archivos:
+> **Ya no aplica.** El Worker se desplegó y los dos archivos volvieron a
+> `main`: las ramas coinciden. Se deja escrito porque el mecanismo puede
+> repetirse la próxima vez que algo tenga que esperar a un despliegue externo.
+
+Hasta el 2026-09-09, `main` y `staging` **divergían a propósito** en dos
+archivos:
 `cloudflare-worker-driver.ts` y su spec. `main` corre la versión vieja porque
 la nueva **no puede salir antes que el Worker** (ver
 [`runbooks/firmar-comprobantes.md`](runbooks/firmar-comprobantes.md)).

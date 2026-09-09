@@ -41,25 +41,46 @@ firma todavía no se exige**. Una URL vieja sin firmar abre igual.
 
 ---
 
-## 📍 Dónde estamos parados (2026-09-08)
+## 📍 Dónde estamos parados (2026-09-09)
 
-**`main` corre a propósito la versión VIEJA del driver de storage.** El
-arreglo que hace que la API firme los adjuntos del chat está completo y
-probado en `staging` (`0c21270`), pero **no puede ir a producción antes que el
-Worker** — por el motivo de la sección de abajo.
+**Los pasos 1, 3 y 4 están hechos.** El Worker se desplegó (versión
+`29575287-464e-4ed1-82ba-dda3b3a22ec8`) y `main` ya firma los adjuntos del chat.
 
-Cuando el Worker esté desplegado (Paso 1), traer esos dos archivos a `main`:
+Verificado en producción **con archivos reales**, no en teoría: se subió una
+prueba a cada carpeta, se miraron las cabeceras y se borraron.
 
-```bash
-git checkout staging -- apps/api/src/storage/cloudflare-worker-driver.ts apps/api/src/storage/cloudflare-worker-driver.spec.ts
+```
+chat/attachments/…   private, max-age=300
+hero/…               public, max-age=31536000, immutable
 ```
 
-> ⚠️ **Un `git merge staging` NO alcanza.** Para git esos archivos ya están
-> resueltos en `main`, así que la versión vieja ganaría en silencio. Hay que
-> traerlos explícitamente con el comando de arriba.
+**El paso 2 (purgar el caché) se salteó a propósito.** No queda ningún archivo
+privado en producción —ni adjuntos de chat ni comprobantes; el reset del
+2026-09-08 se los llevó— así que no había entradas viejas que sacar de
+circulación. Lo único cacheado es la marca, y corresponde que siga.
+
+> Dicho de otro modo: **el agujero existía pero nunca llegó a haber una sola
+> foto expuesta.** Se cerró antes.
+
+**Y la divergencia entre ramas desapareció:** `main` y `staging` vuelven a
+coincidir en el driver de storage. La advertencia sobre el `git merge` que
+devolvía la versión vieja **ya no aplica**.
+
+### Lo único que falta
+
+**El paso 5: `REQUIRE_SIGNED_PROOFS = "1"`.** Hasta que se prenda, una URL sin
+firma **sigue abriendo** el archivo. Todo lo anterior preparó el terreno; esto
+es lo que cierra la puerta.
+
+Está aparte porque es el único paso que puede **cortar un flujo de plata**: si
+algo quedara sin firmar, el operador deja de ver los comprobantes y no puede
+aprobar depósitos. Se revierte volviéndolo a `"0"` y desplegando.
+
+> Hoy es de bajo riesgo comprobarlo, justamente porque **no hay comprobantes en
+> producción**: no hay nada que se pueda romper para nadie. Cuando empiecen a
+> entrar depósitos con comprobante, prenderlo pasa a tener consecuencias.
 
 ---
-
 ## ⚠️ El orden no es negociable
 
 **Los pasos 1 y 2 van antes que el 3.** Si la API empieza a firmar mientras el
