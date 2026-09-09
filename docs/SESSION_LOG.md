@@ -16774,3 +16774,227 @@ a diferencia del monitor de caída, cuyo README defiende explícitamente lo
 contrario.
 
 Y sigue arriba de todo: **terminar las URLs firmadas de comprobantes.**
+
+---
+
+## Addendum — El CRM, planificado de cero (2026-09-08)
+
+**Duración**: sesión larga · **Modelo**: Claude Opus 5
+
+Sesión entera de planificación, con dos arreglos de código al final. El pedido
+fue *"planificar de absolutamente cero, y de forma absurdamente detallada"* un
+CRM omnicanal anclado al casino.
+
+Quedó en `docs/crm/`: **14 documentos + la bitácora de decisiones**, con
+**D1 a D19**.
+
+### Cómo se hizo, y por qué así
+
+**Por bloques de decisiones, no de una.** Cinco bloques de tres o cuatro
+preguntas cada uno, decidiendo con el dueño antes de escribir nada. El motivo:
+las decisiones estructurales se contradicen entre sí si no se toman en orden —de
+quién son los canales determina el ruteo, el ruteo determina los permisos, y los
+permisos determinan qué puede mostrar la pantalla—. Definir la pantalla primero
+garantiza rehacerla.
+
+**Cada decisión quedó con las alternativas que se descartaron y por qué.** Sin
+eso, dentro de seis meses nadie sabe si algo se decidió o simplemente salió así.
+
+**Y cada bloque se preguntó DESPUÉS de leer el código correspondiente**, no
+antes. Eso cambió las preguntas y evitó ofrecer opciones que ya existían o que no
+tenían base. Es de donde salieron casi todos los hallazgos de abajo.
+
+### El hilo conductor de lo que se decidió
+
+**Aislamiento máximo, cambio mínimo.** Las diecinueve decisiones tiran para el
+mismo lado:
+
+- Los canales pertenecen a un **panel**, no al casino (D1), y atiende la bandeja
+  dueña del número (D2).
+- **El contacto es de una bandeja, no del casino** (D6): el mismo teléfono tiene
+  una ficha por dueño de canal. Es la lectura más estricta de R6 — sin ficha
+  compartida no hay superficie por la que se filtre la operación de una red
+  independiente.
+- Al staff central **no se le menciona** que existan conversaciones en otra red
+  (D7). Ni un contador: un contador de conversaciones es detalle interno
+  disfrazado de número.
+- **Derivar es avisar** (D8): a la otra bandeja llega quién escribió y cuándo,
+  sin una palabra del contenido. Que es lo que D6 ya implicaba — con fichas
+  separadas nunca hubo conversación que mover.
+- **El alta no tiene desplegable** (D9): el jugador cuelga del dueño del canal y
+  el campo es fijo. En un sistema donde eso determina comisiones, un campo
+  editable es una tentación permanente.
+- Un socio **no ve** las conversaciones de sus cajeros (D10). No hay respuestas
+  automáticas (D17). No hay avisos fuera del panel (D16).
+
+### Los dos cruces que se anotaron
+
+Ninguna decisión está mal por separado; el efecto combinado sí importa, y quedó
+escrito:
+
+**D8 + D10 — un cajero que atiende mal queda invisible para todos.** El jugador
+se queja al central y esa queja no viaja (D8); el socio podría notarlo pero no ve
+nada de su cajero (D10); el cajero recibe un aviso que puede ignorar igual que
+ignoró al jugador.
+
+**D16 + D17 — el silencio de las dos puntas.** Un mensaje de las 3 AM deja seis
+horas sin señal para nadie: el que escribe no recibe nada y el operador no se
+entera hasta abrir el panel.
+
+**La salida al segundo no requiere cambiar ninguna decisión ni construir nada
+nuevo:** sumar *"conversaciones sin responder"* al parte diario que
+`HealthReportCron` ya manda todas las mañanas, que ya tiene un bloque *ESPERANDO
+RESPUESTA* y ya marca lo que lleva más de 24 h. Una consulta más en algo que ya
+corre y ya llega.
+
+### La excepción a R6
+
+**D14** es la única decisión que rompe una ley: al cerrarse una red
+independiente, sus conversaciones pasan a la bandeja central como chats normales
+y las lee el staff — **incluidos los empleados**.
+
+Se plantearon las dos alternativas que **no** requerían excepción —un archivo
+aparte de sólo lectura y auditado, que es la vía que R6 ya contempla
+(*"puede intervenir en todo, pero por un mecanismo separado y auditado"*), y
+heredar sólo los contactos sin los mensajes— y el dueño mantuvo su elección
+después de que se le dijera explícitamente qué se estaba autorizando.
+
+**Quedó anotada donde corresponde**, no sólo en el doc del CRM: `docs/LEYES.md`
+bajo R6 (segunda excepción, después de la de auditoría de pagos del 2026-08-13) y
+`docs/DEVLOG.md`. Si no, el próximo que lea R6 va a leer que esto está prohibido y
+frenar.
+
+**La consecuencia que trae:** cerrar una red pasa a ser un **evento de
+seguridad**, porque es lo único que separa lo permitido de lo prohibido. Si se
+pudiera cerrar y reabrir sin registro, la excepción se convertiría en un
+interruptor para leer la red de cualquiera. Hoy la baja de un socio ni existe como
+flujo, así que hay tiempo de hacerlo bien.
+
+### 🔴 El hallazgo de la sesión
+
+**Los adjuntos del chat se servían públicos, y el runbook pendiente no los
+cubría.**
+
+Tanto la API como el Worker deciden qué es privado con la misma regla: que la
+ruta contenga `/proofs/`. Los adjuntos del livechat viven en `chat/attachments`.
+No matcheaban.
+
+Resultado: una foto de DNI o un comprobante mandado por el widget quedaba en una
+**URL pública con `Cache-Control: public, max-age=31536000, immutable`**. No es
+enumerable —la clave es un UUID— pero el link, una vez fuera de la plataforma,
+servía para siempre y no había forma de revocarlo.
+
+**Lo grave no era el bug: era que terminar el runbook de comprobantes los habría
+dejado exactamente igual**, con la sensación de haber cerrado el tema.
+
+**Arreglado** (`0c21270`): la regla pasó de una carpeta a una lista
+(`CARPETAS_PRIVADAS`) en los dos lados. Con 8 checks nuevos en el Worker y 2 en
+el spec del driver — uno verifica que un tenant llamado `chat-royale` **no**
+vuelva privado su logo, por si alguien afloja la regla a `includes('chat')`.
+
+**La lista está duplicada a propósito** (el Worker es un bundle aparte y no puede
+importar de `apps/api`) con el aviso cruzado escrito en los dos archivos y en el
+runbook: **si divergen, el fallo es silencioso** — que es justo cómo esto pasó
+meses sin que nadie lo viera.
+
+**Falta desplegarlo.** El runbook, ahora ampliado a las dos carpetas, empieza por
+el Worker: al revés, cada URL firmada crearía una entrada de caché pública de un
+año.
+
+### Lo que apareció al escribir los documentos contra el código
+
+Cuatro cosas que no estaban en ninguna decisión:
+
+1. **`POST /tenant/users` cuelga al jugador del ACTOR**, y D9 pide que cuelgue
+   del **dueño del canal**. Coinciden casi siempre, salvo cuando atiende un
+   empleado — y los socios independientes pueden tener empleados (R7). Sin
+   corregirlo, **la cadena de comisiones se calcula sobre un árbol equivocado**.
+   Es plata, no pantalla.
+2. **No hay ninguna cola de trabajos en el repo**, y `channel_message_id` existe
+   sin índice único: la idempotencia de los webhooks dependería de que el código
+   se acuerde de chequear.
+3. **`crm_templates` es por tenant**, así que el catálogo de respuestas rápidas
+   se comparte entre bandejas.
+4. **Nadie planteó cómo se le entrega la contraseña** a un jugador creado desde
+   un WhatsApp. Mandarla por el chat la deja escrita en dos teléfonos para
+   siempre.
+
+### Lo que se corrigió de uno mismo
+
+**D12 decía que había que cambiar cómo se persisten los adjuntos.** Era falso, y
+se descubrió al implementarlo: `chat.types.ts` ya documenta que la `url` **no** se
+persiste, `sanitizeAttachments` la descarta y `hydrateMessage` la regenera desde
+la `storageKey` en cada lectura. El livechat ya estaba preparado para URLs que
+vencen. El arreglo era una constante por lado. **La decisión quedó corregida en el
+documento**, no reescrita.
+
+También se corrigió el comentario de `crm_contacts`, que documentaba el teléfono
+como *"llave de auto-merge"* — lo contrario de D6. Nunca se había implementado
+(no hay una sola búsqueda por teléfono en `apps/api/src/chat/`), así que no hubo
+nada que desarmar; pero un comentario que dice lo opuesto a la decisión es una
+trampa para el que venga después.
+
+### Lo que enseñó
+
+**Leer el código antes de preguntar cambia las preguntas.** El bloque 5 se iba a
+preguntar con "avisar por mail" como opción; leyendo `notifications.module.ts`
+apareció que `ConsoleEmailProvider` está fijo por código y **sólo escribe en el
+log**. Las notificaciones por mail de toda la plataforma son decorativas hoy.
+Ofrecerlas habría sido ofrecer algo que no existe.
+
+**Una decisión que rompe una ley se escribe en la ley.** No alcanza con anotarla
+en el documento del módulo: el que lea `LEYES.md` tiene que encontrarla ahí.
+
+**Un runbook puede estar completo y no cerrar el problema.** El de comprobantes
+estaba bien escrito, con su orden no negociable y sus verificaciones — y dejaba
+afuera una carpeta entera de fotos de DNI, porque nadie había vuelto a mirar qué
+cubría la regla.
+
+### Commits
+
+- `d2d0cd3` — `docs(crm): arranca la seccion, con el bloque 1 de decisiones`
+- `247cd13` — `docs(crm): bloque 2 decidido — identidad y aislamiento de contactos`
+- `8a72531` — `docs(crm): bloque 3 decidido — derivar, dar de alta, supervisar, cerrar`
+- `4c98c22` — `docs(crm): bloque 4 — adjuntos, altas de canal, baja de socio y retencion`
+- `2f1c2d0` — `docs(crm): bloque 5 — avisos, automatismos y orden de construccion`
+- `0c21270` — `fix(storage): los adjuntos del chat tambien son privados`
+- `909cb38` — `docs(crm): los primeros seis documentos, bajados de las decisiones`
+- `e50dc6c` — `docs(crm): los ocho documentos que faltaban — la seccion queda completa`
+
+### Estado
+
+`staging` = `e50dc6c` · `main` = `926efbe` (ocho commits atrás, todo docs salvo
+el arreglo de storage).
+
+### Próximo paso
+
+**La etapa 0 de `docs/crm/13-roadmap.md`**, que no depende de ninguna decisión
+pendiente:
+
+1. **Desplegar los adjuntos firmados.** El orden está en
+   `docs/runbooks/firmar-comprobantes.md`: **primero el Worker**
+   (`cd worker; npx wrangler deploy`), verificar que un adjunto del chat diga
+   `private, max-age=300`, **después** mergear a `main`, y purgar el caché.
+   *(El paso 5 —`REQUIRE_SIGNED_PROOFS = "1"`— sigue pendiente también para los
+   comprobantes: se midió el 2026-09-08 y está en `"0"`, o sea que hoy una URL
+   vieja sin firmar abre igual.)*
+2. **Chats sin responder en el parte diario.** Una consulta más en
+   `HealthReportCron`.
+
+### Tres decisiones abiertas, para la etapa 1
+
+- 🔴 **Dónde viven los secretos de canal.** Los tokens de bot de Telegram y los de
+  WhatsApp son credenciales, **no hay cifrado en ninguna parte de la API**
+  (verificado), y por D13 esos tokens **son de los socios, no nuestros**. Tres
+  caminos planteados en `docs/crm/02-modelo-de-datos.md`. **No decidirlo es
+  elegir texto plano.**
+- Cómo se le entrega la contraseña a un jugador creado desde el chat.
+- Si las respuestas rápidas siguen compartidas entre bandejas.
+
+### Y lo que sigue arriba de todo
+
+**`getContext` devuelve saldo, depósitos y retiros sin mirar de qué red es el
+jugador** (`apps/api/src/chat/chat-crm.service.ts`). Hoy es inalcanzable porque el
+ruteo no lleva jugadores independientes a la bandeja central — **pero D3 abre esa
+puerta a propósito**. Arreglarlo es **requisito del primer canal externo**, no
+deuda para después. Es R6.
