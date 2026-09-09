@@ -20,4 +20,13 @@ bucket_name = "casino-uploads"
 # Los secretos (CF_WORKER_UPLOAD_TOKEN, CF_WORKER_SIGNING_SECRET) NO van acá:
 # se cargan con `wrangler secret put`.
 [vars]
-REQUIRE_SIGNED_PROOFS = "0"
+# Prendido el 2026-09-09. Desde acá, un archivo de una CARPETA_PRIVADA sólo se
+# sirve con URL firmada y vigente: sin firma responde 403.
+#
+# Se prendió en el mejor momento posible: **no había ningún archivo privado en
+# producción** —el reset del 2026-09-08 se llevó comprobantes y adjuntos— así
+# que no podía romperle nada a nadie. Con depósitos reales adentro, este mismo
+# cambio corta un flujo de plata si algo quedara sin firmar.
+#
+# Para revertir: volver a "0" y `npx wrangler deploy`. Un minuto.
+REQUIRE_SIGNED_PROOFS = "1"
