@@ -41,6 +41,21 @@ import { applyTenantFavicon } from '@/lib/tenant-favicon';
 import { PLAYER_THEME_CLASS, injectPlayerVars } from '@/lib/player-appearance';
 import { variablesDeColorDelTenant } from '@/lib/tenant-color-vars';
 
+/**
+ * Saca `auth` y `next` del URL sin recargar ni ensuciar el historial.
+ *
+ * `ref` se queda a propósito: el diseño del socio se arma con él (y queda
+ * congelado en sessionStorage, pero tenerlo en el URL es el respaldo y hace
+ * que el link se pueda compartir).
+ */
+function limpiarAuthDeLaUrl(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('auth') && !url.searchParams.has('next')) return;
+  url.searchParams.delete('auth');
+  url.searchParams.delete('next');
+  window.history.replaceState({}, '', url.toString());
+}
+
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -130,6 +145,24 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   //
   // El `ref` corre igual, y sigue haciendo su trabajo: la marca del socio se
   // arma con él aunque el modal no se abra.
+  //
+  // ⚠️ **El `auth=` NO se borra al abrir.** Se borra recién cuando la persona
+  // cierra el modal (ver `cerrarAuth`), y la razón es concreta:
+  //
+  // El link de referido se reparte por WhatsApp, y en iPhone WhatsApp abre los
+  // links en su navegador interno (un `WKWebView`). Ese WebView **recarga la
+  // página sola** cuando iOS le reclama memoria, y `/play` no es liviana: 60
+  // juegos, carrusel, imágenes, una quincena de chunks.
+  //
+  // Borrando `auth` al abrir, la URL quedaba en `/play?ref=X` a los pocos
+  // milisegundos. Cuando el WebView recargaba, volvía a esa URL —sin `auth`—
+  // y el formulario **no volvía**. Desde afuera se ve como "se actualizó la
+  // página y me sacó del registro", que es exactamente como lo reportó el
+  // dueño el 2026-09-09, con el agravante de que le pasa al que todavía no
+  // tiene cuenta: el link de referido no convierte.
+  //
+  // Dejándolo puesto, la recarga reabre el formulario donde estaba. Y si la
+  // persona lo cierra a propósito, ahí sí se saca y no vuelve a molestar.
   const yaSeAutoAbrio = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -142,29 +175,25 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     const nextParam = params.get('next');
     if (authParam === 'login' && !user) {
       openLoginModal(nextParam ?? undefined);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('auth');
-      url.searchParams.delete('next');
-      window.history.replaceState({}, '', url.toString());
     } else if (authParam === 'register' && !user) {
       openRegisterModal(refParam ?? undefined, nextParam ?? undefined);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('auth');
-      url.searchParams.delete('next');
-      // OJO: NO borramos `ref` — el diseño del socio depende de él. Igual queda
-      // freezado en sessionStorage (ver refFromUrl), pero mantenerlo en el URL
-      // es un fallback y hace el link compartible.
-      window.history.replaceState({}, '', url.toString());
     } else if (authParam) {
       // Hay sesión: el pedido de abrir login o registro no aplica. Se saca del
-      // URL igual, para que no quede colgado en la barra de direcciones ni se
-      // reabra al compartir el link.
-      const url = new URL(window.location.href);
-      url.searchParams.delete('auth');
-      url.searchParams.delete('next');
-      window.history.replaceState({}, '', url.toString());
+      // URL, para que no quede colgado ni se reabra al compartir el link.
+      limpiarAuthDeLaUrl();
     }
   }, [loading, user, openLoginModal, openRegisterModal]);
+
+  /**
+   * Cierre del modal de auth. Además de cerrarlo, saca `auth`/`next` del URL:
+   * es el único momento en que sabemos que la persona **no quiere** el
+   * formulario. `ref` se queda — el diseño del socio depende de él y hace que
+   * el link siga siendo compartible.
+   */
+  const cerrarAuth = useCallback(() => {
+    closeAuthModal();
+    limpiarAuthDeLaUrl();
+  }, [closeAuthModal]);
 
   const isGameFrame = /^\/play\/games\/[^/]+\/play\/iframe/.test(pathname);
 
@@ -286,13 +315,13 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       {/* Auth modals — globally available via auth context */}
       <LoginModal
         open={authModal.loginOpen}
-        onOpenChange={(v) => v ? openLoginModal(authModal.next) : closeAuthModal()}
+        onOpenChange={(v) => (v ? openLoginModal(authModal.next) : cerrarAuth())}
         next={authModal.next}
         onSwitchToRegister={() => openRegisterModal(undefined, authModal.next)}
       />
       <RegisterModal
         open={authModal.registerOpen}
-        onOpenChange={(v) => v ? openRegisterModal(authModal.registerRef, authModal.next) : closeAuthModal()}
+        onOpenChange={(v) => (v ? openRegisterModal(authModal.registerRef, authModal.next) : cerrarAuth())}
         refCode={authModal.registerRef}
         next={authModal.next}
         onSwitchToLogin={() => openLoginModal(authModal.next)}
