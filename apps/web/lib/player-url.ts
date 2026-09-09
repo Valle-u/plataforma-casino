@@ -19,9 +19,30 @@
 export function playerOrigin(): string {
   if (typeof window === 'undefined') return '';
   const { protocol, host } = window.location;
-  const esHostDeAdmin =
-    host.startsWith('admin.') || host.startsWith('admin-');
-  // 'admin.'.length === 'admin-'.length === 6
-  const playerHost = esHostDeAdmin ? host.slice(6) : host;
-  return `${protocol}//${playerHost}`;
+  return `${protocol}//${sacarPrefijo(host)}`;
+}
+
+/**
+ * Los prefijos de host que NO son el del jugador.
+ *
+ * ⚠️ **Se sacan por longitud del prefijo, no con un `slice` fijo.** Antes había
+ * un `slice(6)` con el comentario *"'admin.' y 'admin-' miden 6"* — cierto, pero
+ * dejó de alcanzar cuando apareció `crm.`, que mide 4. Con el número cableado,
+ * `crm.miamihub.vip` habría quedado en `iamihub.vip`.
+ */
+const PREFIJOS = ['admin.', 'admin-', 'crm.', 'crm-'];
+
+/**
+ * El host del jugador a partir del host actual.
+ *
+ *   admin.miamihub.vip          → miamihub.vip
+ *   admin-staging.miamihub.vip  → staging.miamihub.vip
+ *   crm.miamihub.vip            → miamihub.vip
+ *   crm-staging.miamihub.vip    → staging.miamihub.vip
+ *   localhost:3001              → localhost:3001   (dev, sin subdominio)
+ */
+function sacarPrefijo(host: string): string {
+  const h = host.toLowerCase();
+  const prefijo = PREFIJOS.find((p) => h.startsWith(p));
+  return prefijo ? host.slice(prefijo.length) : host;
 }

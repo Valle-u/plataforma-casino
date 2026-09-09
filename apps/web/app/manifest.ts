@@ -18,6 +18,7 @@
  */
 import type { MetadataRoute } from 'next';
 import { headers } from 'next/headers';
+import { esHostDeCrm } from '@/lib/crm-host';
 
 interface TenantInfo {
   tenant?: { name?: string };
@@ -27,17 +28,30 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const h = await headers();
   const host = (h.get('x-forwarded-host') ?? h.get('host') ?? '').split(':')[0] ?? '';
   const esPanel = host.startsWith('admin.') || host.startsWith('admin-');
+  // El host del CRM instala una app propia: mismo build, otro nombre y otro
+  // punto de entrada. Sin esto se instalaría como el casino y arrancaría en
+  // `/`, que ahí adentro redirige a `/support` — funciona, pero el acceso en la
+  // pantalla de inicio diría el nombre del casino y llevaría a Soporte.
+  const esCrm = esHostDeCrm(host);
 
   const nombreTenant = await traerNombre(host);
-  const name = esPanel ? `Panel · ${nombreTenant}` : nombreTenant;
-  const shortName = esPanel ? 'Panel' : (nombreTenant.split(' ')[0] ?? 'Casino');
+  const name = esCrm
+    ? `CRM · ${nombreTenant}`
+    : esPanel
+      ? `Panel · ${nombreTenant}`
+      : nombreTenant;
+  const shortName = esCrm
+    ? 'CRM'
+    : esPanel
+      ? 'Panel'
+      : (nombreTenant.split(' ')[0] ?? 'Casino');
 
   return {
     name,
     short_name: shortName,
     description: 'Tu reino. Tus reglas. Tu juego.',
     id: '/',
-    start_url: '/',
+    start_url: esCrm ? '/support' : '/',
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',

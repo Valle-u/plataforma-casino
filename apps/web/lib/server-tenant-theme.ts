@@ -20,6 +20,7 @@ import { headers } from 'next/headers';
 import { adminAccentVars } from './admin-accent';
 import { deriveAdminVars } from './admin-appearance';
 import { bloqueCssDeVariables, variablesDeColorDelTenant } from './tenant-color-vars';
+import { esHostDeCrm } from './crm-host';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
@@ -36,9 +37,18 @@ async function hostDelPedido(): Promise<string> {
   return (h.get('x-forwarded-host') ?? h.get('host') ?? '').split(':')[0] ?? '';
 }
 
-/** El panel y la interfaz de jugador viven en hosts distintos de la misma app. */
+/**
+ * El panel y la interfaz de jugador viven en hosts distintos de la misma app.
+ *
+ * ⚠️ **El host del CRM cuenta como panel.** `crm.miamihub.vip` sirve el mismo
+ * build recortado a Soporte (ver `lib/crm-host.ts`), así que le corresponde la
+ * paleta del panel. Sin este caso se pintaba con los colores de MARCA del
+ * casino —los del jugador— sobre una pantalla de operador.
+ */
 function esHostDePanel(host: string): boolean {
-  return host.startsWith('admin.') || host.startsWith('admin-');
+  return (
+    host.startsWith('admin.') || host.startsWith('admin-') || esHostDeCrm(host)
+  );
 }
 
 /**
