@@ -41,6 +41,34 @@ export default function PlayError({
 }) {
   const [verDetalle, setVerDetalle] = useState(false);
 
+  // ── Recuperación de un chunk que no llegó ────────────────────────────────
+  //
+  // El link de referido se abre casi siempre desde WhatsApp, y en iPhone eso
+  // es un `WKWebView` que iOS puede matar por memoria. Si el proceso se cae
+  // mientras bajaba uno de los ~15 chunks de `/play`, webpack tira
+  // `ChunkLoadError` y esta pantalla lo tapa todo — para alguien que todavía
+  // no tiene cuenta, el casino simplemente no abre.
+  //
+  // No es un error de programa: al bundle no le pasó nada, se cortó la
+  // descarga. Recargar lo arregla.
+  //
+  // ⚠️ **Una sola vez.** El flag en sessionStorage no es opcional: si el chunk
+  // faltara de verdad —un deploy que borró el archivo— recargar volvería a
+  // fallar, y sin freno serían recargas infinitas. Justo el bucle que se
+  // arregló hoy en el layout; no se vuelve a construir acá.
+  useEffect(() => {
+    const esDeChunk =
+      error.name === 'ChunkLoadError' || /Loading chunk|dynamically imported module/i.test(error.message);
+    if (!esDeChunk) return;
+    try {
+      if (window.sessionStorage.getItem('casino:chunk-retry')) return;
+      window.sessionStorage.setItem('casino:chunk-retry', '1');
+    } catch {
+      return; // sin sessionStorage no hay freno → no se recarga
+    }
+    window.location.reload();
+  }, [error]);
+
   useEffect(() => {
     console.error('[PlayError]', error);
     // Sin DSN esto no hace nada y no tira: cuando el DSN esté, empieza a
