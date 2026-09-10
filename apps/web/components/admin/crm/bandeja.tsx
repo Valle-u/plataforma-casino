@@ -30,6 +30,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { useBandeja } from '@/lib/chat/use-bandeja';
+import type { InboxItem } from '@/lib/chat/types';
+import { cambiarEstadoDeConversacion } from '@/lib/chat/crm-api';
+import { esAbrirPaleta, esFocoDeTexto } from '@/lib/crm/atajos';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { cn } from '@/lib/cn';
 import {
@@ -44,6 +47,8 @@ import { ListaDeConversaciones } from './lista-conversaciones';
 import { Conversacion } from './conversacion';
 import { RielColapsado } from './riel-colapsado';
 import { Ficha } from './ficha';
+import { Paleta } from './paleta';
+import { AyudaDeAtajos } from './ayuda-atajos';
 
 /**
  * Ancho de la manija de arrastre.
@@ -163,6 +168,96 @@ export function Bandeja(): React.ReactElement {
     };
   }, []);
 
+  // ── Atajos de teclado ────────────────────────────────────────────────────
+  //
+  // ⚠️ **Lo primero es no robarle las teclas a quien está escribiendo.** `e`
+  // resuelve la conversación y `r` salta al compositor: sin el guard de foco,
+  // escribir "espera" la cerraría en la primera letra. Ver `lib/crm/atajos.ts`.
+  const [paletaAbierta, setPaletaAbierta] = useState(false);
+  const [ayudaAbierta, setAyudaAbierta] = useState(false);
+
+  const { selectConversation, selectedId, textareaRef, marcarEstadoLocal } = bandeja;
+
+  useEffect(() => {
+    const alTeclado = (e: KeyboardEvent) => {
+      // ⌘K va SIEMPRE, incluso escribiendo: lleva modificador, así que no
+      // choca con nada, y quien redacta una respuesta también quiere poder
+      // saltar a otra conversación.
+      if (esAbrirPaleta(e)) {
+        e.preventDefault();
+        setPaletaAbierta(true);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        setPaletaAbierta(false);
+        setAyudaAbierta(false);
+        return;
+      }
+
+      // De acá para abajo, teclas sueltas: no corren dentro de un campo, ni
+      // con un modificador apretado (sería un atajo del navegador).
+      if (esFocoDeTexto(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (paletaAbierta || ayudaAbierta) return;
+
+      const k = e.key.toLowerCase();
+
+      if (k === 'j' || k === 'k') {
+        e.preventDefault();
+        const i = visiblesRef.current.findIndex(
+          (c) => c.conversation.id === selectedId,
+        );
+        const siguiente =
+          k === 'j'
+            ? Math.min(i + 1, visiblesRef.current.length - 1)
+            : Math.max(i - 1, 0);
+        const destino = visiblesRef.current[i === -1 ? 0 : siguiente];
+        if (destino) selectConversation(destino.conversation.id);
+        return;
+      }
+
+      if (k === 'r' || k === '/') {
+        e.preventDefault();
+        textareaRef.current?.focus();
+        return;
+      }
+
+      if (k === 'f') {
+        e.preventDefault();
+        setLayout((prev) => {
+          if (!prev) return prev;
+          const nuevo = { ...prev, ficha: !prev.ficha };
+          guardarLayout(nuevo);
+          return nuevo;
+        });
+        return;
+      }
+
+      if (k === 'e' && selectedId) {
+        e.preventDefault();
+        // Resolver desde el teclado pasa por el mismo endpoint que el botón.
+        void cambiarEstadoDeConversacion(selectedId, 'resolved')
+          .then((r) => marcarEstadoLocal(r.status))
+          .catch(() => undefined);
+        return;
+      }
+
+      if (e.key === '?') {
+        e.preventDefault();
+        setAyudaAbierta(true);
+      }
+    };
+    window.addEventListener('keydown', alTeclado);
+    return () => window.removeEventListener('keydown', alTeclado);
+  }, [
+    selectedId,
+    selectConversation,
+    textareaRef,
+    marcarEstadoLocal,
+    paletaAbierta,
+    ayudaAbierta,
+  ]);
+
   // ── Filtrado de la lista ─────────────────────────────────────────────────
   const visibles = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -183,6 +278,26 @@ export function Bandeja(): React.ReactElement {
         .some((v) => String(v).toLowerCase().includes(texto));
     });
   }, [bandeja.conversations, pestana, canal, busqueda]);
+
+  // Un espejo de la lista visible, para que `j`/`k` lean la de AHORA. El
+  // listener del teclado se registra una vez y capturaría el array viejo.
+  const visiblesRef = useRef<InboxItem[]>([]);
+  visiblesRef.current = visibles;
+
+  // Los dos modales van juntos y por fuera del layout: se abren desde el
+  // teclado, así que tienen que existir tanto en escritorio como en mobile.
+  const modales = (
+    <>
+      {paletaAbierta && (
+        <Paleta
+          conversaciones={bandeja.conversations}
+          onElegirConversacion={selectConversation}
+          onCerrar={() => setPaletaAbierta(false)}
+        />
+      )}
+      {ayudaAbierta && <AyudaDeAtajos onCerrar={() => setAyudaAbierta(false)} />}
+    </>
+  );
 
   // Hasta que el layout se lee, no se pinta nada: dibujar con los anchos por
   // defecto y corregirlos un frame después es un salto visible.
@@ -218,6 +333,7 @@ export function Bandeja(): React.ReactElement {
             estado={bandeja.status}
           />
         )}
+        {modales}
       </div>
     );
   }
@@ -294,6 +410,8 @@ export function Bandeja(): React.ReactElement {
           lado="derecha"
         />
       )}
+
+      {modales}
     </div>
   );
 }
