@@ -22,6 +22,7 @@ import {
   crmNotes,
   crmTags,
   crmTemplates,
+  crmTimelineEvents,
   deposits,
   roles,
   userRoles,
@@ -40,6 +41,7 @@ import { CrmNetworkService } from './crm-network.service';
 import { textoDelAviso } from './aviso-derivacion';
 import { generarPassword } from './password-temporal';
 import { TenantUsersService } from '../tenant-users/tenant-users.service';
+import { variantesDeTelefono } from './telefono';
 
 export interface ContactContext {
   contact: {
@@ -563,6 +565,18 @@ export class ChatCrmService {
    * Lo que se devuelve es lo mínimo para reconocerlo: usuario, nombre y estado.
    * **Ni saldo ni movimientos** — para decidir si es la misma persona no hace
    * falta su plata.
+   *
+   * ## ⚠️ Antes comparaba el string crudo, y por eso casi no frenaba
+   *
+   * Era `WHERE users.phone = '3415551234'`. Como `users.phone` es texto libre
+   * cargado a mano, el mismo número está escrito de cinco formas distintas
+   * —`0341 15 555-1234`, `+5493415551234`, `341 555-1234`— y **ninguna
+   * matcheaba a la otra**. El freno decía "no hay nadie con ese teléfono" y
+   * dejaba crear la segunda cuenta: exactamente lo que existe para impedir.
+   *
+   * Ahora compara contra las escrituras canónicas del número
+   * (`variantesDeTelefono`, la **primera defensa de D4**), sobre los dígitos de
+   * la columna y apoyado en el índice funcional de la migración `0116`.
    */
   async jugadoresConEseTelefono(
     db: TenantDb,
@@ -570,8 +584,11 @@ export class ChatCrmService {
   ): Promise<
     Array<{ id: string; username: string; displayName: string | null; status: string }>
   > {
-    const telefono = params.telefono?.trim();
-    if (!telefono) return [];
+    const variantes = variantesDeTelefono(params.telefono);
+    // Sin variantes = el número no se pudo interpretar. Se devuelve vacío, que
+    // hace que el alta siga adelante sin freno — es lo mismo que pasaba antes
+    // con un teléfono en blanco, y el operador ve el campo tal como lo cargó.
+    if (variantes.length === 0) return [];
 
     const candidatos = await db
       .select({
@@ -581,20 +598,229 @@ export class ChatCrmService {
         status: users.status,
       })
       .from(users)
-      .where(eq(users.phone, telefono))
+      .where(
+        // Cada variante va como parámetro propio, no interpolada: es entrada
+        // del usuario y termina en un `IN`.
+        sql`regexp_replace(${users.phone}, '\\D', '', 'g') IN (${sql.join(
+          variantes.map((v) => sql`${v}`),
+          sql`, `,
+        )})`,
+      )
       .limit(20);
-
-    if (candidatos.length === 0) return [];
 
     // El filtro de red va DESPUÉS de la consulta y no adentro: la pertenencia a
     // una rama independiente se resuelve subiendo la jerarquía, no con un join.
+    return this.soloDeMiRed(db, candidatos, params.solicitanteId, 20);
+  }
+
+  /**
+   * Jugadores a los que se puede vincular este contacto (**tercera defensa de
+   * D4**, la mitad de "vincular a mano").
+   *
+   * Busca por usuario, nombre o teléfono. El teléfono entra por
+   * `variantesDeTelefono`, así que escribir `0341 15 555-1234` encuentra al que
+   * está cargado como `+5493415551234`.
+   *
+   * ## Acotado por red (R6), igual que el freno del alta
+   *
+   * Sólo devuelve jugadores que el que pregunta ya podría ver. Sin eso, esto
+   * sería un buscador del padrón entero del casino disponible desde cualquier
+   * conversación — la forma más cómoda de averiguar quién juega en la red de
+   * otro socio.
+   */
+  async jugadoresParaVincular(
+    db: TenantDb,
+    params: { texto: string; solicitanteId: string },
+  ): Promise<
+    Array<{ id: string; username: string; displayName: string | null; status: string }>
+  > {
+    const texto = params.texto.trim();
+    if (texto.length < 2) return [];
+    const patron = `%${texto.toLowerCase()}%`;
+    const variantes = variantesDeTelefono(texto);
+
+    const porTelefono =
+      variantes.length > 0
+        ? sql`OR regexp_replace(${users.phone}, '\\D', '', 'g') IN (${sql.join(
+            variantes.map((v) => sql`${v}`),
+            sql`, `,
+          )})`
+        : sql``;
+
+    const candidatos = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        status: users.status,
+      })
+      .from(users)
+      .where(
+        sql`(
+          lower(${users.username}) LIKE ${patron}
+          OR lower(coalesce(${users.displayName}, '')) LIKE ${patron}
+          ${porTelefono}
+        )`,
+      )
+      .limit(20);
+
+    return this.soloDeMiRed(db, candidatos, params.solicitanteId, 10);
+  }
+
+  /**
+   * Vincular un contacto a un jugador que ya existe.
+   *
+   * Es lo que hace falta cuando **D4 no pudo sola**: en Telegram, porque no hay
+   * teléfono; en WhatsApp, cuando el número matcheó con más de uno y la segunda
+   * defensa decidió no vincular a ninguno.
+   *
+   * ## Vincular es dar acceso a la plata de alguien
+   *
+   * Con el contacto vinculado, la ficha muestra saldo, depósitos y retiros de
+   * ese jugador. Por eso el destino se valida contra **R6**: sólo se puede
+   * vincular a alguien de la propia red. Un 404 —y no un 403— para los de
+   * afuera, por la misma razón de siempre: un 403 confirmaría que ese jugador
+   * existe.
+   *
+   * ## Queda registrado
+   *
+   * En `crm_timeline_events`, con quién lo hizo. Es la mitad de la **tercera
+   * defensa de D4**: el vínculo se puede deshacer *y* queda constancia de las
+   * dos operaciones.
+   */
+  async vincularContacto(
+    db: TenantDb,
+    params: { contact: CrmContact; jugadorId: string; actorId: string },
+  ): Promise<CrmContact> {
+    const { contact, jugadorId, actorId } = params;
+
+    if (contact.userId) {
+      throw new BadRequestException({
+        message: 'Este contacto ya está vinculado. Deshacé el vínculo primero.',
+        error: 'CONTACT_ALREADY_LINKED',
+      });
+    }
+
+    const jugador = (
+      await db
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.id, jugadorId))
+        .limit(1)
+    )[0];
+    const red = jugador
+      ? await this.redDelJugador(db, jugador.id, actorId)
+      : null;
+    if (!jugador || !red?.same) {
+      throw new NotFoundException('Jugador no encontrado.');
+    }
+
+    const actualizado = (
+      await db
+        .update(crmContacts)
+        .set({ userId: jugador.id, isLead: false })
+        .where(eq(crmContacts.id, contact.id))
+        .returning()
+    )[0]!;
+
+    await this.anotarEnLaLinea(db, {
+      contactId: contact.id,
+      type: 'link',
+      summary: `Vinculado a ${jugador.username}`,
+      metadata: { actorId, userId: jugador.id },
+    });
+
+    return actualizado;
+  }
+
+  /**
+   * Deshacer el vínculo — **la tercera defensa de D4**, literalmente.
+   *
+   * D4 acepta a sabiendas que un teléfono compartido o mal cargado **una a dos
+   * personas distintas en una sola ficha**, y que el operador ve el nombre
+   * equivocado sin ninguna señal. Esto es lo que permite arreglarlo cuando
+   * pasa, en vez de tener que tocar la base.
+   *
+   * El contacto vuelve a ser un lead: pierde el acceso a la plata de ese
+   * jugador y conserva todo lo suyo —conversaciones, notas, etiquetas—, que es
+   * de la ficha y no del vínculo.
+   */
+  async desvincularContacto(
+    db: TenantDb,
+    params: { contact: CrmContact; actorId: string },
+  ): Promise<CrmContact> {
+    const { contact, actorId } = params;
+
+    if (!contact.userId) {
+      throw new BadRequestException({
+        message: 'Este contacto no está vinculado a ningún jugador.',
+        error: 'CONTACT_NOT_LINKED',
+      });
+    }
+
+    const actualizado = (
+      await db
+        .update(crmContacts)
+        .set({ userId: null, isLead: true })
+        .where(eq(crmContacts.id, contact.id))
+        .returning()
+    )[0]!;
+
+    await this.anotarEnLaLinea(db, {
+      contactId: contact.id,
+      type: 'unlink',
+      summary: 'Vínculo deshecho',
+      metadata: { actorId, userId: contact.userId },
+    });
+
+    return actualizado;
+  }
+
+  /**
+   * Deja constancia en la línea de tiempo del contacto.
+   *
+   * ⚠️ **`crm_timeline_events` todavía no tiene pantalla** (roadmap 4.3): esto
+   * se guarda y hoy sólo se lee consultando la base. Se escribe igual, porque
+   * un registro que empieza el día que se construye la pantalla no sirve para
+   * el caso en que hace falta — que es siempre uno anterior.
+   *
+   * No tira nunca: dejar de vincular porque falló la anotación sería cambiar
+   * una operación que el operador pidió por una auditoría que nadie mira
+   * todavía.
+   */
+  private async anotarEnLaLinea(
+    db: TenantDb,
+    evento: {
+      contactId: string;
+      type: string;
+      summary: string;
+      metadata: Record<string, string>;
+    },
+  ): Promise<void> {
+    try {
+      await db.insert(crmTimelineEvents).values(evento);
+    } catch {
+      // Silencio a propósito: ver el docblock.
+    }
+  }
+
+  /** Filtra una lista de jugadores dejando sólo los de la red del que pregunta. */
+  private async soloDeMiRed<T extends { id: string }>(
+    db: TenantDb,
+    candidatos: T[],
+    solicitanteId: string,
+    tope: number,
+  ): Promise<T[]> {
+    if (candidatos.length === 0) return [];
     const visibles = await Promise.all(
       candidatos.map(async (c) => {
-        const red = await this.redDelJugador(db, c.id, params.solicitanteId);
+        const red = await this.redDelJugador(db, c.id, solicitanteId);
         return red.same ? c : null;
       }),
     );
-    return visibles.filter((c): c is NonNullable<typeof c> => c !== null);
+    return visibles
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .slice(0, tope);
   }
 
   async createPlayerFromChat(

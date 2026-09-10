@@ -262,6 +262,88 @@ export class ChatCrmController {
     );
   }
 
+  // ── El vínculo con el jugador (D4) ────────────────────────────────────────
+
+  /**
+   * Jugadores a los que se puede vincular este contacto.
+   *
+   * Busca por usuario, nombre o teléfono — y el teléfono se normaliza, así que
+   * `0341 15 555-1234` encuentra al que está cargado como `+5493415551234`.
+   *
+   * Acotado por red (**R6**): sólo jugadores que el que pregunta ya podría ver.
+   */
+  @Get('jugadores')
+  async jugadoresParaVincular(
+    @Req() req: RequestWithTenantUser,
+    @Query('q') q?: string,
+  ) {
+    const solicitanteId = req.tenantUser?.id;
+    if (!solicitanteId) throw new ForbiddenException('No tenés acceso al soporte.');
+    return this.crm.jugadoresParaVincular(this.db(req), {
+      texto: q ?? '',
+      solicitanteId,
+    });
+  }
+
+  /**
+   * Vincular el contacto a un jugador que ya existe.
+   *
+   * Hace falta cuando **D4 no pudo sola**: en Telegram no hay teléfono, y en
+   * WhatsApp la segunda defensa deja sin vincular a los que matchean con más de
+   * uno.
+   *
+   * ⚠️ **Vincular es dar acceso a la plata de ese jugador**: con el contacto
+   * vinculado la ficha muestra saldo y movimientos. Por eso el destino se valida
+   * contra R6 en el service, con la red de **quien pregunta** — no la de la
+   * bandeja.
+   */
+  @Post('contacts/:contactId/link')
+  @HttpCode(HttpStatus.OK)
+  async vincular(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @Body() body: { userId?: unknown },
+  ) {
+    const jugadorId = body?.userId;
+    if (typeof jugadorId !== 'string' || !jugadorId) {
+      throw new BadRequestException('Falta el jugador.');
+    }
+    const db = this.db(req);
+    const actorId = req.tenantUser?.id;
+    if (!actorId) throw new ForbiddenException('No tenés acceso al soporte.');
+    const contact = await this.crm.assertAccess(db, contactId, this.owner(req));
+    const actualizado = await this.crm.vincularContacto(db, {
+      contact,
+      jugadorId,
+      actorId,
+    });
+    return { id: actualizado.id, userId: actualizado.userId };
+  }
+
+  /**
+   * Deshacer el vínculo — **la tercera defensa de D4**.
+   *
+   * D4 acepta a sabiendas que un teléfono compartido o mal cargado una a dos
+   * personas en una sola ficha, y que el operador ve el nombre equivocado sin
+   * ninguna señal. Esto es lo que lo arregla sin tocar la base.
+   */
+  @Delete('contacts/:contactId/link')
+  @HttpCode(HttpStatus.OK)
+  async desvincular(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+  ) {
+    const db = this.db(req);
+    const actorId = req.tenantUser?.id;
+    if (!actorId) throw new ForbiddenException('No tenés acceso al soporte.');
+    const contact = await this.crm.assertAccess(db, contactId, this.owner(req));
+    const actualizado = await this.crm.desvincularContacto(db, {
+      contact,
+      actorId,
+    });
+    return { id: actualizado.id, userId: actualizado.userId };
+  }
+
   // ── Alta de jugador desde el chat (D9) ────────────────────────────────────
 
   /**
