@@ -240,7 +240,7 @@ lo normal, no la excepción. La pantalla tiene que estar diseñada para eso.
 | 3.1 | Acompañar al socio en el alta ante Meta: explicar el trámite y mostrar en qué paso está | ⬜ **Diferido a propósito** |
 | 3.2 | Webhook (igual que 2.2, con la firma de Meta) | 🟡 Arquitectura decidida (**D23**), sin escribir |
 | 3.3 | Vínculo por teléfono, con las **tres defensas** de D4 | ✅ **Hecho** (`a8256a3` + la UI) |
-| 3.4 | **El aviso de la ventana de 24 h, antes de escribir** | ⬜ Sin empezar |
+| 3.4 | **El aviso de la ventana de 24 h, antes de escribir** | ✅ **Hecho** |
 | 3.5 | Qué se hace con audios y videos | ✅ Decidido, sin implementar |
 
 **El 3.1 es la mitad del trabajo y no es código.** Por **D13** el socio hace su
@@ -249,8 +249,44 @@ difiere hasta tener un socio real haciéndolo: el trámite de Meta cambia seguid
 y escribirlo de memoria produce una guía que no coincide con lo que el socio ve
 en pantalla.
 
-**El 3.4 es chico y fácil de olvidar.** Sin eso, el operador escribe tres
+**El 3.4 era chico y fácil de olvidar.** Sin eso, el operador escribe tres
 párrafos y recibe un error.
+
+### 3.4 — La ventana, y lo que no se podía separar de ella
+
+La regla vive en el backend (`ventana-24h.ts`, 10 tests) y lo que viaja a la
+pantalla es **cuándo vence**, no si venció: si el backend mandara "vencida", un
+panel abierto toda la tarde seguiría diciendo que quedan horas. El contador
+tickea del lado del cliente sin que las 24 horas estén escritas en dos lados.
+
+**Sólo en WhatsApp.** Telegram no tiene ventana. Un cartel que aparece donde no
+corresponde enseña a ignorarlo, y entonces tampoco se lee donde sí importa — así
+que el backend manda `null` para todo canal que no la tenga, y la pantalla no
+vuelve a preguntarse por el tipo de canal.
+
+**Tres estados, con distinta prominencia:** vencida → cartel rojo; faltan menos
+de 4 h → contador; más de 4 h → nada, porque un reloj corriendo al lado del
+teclado no es información. Y un cuarto que es fácil colapsar con "no aplica" y
+**no es lo mismo**: WhatsApp donde el cliente nunca escribió. Ahí la ventana no
+se abrió nunca y tampoco sale texto libre.
+
+**Lo que no se podía separar del aviso.** Al leer el envío apareció que
+`canalExterno()` sólo reconoce Telegram: un mensaje escrito en un hilo de
+WhatsApp **se guardaría, se vería como enviado y no llegaría a nadie** — el mismo
+agujero que 2.7 tapó para Telegram. Con eso a la vista, mandar sólo el contador
+habría sido **peor que no hacer nada**: un cartel diciendo *"te quedan 20 horas
+para responder libremente"* sobre un canal que no entrega nada es una mentira
+tranquilizadora, y le da confianza al operador justo donde el mensaje se pierde.
+
+Por eso el compositor queda bloqueado —textarea, clip, rayo y Enviar— con el
+motivo escrito. **Cuando exista el envío por WhatsApp se saca ese bloqueo; la
+ventana se queda**, y ahí recién pasa a ser la restricción que manda.
+
+**Verificado en el navegador** con un canal `whatsapp` fabricado en la base y los
+cuatro estados: sin banda con 23 h por delante, *"Quedan 44 min"* a las 23.2 h,
+*"venció hace 82 días"* con un inbound viejo, y *"Nunca escribió por acá"* sin
+ningún inbound. Con la prueba negativa que importa: en un hilo de livechat no
+aparece nada de esto y el compositor sigue habilitado.
 
 ### 3.3 — El backend estaba y no lo llamaba nadie
 

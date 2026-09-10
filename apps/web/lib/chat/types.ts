@@ -66,6 +66,21 @@ export interface InboxItem {
    * casos se muestran distinto.
    */
   lastMessageBody?: string | null;
+  /**
+   * La ventana de 24 h de WhatsApp (**3.4**), tal como la calcula el backend.
+   *
+   * ⚠️ **Los dos "no hay fecha" no son lo mismo.**
+   *
+   * - `null` (o ausente) → **este canal no tiene ventana**: Telegram y el
+   *   livechat no la tienen. No hay nada que avisar.
+   * - `{ vence: null }` → **es WhatsApp y el cliente nunca escribió**, así que la
+   *   ventana no se abrió nunca. Es el caso en que más falta hace el aviso.
+   *
+   * Sólo viene el **instante en que vence**, no si venció: la comparación con el
+   * reloj es del cliente. Si el backend mandara "vencida", un panel abierto toda
+   * la tarde seguiría diciendo que quedan horas después de que se acabaron.
+   */
+  ventana?: { vence: string | null } | null;
   /** Etiquetas del contacto. Vienen con la lista, no se piden por fila. */
   tags?: Array<{ id: string; label: string; color: string | null }>;
   contact: {

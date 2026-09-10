@@ -47,6 +47,7 @@ import { CHAT_ATTACHMENT_ACCEPT } from '@/lib/chat/upload';
 import { listTemplates } from '@/lib/chat/crm-api';
 import { useEffect, useState } from 'react';
 import type { CrmTemplate } from '@/lib/chat/types';
+import { AvisoDeWhatsapp, esDeWhatsapp } from './aviso-de-whatsapp';
 
 export function Conversacion({
   bandeja,
@@ -85,6 +86,12 @@ export function Conversacion({
   const nombre = nombreDelContacto(selected);
   const canal = canalVisible(selected.channelType);
   const handle = selected.contact.username ?? selected.contact.phone;
+
+  // WhatsApp todavía no tiene envío: el despacho a canales externos sólo
+  // reconoce Telegram. Dejar escribir guardaría un mensaje que se ve enviado y
+  // no le llega a nadie — el mismo agujero que 2.7 tapó para Telegram. El
+  // porqué, y qué sacar cuando exista el envío, están en `aviso-de-whatsapp`.
+  const mudo = esDeWhatsapp(selected.ventana);
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg)]">
@@ -162,6 +169,8 @@ export function Conversacion({
 
       {/* ── Compositor ─────────────────────────────────────────────────── */}
       <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-2.5">
+        <AvisoDeWhatsapp ventana={selected.ventana} />
+
         {errorEnvio && (
           <div
             role="alert"
@@ -200,12 +209,18 @@ export function Conversacion({
             className="hidden"
             onChange={(e) => void onPickFiles(e.target.files)}
           />
+          {/*
+            El clip y el rayo caen con el resto: subir un adjunto que no se va a
+            entregar es el mismo problema que escribir un texto que no se
+            entrega, con un archivo de más guardado en R2.
+          */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            disabled={mudo}
             aria-label="Adjuntar un archivo"
             title="Adjuntar un archivo"
-            className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]"
+            className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-transparent"
           >
             <Paperclip size={16} />
           </button>
@@ -213,10 +228,11 @@ export function Conversacion({
           <button
             type="button"
             onClick={() => setPlantillasAbiertas((v) => !v)}
+            disabled={mudo}
             aria-label="Respuestas rápidas"
             title="Respuestas rápidas"
             className={cn(
-              'flex size-[38px] shrink-0 items-center justify-center rounded-[11px] transition-colors hover:bg-[var(--color-bg-subtle)]',
+              'flex size-[38px] shrink-0 items-center justify-center rounded-[11px] transition-colors hover:bg-[var(--color-bg-subtle)] disabled:opacity-40 disabled:hover:bg-transparent',
               plantillasAbiertas
                 ? 'text-[var(--color-accent-text)]'
                 : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
@@ -238,14 +254,19 @@ export function Conversacion({
               }
             }}
             rows={1}
-            placeholder="Escribí tu respuesta"
-            className="max-h-[120px] min-h-[42px] flex-1 resize-none rounded-[11px] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--color-fg)] outline-none transition-colors focus:border-[var(--color-border-strong)] placeholder:text-[var(--color-fg-subtle)]"
+            disabled={mudo}
+            placeholder={
+              mudo ? 'Por WhatsApp todavía no se puede responder' : 'Escribí tu respuesta'
+            }
+            className="max-h-[120px] min-h-[42px] flex-1 resize-none rounded-[11px] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2.5 text-[13.5px] text-[var(--color-fg)] outline-none transition-colors focus:border-[var(--color-border-strong)] disabled:opacity-50 placeholder:text-[var(--color-fg-subtle)]"
           />
 
           <button
             type="button"
             onClick={reply}
-            disabled={sending || uploading || (!draft.trim() && pending.length === 0)}
+            disabled={
+              mudo || sending || uploading || (!draft.trim() && pending.length === 0)
+            }
             className="flex h-[42px] shrink-0 items-center gap-1.5 rounded-[11px] bg-[var(--color-accent)] px-3.5 text-[13px] font-semibold text-[var(--color-accent-fg)] transition-opacity disabled:opacity-40"
           >
             <SendHorizontal size={15} />

@@ -43,6 +43,15 @@ export interface OperatorInboxItem {
    * aparte). Los dos casos son distintos y la pantalla los dice distinto.
    */
   lastMessageBody: string | null;
+  /**
+   * La ventana de 24 h de WhatsApp (**3.4**), o `null` si el canal no tiene.
+   *
+   * Los dos "no hay fecha" significan cosas distintas y hay que tratarlos
+   * distinto — ver `ventana-24h.ts`. En resumen: `null` es "este canal no tiene
+   * ventana"; `{ vence: null }` es "es WhatsApp y el cliente **nunca escribió**",
+   * que es el caso en que más falta hace avisar.
+   */
+  ventana: VentanaDe24h | null;
   /** Las etiquetas del contacto, para mostrarlas en la fila. */
   tags: Array<{ id: string; label: string; color: string | null }>;
   contact: {
@@ -68,6 +77,7 @@ import {
   CHAT_ATTACHMENT_MIMES,
   type ChatAttachment,
 } from './chat.types';
+import { ventanaDe, type VentanaDe24h } from './ventana-24h';
 
 const WEB_CHANNEL = 'web-livechat';
 
@@ -459,6 +469,27 @@ export class ChatService {
            ORDER BY m.created_at DESC
            LIMIT 1
         )`,
+        /**
+         * El último mensaje **del cliente**, para la ventana de 24 h (**3.4**).
+         *
+         * Va aparte del de arriba y no se deriva de él: el último mensaje de la
+         * conversación suele ser del operador, y **lo que abre la ventana es que
+         * hable el cliente**. Usarlo al revés daría 24 horas nuevas cada vez que
+         * el operador escribe, que es exactamente lo contrario de la regla.
+         *
+         * Mismo índice `crm_messages_conv_idx (conversation_id, created_at)`
+         * recorrido hacia atrás. El filtro por `direction` mira algunas filas más
+         * antes de encontrar la primera entrante — en un hilo donde el operador
+         * mandó veinte seguidos, veinte— y sigue siendo una búsqueda de índice.
+         */
+        ultimoInboundAt: sql<string | null>`(
+          SELECT m.created_at
+            FROM crm_messages m
+           WHERE m.conversation_id = ${crmConversations.id}
+             AND m.direction = 'inbound'
+           ORDER BY m.created_at DESC
+           LIMIT 1
+        )`,
         contact: {
           id: crmContacts.id,
           displayName: crmContacts.displayName,
@@ -522,6 +553,27 @@ export class ChatService {
            ORDER BY m.created_at DESC
            LIMIT 1
         )`,
+        /**
+         * El último mensaje **del cliente**, para la ventana de 24 h (**3.4**).
+         *
+         * Va aparte del de arriba y no se deriva de él: el último mensaje de la
+         * conversación suele ser del operador, y **lo que abre la ventana es que
+         * hable el cliente**. Usarlo al revés daría 24 horas nuevas cada vez que
+         * el operador escribe, que es exactamente lo contrario de la regla.
+         *
+         * Mismo índice `crm_messages_conv_idx (conversation_id, created_at)`
+         * recorrido hacia atrás. El filtro por `direction` mira algunas filas más
+         * antes de encontrar la primera entrante — en un hilo donde el operador
+         * mandó veinte seguidos, veinte— y sigue siendo una búsqueda de índice.
+         */
+        ultimoInboundAt: sql<string | null>`(
+          SELECT m.created_at
+            FROM crm_messages m
+           WHERE m.conversation_id = ${crmConversations.id}
+             AND m.direction = 'inbound'
+           ORDER BY m.created_at DESC
+           LIMIT 1
+        )`,
         contact: {
           id: crmContacts.id,
           displayName: crmContacts.displayName,
@@ -561,7 +613,12 @@ export class ChatService {
    */
   private async conEtiquetas(
     db: TenantDb,
-    filas: Array<Omit<OperatorInboxItem, 'tags'>>,
+    filas: Array<
+      Omit<OperatorInboxItem, 'tags' | 'ventana'> & {
+        /** Crudo de la consulta; acá se convierte en la ventana. */
+        ultimoInboundAt: string | Date | null;
+      }
+    >,
   ): Promise<OperatorInboxItem[]> {
     if (filas.length === 0) return [];
 
@@ -584,9 +641,16 @@ export class ChatService {
       porContacto.set(t.contactId, lista);
     }
 
-    return filas.map((f) => ({
+    // La ventana se calcula acá, en el único lugar por el que pasan las dos
+    // consultas de la bandeja. Hacerlo en cada una sería dos copias de la misma
+    // regla, y la que se olvide de actualizarse deja de avisar en silencio.
+    return filas.map(({ ultimoInboundAt, ...f }) => ({
       ...f,
       tags: porContacto.get(f.contact.id) ?? [],
+      ventana: ventanaDe({
+        channelType: f.channelType,
+        ultimoInbound: ultimoInboundAt,
+      }),
     }));
   }
 
