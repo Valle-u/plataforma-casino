@@ -34,6 +34,24 @@ export interface BotDeTelegram {
   firstName: string;
 }
 
+/**
+ * Lo que Telegram dice sobre el webhook de un bot, recortado a lo accionable.
+ *
+ * No trae el token ni el `secret_token`: la URL lleva el slug del tenant y el
+ * id del canal, que ya se ven en la pantalla.
+ */
+export interface InfoDelWebhook {
+  /** La URL registrada, o `null` si no hay webhook. */
+  url: string | null;
+  /** Updates que Telegram tiene encolados sin poder entregar. */
+  pendientes: number;
+  /** A qué IP resolvió. Sirve para saber si pegó al servidor correcto. */
+  ip: string | null;
+  ultimoErrorEn: Date | null;
+  /** Lo que dijo Telegram al fallar la entrega. Es lo accionable. */
+  ultimoError: string | null;
+}
+
 /** La forma de toda respuesta de la API de Telegram. */
 interface RespuestaTelegram<T> {
   ok: boolean;
@@ -198,6 +216,53 @@ export class TelegramApiService {
   /** Corta el webhook. Se usa al desvincular. */
   async deleteWebhook(token: string): Promise<void> {
     await this.llamar(token, 'deleteWebhook', { drop_pending_updates: true });
+  }
+
+  /**
+   * Qué webhook tiene Telegram registrado para este bot, **según Telegram**.
+   *
+   * ## Por qué esto existe
+   *
+   * `setWebhook` devuelve OK con cualquier URL HTTPS bien formada: **Telegram no
+   * la prueba al registrarla**. O sea que vincular un bot puede "salir bien" y
+   * dejar los updates yendo a una URL que contesta 404, sin que nada del lado
+   * nuestro se entere. El síntoma es una bandeja vacía, que es idéntica a "nadie
+   * escribió todavía".
+   *
+   * Y hay un motivo concreto para dudar de la URL registrada: la arma
+   * `baseApiPublica()` a partir de `x-forwarded-host`, y **Next pisa ese header
+   * en el rewrite** con el host del cliente (es el bug del commit `9d87c69`, ver
+   * el comentario en `apps/web/lib/api-client.ts`). Si el proxy de adelante no
+   * lo vuelve a escribir, la URL queda apuntando al host de la web — donde
+   * `/api/v1/*` no está ruteado.
+   *
+   * `last_error_message` es lo que cierra el caso: ahí Telegram dice literalmente
+   * con qué se encontró al intentar entregar (*"Wrong response from the webhook:
+   * 404 Not Found"*), y eso no se puede deducir de ningún lado nuestro.
+   *
+   * ⚠️ **Es de sólo lectura y no toca nada.** Preguntar no reconfigura el
+   * webhook ni descarta updates encolados.
+   */
+  async getWebhookInfo(token: string): Promise<InfoDelWebhook> {
+    const r = await this.llamar<{
+      url?: string;
+      pending_update_count?: number;
+      ip_address?: string;
+      last_error_date?: number;
+      last_error_message?: string;
+    }>(token, 'getWebhookInfo');
+
+    return {
+      // Telegram devuelve `""` —no `null`— cuando no hay webhook registrado.
+      // Se normaliza acá para que la pantalla no tenga que distinguir dos
+      // formas de "no hay".
+      url: r.url?.trim() ? r.url : null,
+      pendientes: r.pending_update_count ?? 0,
+      ip: r.ip_address ?? null,
+      // Viene en segundos desde epoch, como todo en Telegram.
+      ultimoErrorEn: r.last_error_date ? new Date(r.last_error_date * 1000) : null,
+      ultimoError: r.last_error_message ?? null,
+    };
   }
 
   /**

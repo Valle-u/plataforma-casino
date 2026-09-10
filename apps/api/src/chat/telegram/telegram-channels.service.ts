@@ -37,7 +37,7 @@ import { crmChannels, type CrmChannel } from '@casino/db';
 import { cifrar, descifrar, hayClaveDeSecretos } from '../../common/secreto-cifrado';
 import type { TenantDb } from '../../tenant-resolver/tenant-context';
 import { CrmNetworkService } from '../crm-network.service';
-import { TelegramApiService } from './telegram-api.service';
+import { TelegramApiService, type InfoDelWebhook } from './telegram-api.service';
 import {
   idDelBot,
   linkDelBot,
@@ -264,6 +264,61 @@ export class TelegramChannelsService {
       .update(crmChannels)
       .set({ isActive: false })
       .where(eq(crmChannels.id, canal.id));
+  }
+
+  /**
+   * Qué webhook tiene Telegram registrado para este canal.
+   *
+   * ## Por qué hace falta preguntárselo a Telegram
+   *
+   * Porque de este lado **no hay forma de saberlo**. La URL se registra al
+   * vincular y no se guarda: se arma en el momento con `baseApiPublica`, que
+   * sale del request. Si esa URL salió mal, acá no queda rastro — y el síntoma,
+   * una bandeja vacía, es idéntico a que todavía no haya escrito nadie.
+   *
+   * **Y hay un motivo concreto para dudar de esa URL.** `baseApiPublica` lee
+   * `x-forwarded-host`, y todas las llamadas del panel pasan por el rewrite de
+   * Next, que **pisa ese header** con el host del cliente. Que llegue bien
+   * depende del proxy que esté adelante de la API, no de nuestro código. Esto es
+   * lo que convierte esa duda en un dato.
+   *
+   * ## Sólo lectura, y con el mismo alcance que desvincular
+   *
+   * Por **D1** un canal es de un panel: un operador no tiene por qué ver el
+   * estado del bot de otro. Mismo **404 y no 403** que en `desvincular`, por la
+   * misma razón: un 403 confirmaría que ese canal existe en otra bandeja.
+   */
+  async estadoDelWebhook(
+    db: TenantDb,
+    params: { channelId: string; inboxOwnerId: string },
+  ): Promise<InfoDelWebhook> {
+    const owner = await this.net.resolveContactOwner(db, params.inboxOwnerId);
+    const canal = (
+      await db
+        .select()
+        .from(crmChannels)
+        .where(
+          and(
+            eq(crmChannels.id, params.channelId),
+            eq(crmChannels.type, TIPO),
+            owner === null
+              ? isNull(crmChannels.ownerUserId)
+              : eq(crmChannels.ownerUserId, owner),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!canal) throw new NotFoundException('Canal no encontrado.');
+
+    const cfg = (canal.config ?? {}) as ConfigTelegram;
+    if (!cfg.token) {
+      throw new BadRequestException({
+        message: 'Este canal no tiene token guardado.',
+        error: 'CHANNEL_WITHOUT_TOKEN',
+      });
+    }
+
+    return this.telegram.getWebhookInfo(descifrar(cfg.token));
   }
 
   /** Busca un canal por el id del bot, mirando el `config`. */

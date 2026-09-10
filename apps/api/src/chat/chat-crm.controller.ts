@@ -464,6 +464,32 @@ export class ChatCrmController {
     });
   }
 
+  /**
+   * Qué webhook tiene Telegram registrado para este canal, y con qué error.
+   *
+   * **Es el único lugar donde se puede ver si el canal está realmente
+   * conectado.** Vincular puede salir bien y dejar los updates yendo a una URL
+   * que contesta 404: `setWebhook` no prueba la URL. Y el síntoma —una bandeja
+   * vacía— es idéntico a que nadie haya escrito.
+   *
+   * La URL se compara a ojo contra el dominio de la API a propósito: la que se
+   * registró salió de `baseApiPublica()`, que es justo el valor en duda, así que
+   * calcular acá si "coincide" sería medir algo contra sí mismo. Se muestran los
+   * hechos que da Telegram y se deja ver el dominio.
+   *
+   * De sólo lectura: preguntar no reconfigura nada.
+   */
+  @Get('channels/telegram/:channelId/webhook')
+  async telegramWebhookStatus(
+    @Req() req: RequestWithTenantUser,
+    @Param('channelId', ParseUUIDPipe) channelId: string,
+  ) {
+    return this.telegramChannels.estadoDelWebhook(this.db(req), {
+      channelId,
+      inboxOwnerId: this.owner(req),
+    });
+  }
+
   /** Desvincula un bot: corta el webhook y desactiva el canal. */
   @Delete('channels/telegram/:channelId')
   @HttpCode(HttpStatus.NO_CONTENT)

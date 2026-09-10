@@ -323,6 +323,39 @@ export const vincularBotDeTelegram = (token: string) =>
 export const desvincularCanalDeTelegram = (channelId: string) =>
   apiDelete<void>(`/tenant/chat/channels/telegram/${channelId}`);
 
+/**
+ * Qué webhook tiene **Telegram** registrado para este bot, y con qué error.
+ *
+ * ## Es el único lugar donde se ve si el canal está de verdad conectado
+ *
+ * Vincular puede salir bien y dejar los mensajes yendo a una URL que contesta
+ * 404: `setWebhook` acepta cualquier URL HTTPS bien formada, **no la prueba**.
+ * Y el síntoma —una bandeja vacía— es exactamente igual a que todavía no haya
+ * escrito nadie.
+ *
+ * `ultimoError` es lo que cierra el caso: ahí Telegram dice literalmente con qué
+ * se encontró al intentar entregar. *"Wrong response from the webhook: 404 Not
+ * Found"* significa que la URL está mal; *"Connection timed out"*, que no llega
+ * al servidor.
+ *
+ * De sólo lectura: preguntar no reconfigura nada ni descarta lo encolado.
+ */
+export const estadoDelWebhookDeTelegram = (channelId: string) =>
+  apiGet<EstadoDelWebhook>(
+    `/tenant/chat/channels/telegram/${channelId}/webhook`,
+  );
+
+export interface EstadoDelWebhook {
+  /** La URL que Telegram tiene registrada, o `null` si no hay ninguna. */
+  url: string | null;
+  /** Updates encolados que Telegram no pudo entregar. */
+  pendientes: number;
+  ip: string | null;
+  /** ISO. */
+  ultimoErrorEn: string | null;
+  ultimoError: string | null;
+}
+
 // ── Circuitos ────────────────────────────────────────────────────────────────
 //
 // La etapa **se calcula al mirar**: sale de si el contacto tiene cuenta, si

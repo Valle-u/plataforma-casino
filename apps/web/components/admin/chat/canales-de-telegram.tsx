@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import {
+  Activity,
   Check,
   Copy,
   Loader2,
@@ -32,9 +33,11 @@ import {
 } from 'lucide-react';
 import {
   desvincularCanalDeTelegram,
+  estadoDelWebhookDeTelegram,
   listarCanalesDeTelegram,
   vincularBotDeTelegram,
   type CanalDeTelegram,
+  type EstadoDelWebhook,
 } from '@/lib/chat/crm-api';
 
 export function CanalesDeTelegram(): React.ReactElement {
@@ -243,10 +246,174 @@ export function CanalesDeTelegram(): React.ReactElement {
                 </div>
               </div>
             )}
+
+            <Diagnostico channelId={c.id} />
           </div>
         ))
       )}
     </section>
+  );
+}
+
+/**
+ * ¿Telegram está pudiendo entregar los mensajes de este bot?
+ *
+ * ## Por qué esto tiene que estar en la pantalla
+ *
+ * Porque **vincular puede salir bien y el canal quedar mudo**. `setWebhook`
+ * acepta cualquier URL HTTPS bien formada sin probarla, así que la pantalla
+ * dice "vinculado" y después no entra nada. El síntoma —bandeja vacía— es
+ * idéntico a que todavía no haya escrito nadie, y ahí el operador concluye que
+ * el CRM no anda.
+ *
+ * Es el mismo modo de falla que en el 2.6 hizo desaparecer en silencio el primer
+ * mensaje de cada persona nueva: **lo que no se ve no se arregla**.
+ *
+ * ## Por qué no se abre solo
+ *
+ * Cada consulta es una llamada a la API de Telegram. Abrir la pantalla no tiene
+ * por qué pegarle a un servicio externo una vez por bot: se pide cuando alguien
+ * quiere saber.
+ *
+ * ## Lo que hay que mirar en la URL
+ *
+ * Tiene que apuntar al **dominio de la API** (`api-...`), no al de la web ni al
+ * del CRM. La arma el servidor con un header que el proxy de Next reescribe, así
+ * que puede salir mal — y esta es la única forma de enterarse antes de que un
+ * jugador escriba y nadie lo lea. No se compara automáticamente porque el valor
+ * con el que habría que comparar es el mismo que está en duda.
+ */
+function Diagnostico({ channelId }: { channelId: string }): React.ReactElement {
+  const [estado, setEstado] = useState<EstadoDelWebhook | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const consultar = useCallback(async () => {
+    setCargando(true);
+    setError(null);
+    try {
+      setEstado(await estadoDelWebhookDeTelegram(channelId));
+    } catch (err) {
+      setError(mensajeDeError(err));
+    } finally {
+      setCargando(false);
+    }
+  }, [channelId]);
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button style={botonSecundario} onClick={() => void consultar()} disabled={cargando}>
+        {cargando ? (
+          <Loader2 size={13} className="animate-spin" />
+        ) : (
+          <Activity size={13} />
+        )}
+        {estado || error ? 'Revisar de nuevo' : '¿Está recibiendo mensajes?'}
+      </button>
+
+      {error && (
+        <div style={{ ...avisoError, marginTop: 8 }}>
+          <TriangleAlert size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {estado && (
+        <div style={{ ...caja, marginTop: 8, background: 'var(--color-bg-subtle)' }}>
+          {estado.url ? (
+            <>
+              <Dato label="Telegram entrega en">
+                <code style={{ ...code, wordBreak: 'break-all' }}>{estado.url}</code>
+              </Dato>
+              <div style={{ ...sub, marginTop: 4 }}>
+                Tiene que ser el dominio de la <b>API</b>. Si dice el de la web o
+                el del CRM, los mensajes están yendo a un lugar que no los
+                atiende.
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--color-warning)' }}>
+              <b>Telegram no tiene ningún webhook registrado para este bot.</b> No
+              va a entrar ni un mensaje. Desvinculá y volvé a vincular.
+            </div>
+          )}
+
+          {estado.ip && (
+            <Dato label="Resuelve a">
+              <code style={code}>{estado.ip}</code>
+            </Dato>
+          )}
+
+          <Dato label="Encolados">
+            <span style={{ fontSize: 12 }}>
+              {estado.pendientes}
+              {estado.pendientes > 0 && (
+                <span style={{ color: 'var(--color-warning)' }}>
+                  {' '}
+                  — Telegram tiene mensajes que no pudo entregar.
+                </span>
+              )}
+            </span>
+          </Dato>
+
+          {/*
+            El último error es lo accionable de toda esta caja. Se muestra tal
+            cual lo dice Telegram, sin traducir: "404 Not Found" apunta a la URL,
+            "Connection timed out" a que no se llega al servidor, y traducirlo a
+            "hubo un problema" borraría justo la diferencia.
+          */}
+          {estado.ultimoError ? (
+            <div style={{ ...avisoError, marginTop: 8 }}>
+              <TriangleAlert size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <div>
+                  <b>Último error de entrega:</b> {estado.ultimoError}
+                </div>
+                {estado.ultimoErrorEn && (
+                  <div style={{ marginTop: 2, opacity: 0.8 }}>
+                    {new Date(estado.ultimoErrorEn).toLocaleString('es-AR')}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 8 }}>
+              <Check size={13} style={{ verticalAlign: -2 }} /> Sin errores de
+              entrega.{' '}
+              <span style={{ color: 'var(--color-fg-muted)' }}>
+                Ojo: si todavía no le escribió nadie, tampoco hubo nada que
+                entregar.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dato({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'baseline' }}>
+      <span
+        style={{
+          flexShrink: 0,
+          fontSize: 10.5,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: 'var(--color-fg-subtle)',
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ minWidth: 0 }}>{children}</span>
+    </div>
   );
 }
 
