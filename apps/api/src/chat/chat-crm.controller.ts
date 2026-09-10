@@ -160,6 +160,33 @@ export class ChatCrmController {
    *
    * Usa `users.create`, el mismo permiso que el alta del panel.
    */
+  /**
+   * Jugadores que ya tienen el teléfono de este contacto (**el freno del alta**).
+   *
+   * `users.phone` no es único: sin este chequeo, dar de alta a alguien que ya
+   * tiene cuenta crea una segunda con el saldo partido, y las cuentas no se
+   * fusionan.
+   *
+   * Pide `users.create` —el mismo permiso que el alta— porque sólo tiene
+   * sentido para quien va a crear. Y la lista viene acotada por red (R6): sin
+   * eso sería la forma más fácil de averiguar quién juega en la red de otro.
+   */
+  @Get('contacts/:contactId/homonimos')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('users.create')
+  async homonimos(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() actor: Operator,
+  ) {
+    const db = this.db(req);
+    const contact = await this.crm.assertAccess(db, contactId, this.owner(req));
+    return this.crm.jugadoresConEseTelefono(db, {
+      telefono: contact.phone,
+      solicitanteId: actor.id,
+    });
+  }
+
   @Post('contacts/:contactId/create-player')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('users.create')

@@ -56,6 +56,8 @@ import {
 import { nombreDelContacto } from '@/lib/chat/use-bandeja';
 import { currencyLabel } from '@/lib/format-currency';
 import { cn } from '@/lib/cn';
+import { hasPermission, useAuth } from '@/lib/auth-context';
+import { AltaDeJugador } from './alta-de-jugador';
 
 export function Ficha({
   item,
@@ -66,8 +68,15 @@ export function Ficha({
   onEstadoCambiado: (status: string) => void;
 }): React.ReactElement {
   const contactId = item.contact.id;
+  const { user } = useAuth();
   const [ctx, setCtx] = useState<ContactContext | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [altaAbierta, setAltaAbierta] = useState(false);
+
+  /** Recargar el contexto: despues del alta, el lead paso a ser jugador. */
+  const recargar = useCallback(() => {
+    getContactContext(contactId).then(setCtx).catch(() => undefined);
+  }, [contactId]);
 
   useEffect(() => {
     let vivo = true;
@@ -101,7 +110,15 @@ export function Ficha({
         </div>
       ) : (
         <>
-          <Dinero ctx={ctx} />
+          <Dinero
+            ctx={ctx}
+            onCrearJugador={
+              // El alta usa el mismo permiso que el alta del panel. Sin el, el
+              // boton no aparece: ofrecer algo que el backend va a rechazar es
+              // peor que no ofrecerlo.
+              hasPermission(user, 'users.create') ? () => setAltaAbierta(true) : null
+            }
+          />
           <CajaDiferida />
           <MedicionPendiente />
           <Identificadores
@@ -110,6 +127,18 @@ export function Ficha({
             telefono={ctx?.contact.phone ?? item.contact.phone}
           />
         </>
+      )}
+
+      {altaAbierta && (
+        <AltaDeJugador
+          contactId={contactId}
+          nombreSugerido={nombre}
+          telefono={ctx?.contact.phone ?? item.contact.phone}
+          onCerrar={() => setAltaAbierta(false)}
+          // El contacto dejó de ser lead: la ficha tiene que reflejarlo sin que
+          // el operador tenga que cambiar de conversación y volver.
+          onCreado={recargar}
+        />
       )}
     </div>
   );
@@ -272,7 +301,14 @@ function AccionesDeLaConversacion({
  * El bloque de otra red es **explícito a propósito**: el backend no mandó la
  * plata por R6, y una sección vacía se lee como "no tiene movimientos".
  */
-function Dinero({ ctx }: { ctx: ContactContext | null }): React.ReactElement {
+function Dinero({
+  ctx,
+  onCrearJugador,
+}: {
+  ctx: ContactContext | null;
+  /** Sólo se ofrece si el operador puede crear usuarios. */
+  onCrearJugador: (() => void) | null;
+}): React.ReactElement {
   if (!ctx) {
     return (
       <Seccion titulo="Dinero">
@@ -312,6 +348,16 @@ function Dinero({ ctx }: { ctx: ContactContext | null }): React.ReactElement {
           Todavía no tiene cuenta. Es un lead: escribió, pero no hay jugador
           asociado.
         </p>
+        {onCrearJugador && (
+          <button
+            type="button"
+            onClick={onCrearJugador}
+            className="flex h-[34px] items-center justify-center gap-1.5 rounded-[10px] border border-[var(--color-border)] text-[12.5px] text-[var(--color-fg)] transition-colors hover:border-[var(--color-border-strong)]"
+          >
+            <UserPlus size={13} />
+            Crear jugador
+          </button>
+        )}
       </Seccion>
     );
   }

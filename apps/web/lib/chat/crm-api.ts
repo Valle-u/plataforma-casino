@@ -92,11 +92,36 @@ export const crearJugadorDesdeElChat = (
  * guarda en claro: si esta respuesta se pierde, no hay forma de recuperarla y
  * hay que resetearla. Por eso la pantalla la muestra hasta que el operador
  * confirme que la copió, y no la pide de nuevo.
+ *
+ * `generatedPassword` viene sólo cuando la generó el servidor. Si el operador
+ * mandó una, no vuelve — ya la sabe.
  */
 export interface AltaDesdeElChat {
   userId: string;
   username: string;
-  password: string;
+  generatedPassword?: string;
+}
+
+/**
+ * Jugadores que ya tienen el teléfono de este contacto (**el freno del alta**).
+ *
+ * `users.phone` **no es único**: sin este chequeo, dar de alta a alguien que ya
+ * tiene cuenta crea una segunda con el saldo partido, y las cuentas no se
+ * fusionan. El operador no tiene cómo saberlo mirando una conversación.
+ *
+ * La lista viene acotada por red (R6): sólo jugadores que el que pregunta ya
+ * podría ver. Y sin saldo — para decidir si es la misma persona no hace falta.
+ */
+export const homonimosDelContacto = (contactId: string) =>
+  apiGet<JugadorHomonimo[]>(
+    `/tenant/chat/contacts/${contactId}/homonimos`,
+  );
+
+export interface JugadorHomonimo {
+  id: string;
+  username: string;
+  displayName: string | null;
+  status: string;
 }
 
 // ── Plantillas (respuestas rápidas por tenant) ──────────────────────────────

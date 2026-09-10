@@ -21,6 +21,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser, type TestUser } from '../helpers/test-users';
+import { ChatCrmService } from '../../chat/chat-crm.service';
 import { ChatService } from '../../chat/chat.service';
 import { CrmNetworkService } from '../../chat/crm-network.service';
 
@@ -243,6 +244,61 @@ describe('CRM · aislamiento entre redes', () => {
       // El socio NO es el operador directo del jugador (lo es su cajero) y no
       // tiene ninguna conversación asignada con él.
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── El freno del alta: homonimos por telefono ────────────────────────────
+  //
+  // `users.phone` NO es unico, asi que dar de alta desde el chat a alguien
+  // que ya tiene cuenta crea una SEGUNDA cuenta con el saldo partido — y las
+  // cuentas no se fusionan. El servidor avisa antes de dejar crear.
+  //
+  // Pero esa busqueda es, literalmente, "deci quien tiene este telefono": sin
+  // acotarla seria la forma mas facil de averiguar quien juega en la red de
+  // otro socio. Por eso vale la misma regla que `getContext` (R6).
+  describe('homonimos: avisa del duplicado sin filtrar entre redes', () => {
+    const TEL = '1155667788';
+
+    beforeAll(async () => {
+      // El jugador del cajero de Litoral (red independiente) y el admin
+      // (central) comparten telefono. Son dos redes distintas a proposito.
+      await ctx.tenantDb.execute(
+        sql`UPDATE users SET phone = ${TEL} WHERE id = ${jugadorDelCajero.id}`,
+      );
+    });
+
+    it('sin telefono no busca nada', async () => {
+      const crm = ctx.app.get(ChatCrmService);
+      const r = await crm.jugadoresConEseTelefono(ctx.tenantDb, {
+        telefono: null,
+        solicitanteId: adminId,
+      });
+      expect(r).toEqual([]);
+    });
+
+    it('el cajero SI ve al jugador de su propia red', async () => {
+      const crm = ctx.app.get(ChatCrmService);
+      const r = await crm.jugadoresConEseTelefono(ctx.tenantDb, {
+        telefono: TEL,
+        solicitanteId: cajeroDeLitoral.id,
+      });
+      expect(r.map((j) => j.id)).toContain(jugadorDelCajero.id);
+    });
+
+    /**
+     * ⚠️ El test que justifica el filtro.
+     *
+     * El staff central pregunta por un telefono que resulta ser de un jugador
+     * de una red independiente. Si apareciera, la pantalla de alta seria un
+     * buscador de padron ajeno.
+     */
+    it('el staff central NO ve al jugador de una red independiente', async () => {
+      const crm = ctx.app.get(ChatCrmService);
+      const r = await crm.jugadoresConEseTelefono(ctx.tenantDb, {
+        telefono: TEL,
+        solicitanteId: adminId,
+      });
+      expect(r.map((j) => j.id)).not.toContain(jugadorDelCajero.id);
     });
   });
 });

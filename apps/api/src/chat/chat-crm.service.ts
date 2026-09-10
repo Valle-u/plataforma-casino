@@ -235,6 +235,64 @@ export class ChatCrmService {
    * ninguna columna para eso. Mientras no exista, una contraseña temporal es
    * temporal sólo por convención.
    */
+  /**
+   * ¿Ya hay un jugador con este teléfono? (**el freno del alta**)
+   *
+   * ## Por qué esto existe
+   *
+   * **`users.phone` NO es único.** O sea que dar de alta desde el chat a
+   * alguien que ya tiene cuenta crea una **segunda cuenta con el mismo
+   * teléfono**, y las cuentas **no se fusionan** (ver `04-identidad-y-fusion`).
+   * El resultado es una persona con el saldo partido en dos y nadie que las
+   * junte.
+   *
+   * El operador no tiene cómo saberlo: está mirando una conversación, no el
+   * padrón. Por eso lo mira el servidor antes de dejar crear.
+   *
+   * ## Acotado por red (R6)
+   *
+   * Sólo se devuelven los jugadores que el que pregunta **ya podría ver**, con
+   * el mismo criterio que `getContext`: misma rama independiente, o los dos sin
+   * rama. Sin esto, "buscá por teléfono" sería la forma más fácil de averiguar
+   * quién juega en la red de otro socio.
+   *
+   * Lo que se devuelve es lo mínimo para reconocerlo: usuario, nombre y estado.
+   * **Ni saldo ni movimientos** — para decidir si es la misma persona no hace
+   * falta su plata.
+   */
+  async jugadoresConEseTelefono(
+    db: TenantDb,
+    params: { telefono: string | null; solicitanteId: string },
+  ): Promise<
+    Array<{ id: string; username: string; displayName: string | null; status: string }>
+  > {
+    const telefono = params.telefono?.trim();
+    if (!telefono) return [];
+
+    const candidatos = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        status: users.status,
+      })
+      .from(users)
+      .where(eq(users.phone, telefono))
+      .limit(20);
+
+    if (candidatos.length === 0) return [];
+
+    // El filtro de red va DESPUÉS de la consulta y no adentro: la pertenencia a
+    // una rama independiente se resuelve subiendo la jerarquía, no con un join.
+    const visibles = await Promise.all(
+      candidatos.map(async (c) => {
+        const red = await this.redDelJugador(db, c.id, params.solicitanteId);
+        return red.same ? c : null;
+      }),
+    );
+    return visibles.filter((c): c is NonNullable<typeof c> => c !== null);
+  }
+
   async createPlayerFromChat(
     db: TenantDb,
     params: {
