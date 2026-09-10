@@ -44,13 +44,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # ⚠️ `continue-on-error` heredado: hay errores de lint preexistentes
-      # (24 al 2026-09-03, en wallet-stats y otros). Mientras esté así, el lint
-      # informa pero no frena. Sacarlo cuando estén arreglados — si no, es
-      # exactamente igual que no tenerlo.
+      # El lint FRENA. Tuvo `continue-on-error: true` hasta el 2026-09-10, y no
+      # hay que volver a ponerlo para destrabar un rojo: un lint que no frena es
+      # exactamente igual que no tener lint.
+      #
+      # Sigue ANTES del build a propósito —es el feedback más rápido— y eso ya
+      # no lo rompe: en `turbo.json` la tarea `lint` depende de `^build`, así
+      # que turbo compila `@casino/db` antes de lintear.
+      #
+      # Esa dependencia es lo que hacía falta. Sin ella, acá `packages/db/dist/`
+      # todavía no existe, typescript-eslint no resuelve nada de `@casino/db` y
+      # las reglas con tipos no se callan: se disparan en todo el árbol.
+      # Medido: 4046 errores sin `dist/` contra 18 con `dist/`. Por eso existía
+      # el `continue-on-error` — el reporte era ilegible, no exigente.
       - name: Lint
         run: pnpm lint
-        continue-on-error: true
 
       - name: Build
         run: pnpm build
