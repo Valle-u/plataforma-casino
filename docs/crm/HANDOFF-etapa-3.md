@@ -140,18 +140,25 @@ conversación. Es la misma consulta que usa `CONSULTA_CHATS_SIN_RESPONDER` en
 
 ---
 
-## 🔴 El riesgo abierto más grande, y no es de WhatsApp
+## ✅ El riesgo más grande, cerrado el 2026-09-10
 
-**Telegram nunca corrió con un bot real.** Están construidos y probados contra
-la base: vincular el bot, el webhook, recibir, adjuntos, responder, mandar
-archivos, la bandeja, la ficha, el alta, los circuitos y las métricas. Nada de
-eso pasó nunca por la API de Telegram de verdad.
+**Telegram ya corrió con un bot real.** Hasta esa fecha era el riesgo abierto
+más grande del proyecto: vincular, el webhook, recibir, adjuntos, responder,
+mandar archivos, la bandeja, la ficha, el alta, los circuitos y las métricas
+estaban todos construidos y probados **contra la base**, y ninguno había pasado
+nunca por la API de Telegram de verdad.
 
-Sumar WhatsApp apila un segundo canal externo sobre un primero que no se probó.
-**Antes de meterle más peso, conviene que el dueño pruebe Telegram con un bot
-de BotFather** — son cinco minutos y no depende de nadie.
+El dueño creó el bot y le escribió desde staging. **Anduvo en las dos
+direcciones a la primera**: los mensajes entraron a la bandeja y la respuesta
+del operador llegó a Telegram. El detalle está en `13-roadmap.md`, etapa 2.
 
-Es lo único de toda la lista que un agente no puede hacer solo.
+**Lo que sigue sin correr en vivo**, y conviene no darlo por hecho: los adjuntos
+(2.4 y 2.8) y —el que más importa— **la idempotencia por chat (2.6)**, que sólo
+se rompe cuando le escribe una **segunda persona distinta**. Con un solo
+remitente ese caso no aparece.
+
+Así que WhatsApp ya no se apila sobre un canal sin probar. Se apila sobre uno
+probado a medias, que es otra cosa.
 
 ---
 

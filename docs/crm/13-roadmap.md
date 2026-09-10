@@ -185,10 +185,47 @@ dice nada a nadie.
 llamadas a Telegram. Si el motivo no dijera qué alcanzó a salir, el operador lo
 mandaría de nuevo entero y el jugador recibiría el texto dos veces.
 
-> ⚠️ **Falta probarlo con un bot real.** Todo está verificado con tests, pero
-> Telegram va simulado en la suite: pegarle de verdad ataría los tests a una red
-> externa. La primera prueba con un bot vivo es la que confirma que el webhook
-> queda bien registrado desde `crm-staging.miamihub.vip`.
+### ✅ Probado con un bot real el 2026-09-10
+
+**Hasta acá la etapa 2 entera estaba verificada sólo contra la base.** Telegram
+va simulado en la suite —pegarle de verdad ataría los tests a una red externa—
+así que diez tandas se habían apilado sobre un camino que nadie había ejecutado
+en vivo. Era el riesgo abierto más grande del proyecto y no lo podía cerrar un
+agente: había que crear un bot y escribirle.
+
+El dueño lo hizo en staging, con el bot **@MIAMI HUB Soporte**. Anduvo **en las
+dos direcciones a la primera**:
+
+- `/start` y `hola` entraron a la bandeja por el canal Telegram → el webhook
+  recibe, el `secret_token` se verifica y el ruteo lleva a la bandeja del dueño.
+- La respuesta del operador salió y llegó al cliente de Telegram (**2.7**).
+- El contacto nació **como lead**, que es lo correcto: Telegram no da el
+  teléfono y **D4 no puede identificar a nadie ahí**. La pantalla lo dice en vez
+  de mostrar una ficha vacía.
+
+**La preocupación que resultó infundada, y por qué valía tenerla.** La URL del
+webhook la arma `baseApiPublica()` con `x-forwarded-host`, y **Next pisa ese
+header** en el rewrite (commit `9d87c69`). Traefik lo vuelve a escribir delante
+de la API, así que la URL salió bien — pero eso depende del proxy, no de nuestro
+código. De ahí salió el diagnóstico de la pantalla de Canales, que sigue siendo
+útil: cuando algo falle, dice **qué** falla en vez de dejar una bandeja vacía
+idéntica a "todavía no escribió nadie".
+
+**Lo que esta prueba NO cubrió**, y sigue sin correr con un bot real:
+
+| | Qué falta probar | Cómo |
+|---|---|---|
+| **2.4** | Recibir una foto o un PDF | Mandarle un archivo al bot |
+| **2.8** | Mandar un archivo desde el panel | Responder con un adjunto |
+| **2.6** | 🔴 **La idempotencia por chat** | Que le escriba una **segunda persona distinta** |
+
+**El 2.6 es el que más vale de los tres.** Era *"el bug que la suite no veía"*:
+sin el chat en la clave de idempotencia, **la segunda persona nueva que le
+escribe al bot choca contra el índice único de `0113` y su mensaje se descarta en
+silencio**. Con una sola persona escribiendo no se ve nunca — el `message_id` de
+Telegram es un contador *por chat*, así que el primer mensaje de cada persona es
+`1`. Está arreglado y tiene su test, pero la prueba en vivo pide **dos remitentes
+distintos**, no dos mensajes.
 
 **Lo que Telegram enseña y hay que reflejar:** casi nunca da el teléfono, así que
 **D4 no funciona ahí**. Un contacto de Telegram nace como **lead**, y eso va a ser
