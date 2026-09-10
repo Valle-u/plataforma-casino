@@ -17457,3 +17457,114 @@ Sigue pendiente del lado del dueño, sin cambios desde ayer:
 `NEXT_PUBLIC_SENTRY_DSN` en el servicio **web** de Dokploy (build var, pide
 redeploy), `CHANNEL_SECRET_KEY` en producción distinta de la de staging, y
 **rotar** —no borrar— los secretos del Worker con nombre en forma de credencial.
+
+---
+
+## [2026-09-10 22:30 AR] — Claude Code (Opus 5)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+
+> ⚠️ **Sesión en paralelo.** Mientras corría ésta, **otra sesión trabajaba el
+> CRM sobre el mismo repo** (etapa 3: entrega de Telegram, D23, la ventana de
+> 24 h). Esta sesión no tocó nada de CRM y trabajó en un worktree aparte. Si el
+> orden de las entradas parece raro, es por eso.
+
+### Qué hicimos
+
+1. ✅ **CI: el lint no significaba nada, y no era por lo que decía el handoff.**
+   Es lo único sustancial de la sesión. El detalle en `DEVLOG.md` 2026-09-10.
+2. ✅ **Verifiqué —sin commitear— la UI del vínculo por teléfono** que estaba en
+   el árbol al empezar (`vincular-jugador.tsx` + ficha + `crm-api.ts`). Resultó
+   ser trabajo de la otra sesión, así que lo dejé donde estaba.
+3. ✅ **Limpieza**: dos worktrees huérfanos y siete ramas locales mergeadas.
+
+### Decisiones tomadas
+
+- **El arreglo va en `turbo.json`, no en `ci.yml`.** La tarea `lint` no dependía
+  de `^build` (`type-check` sí), así que en un checkout limpio `pnpm lint` corría
+  antes de que existiera `packages/db/dist/`. Mover el paso Lint después del
+  Build arreglaba **este** workflow y dejaba el agujero en cualquier otro lado
+  donde se corra `pnpm lint`. El problema está en el grafo de tareas.
+- **El lint ahora FRENA el CI.** Se sacó el `continue-on-error: true`. Si
+  aparece un rojo se arregla el error: volver a ponerlo es volver a no tener
+  lint.
+- **NO se derivó `WalletTxType` del enum.** Es la solución de fondo al problema
+  que destapó el `as any`, pero es un cambio de diseño en el camino de la plata
+  y va con el dueño, no de rebote en un arreglo de CI. Queda anotado en DEVLOG.
+
+### Lo que hay que corregir de lo que veníamos creyendo
+
+`HANDOFF-etapa-3.md` (líneas 148-150) dice que las reglas con tipos quedaban
+**ciegas** y por eso CI no veía los 18 errores. Medido, es al revés:
+
+| Estado | Problemas | Errores |
+|---|---|---|
+| sin `dist/` (= CI) | 9361 | **4046** |
+| con `dist/` (= local) | 27 | 18 |
+
+Sin `dist/` las reglas `no-unsafe-*` no se callan: se disparan en todo el árbol.
+CI no veía de menos, **veía 4046 errores de ruido**. Por eso existía el
+`continue-on-error`, y por eso nadie lo sacaba: la nota decía "arreglá los
+preexistentes y sacalo", pero esos 4046 no eran arreglables porque no eran
+reales. **Esas líneas del handoff siguen sin corregir** (era el archivo activo
+de la otra sesión); la versión correcta está en DEVLOG.
+
+### Commits creados
+
+- `d7ad1ed` — `fix(api): los 18 errores de lint que CI nunca frenaba`
+- `3f10b13` — `fix(ci): el lint corria sin tipos y ademas no frenaba nada`
+- `d9395cc` — `docs: por que el lint de CI no significaba nada`
+
+En `staging` por fast-forward. **CI verde**, corrida `34535583746`: los dos jobs,
+con el paso Lint pasando por mérito propio y compilando `@casino/db` adentro.
+
+### Estado al cerrar
+
+- **Fase actual**: CRM etapa 3 (la lleva la otra sesión). Plataforma: CI sano.
+- **Próximo paso lógico**: decidir sobre `fix/panel-sin-sentry`, que sigue
+  pusheada y **sin mergear** desde ayer. Un commit, 10 líneas en
+  `app/(admin)/error.tsx`. Sin eso ningún error del panel llega a Sentry.
+- **Bloqueos**: ninguno de esta sesión.
+
+### Notas para próximo agente
+
+**El patrón que conviene llevarse**: un chequeo automático que no frena se
+degrada hasta que deja de significar algo, y la marca provisoria que lo
+desactiva se vuelve permanente. Acá el comentario al lado del
+`continue-on-error` **decía cómo sacarlo** ("cuando estén arreglados") y esa
+instrucción era imposible de cumplir, porque los errores que había que arreglar
+no existían. Vale la pena desconfiar de toda marca de "esto es temporal" que
+lleve más de un mes: si nadie pudo sacarla, probablemente la condición para
+sacarla esté mal escrita.
+
+Es el mismo patrón que el freno del alta de la entrada anterior. **Un chequeo
+que no chequea se ve igual que uno que sí.**
+
+Tres cosas chicas que aparecieron y no se tocaron:
+
+1. `pnpm --filter @casino/db build` con `dist/` borrado pero
+   `tsconfig.tsbuildinfo` presente **sale 0 y no emite nada**, y turbo cachea
+   ese vacío como build exitosa. En CI no puede pasar (checkout limpio). En
+   local envenena la caché y cuesta un rato entender por qué el lint sigue en
+   4046 después de "buildear".
+2. `apps/api/tsconfig.json` excluye `src/test/**` y `src/scripts/**` del
+   `type-check`. `src/scripts/simulate-operation.ts` tiene 6 errores de tipos
+   escondidos ahí. El árbol de tests compila limpio (verificado aparte).
+3. **Borrar un worktree donde se corrió `pnpm build` falla en Windows** con
+   `Filename too long`: Next crea `apps/web/.next/standalone/` y adentro
+   reproduce la ruta entera del worktree. Borrar `.next` primero y después el
+   worktree. Y ojo: el intento fallido **desregistra el worktree pero deja los
+   archivos**, así que quedan cientos de MB que ya no aparecen en
+   `git worktree list`.
+
+**Rastro en la base de `demo` (tenant de desarrollo)**: para verificar el
+contrato del vínculo se desvinculó y volvió a vincular el contacto de "Juan
+Prueba". El contacto quedó idéntico, pero `crm_timeline_events` tiene una
+desvinculación y una vinculación de esta sesión, ~19:40 AR. No son de un
+operador.
+
+Sigue pendiente del lado del dueño, sin cambios: `NEXT_PUBLIC_SENTRY_DSN` en el
+servicio **web** de Dokploy (build var, pide redeploy), `CHANNEL_SECRET_KEY` en
+producción distinta de la de staging, y **rotar** —no borrar— los secretos del
+Worker con nombre en forma de credencial.
