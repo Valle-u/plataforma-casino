@@ -17368,3 +17368,92 @@ la app instalada—. Con "WhatsApp + iPhone" el cuadro cerró en un minuto.
 
 Cuando un bug no se reproduce, el dato que falta casi nunca está en el
 repositorio.
+
+---
+
+## [2026-09-10 18:30 AR] — Claude Code (Opus 5)
+
+**Duración**: ~7h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sesión larga, casi toda de CRM. En orden:
+
+1. ✅ **El handoff de diseño aplicado**, tanda por tanda: shell propio del CRM,
+   bandeja de tres columnas, ficha, modal de alta, preview y etiquetas, atajos
+   y paleta ⌘K, Contactos, Configuración y Respuestas rápidas.
+2. ✅ **Circuitos** — en qué etapa está cada contacto. La etapa **se calcula al
+   mirar** (D22), no se guarda.
+3. ✅ **Métricas de atención** — medidas sobre **tramos** (migración `0115`).
+   Acá sí se guarda, y el contraste con Circuitos está explicado abajo.
+4. ✅ **El freno del alta, que no frenaba nada.** Ver "Decisiones".
+5. ✅ **La frontera de error del panel no reportaba a ningún lado.** Rama propia
+   salida de `main`: `fix/panel-sin-sentry`.
+6. ✅ **Traspaso escrito** (`docs/crm/HANDOFF-etapa-3.md`) al partir el trabajo
+   en dos sesiones. La sesión del CRM se abrió y se borró enseguida, así que
+   **la etapa 3 vuelve a estar sin dueño** — pero el documento sirve igual.
+
+### Decisiones tomadas
+
+- **D22 · La etapa del circuito se calcula, no se guarda.** Sale de tres
+  señales que ya existen: si el contacto tiene cuenta, si tiene un depósito
+  aprobado, y cuándo abrió un juego por última vez. No se puede desincronizar
+  porque no hay dos copias del hecho. Lo que se paga: **no hay historia**.
+  Además: 14 días separan "jugando" de "reactivación", "jugando" le gana a
+  "depositó" en el `CASE`, y **"alta pedida" no se construyó** porque nada en
+  el sistema registra que alguien pidió el alta.
+- **El tramo sí se guarda, y no es una contradicción.** La etapa es *estado
+  actual* y siempre se recalcula; un tramo es *historia*. Derivarlo era
+  imposible: `crm_conversations.status` es una columna mutable sin historial,
+  así que mirando los mensajes no hay forma de saber dónde terminaba uno y
+  empezaba el siguiente. **Consecuencia: no hay backfill.** La medición arranca
+  el día que la migración corre en cada casino.
+- **El teléfono necesita dos formas canónicas distintas, no una.**
+  `0341 15 555-1234` da `+5493415551234` y `341 555-1234` da `+543415551234`:
+  son la misma persona y en E.164 estricto **no matchean**. Por eso
+  `telefonoE164()` es para mostrar y `claveDeTelefono()` para comparar. Se
+  agregó `libphonenumber-js` en vez de escribirlo a mano — el 0, el 15 y las
+  áreas de 2, 3 y 4 dígitos son justo donde una versión casera se equivoca.
+
+### Commits creados
+
+- `5e35818` — `feat(crm): el shell propio del CRM, con sus diez secciones`
+- `0d0c70a` — `feat(crm): atajos de teclado y la paleta de ⌘K`
+- `62e9866` — `feat(crm): la seccion Contactos, y abrir una conversacion fuera de la lista`
+- `1fbdc0a` — `feat(crm): Configuracion — el gestor de etiquetas`
+- `4c26fe9` — `feat(crm): Respuestas rapidas, y el compositor que las usa`
+- `19f1766` — `feat(crm): Circuitos, con la etapa derivada de los hechos`
+- `5708aa8` — `feat(crm): metricas de atencion, medidas sobre tramos`
+- `a8256a3` — `fix(crm): el freno del alta no frenaba nada (D4, primera defensa)`
+- `0eb7c29` — `docs(crm): traspaso de la etapa 3 a su propia sesion`
+- `1fde748` — `fix(web): los errores del panel no se reportaban a ningun lado`
+  (en `fix/panel-sin-sentry`, **sin mergear**)
+
+### Estado al cerrar
+
+- **Fase actual**: CRM etapa 3 (WhatsApp), recién empezada.
+- **Próximo paso lógico**: leer `docs/crm/HANDOFF-etapa-3.md`.
+- **Bloqueos**: la cuenta de Meta está en trámite. Todo lo que dependa de
+  mandar un mensaje por WhatsApp no se puede verificar todavía.
+
+### Notas para próximo agente
+
+🔴 **Telegram nunca corrió con un bot real.** Doce tandas construidas y probadas
+contra la base —vincular, webhook, recibir, adjuntos, responder, mandar
+archivos, bandeja, ficha, alta, circuitos, métricas— y ninguna pasó por la API
+de Telegram de verdad. Sumarle WhatsApp apila un segundo canal externo sobre un
+primero sin probar. **Son cinco minutos con BotFather** y es lo único de toda la
+lista que un agente no puede hacer solo.
+
+**El freno del alta es el hallazgo que más conviene tener presente**, no por lo
+que era sino por cómo se veía: `jugadoresConEseTelefono` comparaba
+`users.phone = '3415551234'` contra texto libre cargado a mano. Nunca tiró un
+error. Nunca falló un test. Simplemente decía "no hay nadie con ese teléfono" y
+dejaba crear la segunda cuenta con el saldo partido — que es exactamente lo que
+existe para impedir. Un chequeo que no chequea se ve igual que uno que sí.
+
+Sigue pendiente del lado del dueño, sin cambios desde ayer:
+`NEXT_PUBLIC_SENTRY_DSN` en el servicio **web** de Dokploy (build var, pide
+redeploy), `CHANNEL_SECRET_KEY` en producción distinta de la de staging, y
+**rotar** —no borrar— los secretos del Worker con nombre en forma de credencial.
