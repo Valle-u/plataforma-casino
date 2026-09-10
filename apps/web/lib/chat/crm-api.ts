@@ -34,6 +34,71 @@ export const unassignContactTag = (contactId: string, tagId: string) =>
     `/tenant/chat/contacts/${contactId}/tags/${tagId}`,
   );
 
+// ── Acciones sobre la conversación ─────────────────────────────────────────
+//
+// ⚠️ Estos tres endpoints existen desde la **etapa 1** (1.4, 1.5 y 1.6),
+// probados, y **hasta la ficha del CRM no los llamaba nadie**. El roadmap los
+// daba por hechos porque el backend estaba; del lado del operador no había
+// ningún botón que los disparara.
+
+/**
+ * Cerrar, marcar pendiente o reabrir (**1.4**).
+ *
+ * Un 404 significa "no existe **o** no es de tu bandeja", los dos casos
+ * juntos a propósito: un 403 le confirmaría a alguien que esa conversación
+ * existe en otra bandeja.
+ */
+export const cambiarEstadoDeConversacion = (
+  conversationId: string,
+  status: 'open' | 'pending' | 'resolved',
+) =>
+  apiPost<{ id: string; status: string }>(
+    `/tenant/chat/conversations/${conversationId}/status`,
+    { status },
+  );
+
+/**
+ * Avisarle al operador del jugador que escribió acá (**1.5**, **D8**).
+ *
+ * **No transfiere la conversación.** A la otra bandeja le llega quién escribió
+ * y cuándo — nunca el contenido del chat. Esa garantía está del lado del
+ * backend, en la firma de `textoDelAviso`.
+ */
+export const avisarAlOperador = (contactId: string) =>
+  apiPost<{ ok: boolean; operatorId?: string }>(
+    `/tenant/chat/contacts/${contactId}/notify-operator`,
+  );
+
+/**
+ * Alta de jugador desde el chat (**1.6**, **D9**).
+ *
+ * **No se le pasa de quién cuelga**: sale de la bandeja por la que esa persona
+ * escribió. Con un desplegable, un alta podría terminar colgada de quien
+ * convenga y no de quien atendió — y eso es plata.
+ */
+export const crearJugadorDesdeElChat = (
+  contactId: string,
+  datos: { username: string; displayName?: string },
+) =>
+  apiPost<AltaDesdeElChat>(
+    `/tenant/chat/contacts/${contactId}/create-player`,
+    datos,
+  );
+
+/**
+ * Lo que devuelve el alta.
+ *
+ * ⚠️ **La contraseña viene una sola vez.** Se genera en el servidor y no se
+ * guarda en claro: si esta respuesta se pierde, no hay forma de recuperarla y
+ * hay que resetearla. Por eso la pantalla la muestra hasta que el operador
+ * confirme que la copió, y no la pide de nuevo.
+ */
+export interface AltaDesdeElChat {
+  userId: string;
+  username: string;
+  password: string;
+}
+
 // ── Plantillas (respuestas rápidas por tenant) ──────────────────────────────
 
 export const listTemplates = () =>

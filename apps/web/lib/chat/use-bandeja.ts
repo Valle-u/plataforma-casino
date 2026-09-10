@@ -125,6 +125,40 @@ export function useBandeja() {
     [socket, viendoResueltas],
   );
 
+  /**
+   * Refleja en la lista un cambio de estado que ya hizo el servidor.
+   *
+   * La ficha llama al endpoint y avisa acá. **No se vuelve a pedir la lista**:
+   * recargar por un cambio propio le movería el orden abajo de los pies al
+   * operador justo después de tocar un botón.
+   *
+   * Si la conversación pasó a resuelta y estamos mirando lo abierto, se saca de
+   * la lista — ahí es exactamente donde deja de pertenecer.
+   */
+  const marcarEstadoLocal = useCallback(
+    (status: string) => {
+      const id = selectedRef.current;
+      if (!id) return;
+      const sale = viendoResueltas
+        ? status !== 'resolved'
+        : status === 'resolved';
+      setConversations((prev) =>
+        sale
+          ? prev.filter((c) => c.conversation.id !== id)
+          : prev.map((c) =>
+              c.conversation.id === id
+                ? { ...c, conversation: { ...c.conversation, status } }
+                : c,
+            ),
+      );
+      if (sale) {
+        setSelectedId(null);
+        setMessages([]);
+      }
+    },
+    [viendoResueltas],
+  );
+
   /** Cambia entre lo abierto y el historial, y recarga. */
   const verResueltas = useCallback(
     (resueltas: boolean) => {
@@ -346,6 +380,7 @@ export function useBandeja() {
     setSelectedId,
     selectConversation,
     verResueltas,
+    marcarEstadoLocal,
     onDraftChange,
     onPickFiles,
     removePending,

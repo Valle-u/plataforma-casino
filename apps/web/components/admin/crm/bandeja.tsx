@@ -43,6 +43,7 @@ import {
 import { ListaDeConversaciones } from './lista-conversaciones';
 import { Conversacion } from './conversacion';
 import { RielColapsado } from './riel-colapsado';
+import { Ficha } from './ficha';
 
 /**
  * Ancho de la manija de arrastre.
@@ -273,9 +274,16 @@ export function Bandeja(): React.ReactElement {
           <Manija onMouseDown={(e) => empezarArrastre('ficha', e)} />
           <div
             style={{ width: layout.anchoFicha }}
-            className="shrink-0 overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-bg-elevated)]"
+            className="shrink-0 overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg-elevated)]"
           >
-            <FichaPendiente />
+            {bandeja.selected ? (
+              <Ficha
+                item={bandeja.selected}
+                onEstadoCambiado={bandeja.marcarEstadoLocal}
+              />
+            ) : (
+              <SinFicha />
+            )}
           </div>
         </>
       ) : (
@@ -326,21 +334,17 @@ function SinConversacion(): React.ReactElement {
 }
 
 /**
- * La ficha del contacto todavía no está construida.
+ * La ficha con la columna abierta pero sin conversación elegida.
  *
- * La columna existe igual —el layout de tres columnas ES la pantalla— pero
- * adentro se dice qué va a haber en vez de dejarla vacía: una columna en blanco
- * parece un error de carga.
+ * No se colapsa sola: el operador decidió tenerla abierta, y cerrársela porque
+ * en este instante no hay nada que mostrar le movería el layout abajo de los
+ * pies cada vez que resuelve una conversación.
  */
-function FichaPendiente(): React.ReactElement {
+function SinFicha(): React.ReactElement {
   return (
-    <div className={cn('flex h-full flex-col gap-2 p-4')}>
-      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-        Ficha del contacto
-      </div>
-      <p className="text-[12.5px] leading-relaxed text-[var(--color-fg-muted)]">
-        Acá van la identidad, las acciones de la conversación, la billetera, el
-        circuito y las etiquetas. Todavía no está construida.
+    <div className={cn('flex h-full items-center justify-center px-4')}>
+      <p className="text-center text-[12px] text-[var(--color-fg-subtle)]">
+        Elegí una conversación para ver la ficha del contacto.
       </p>
     </div>
   );
