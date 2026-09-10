@@ -250,6 +250,7 @@ export class ChatGateway
   @SubscribeMessage('conversation:list')
   async handleConversationList(
     @ConnectedSocket() client: Socket,
+    @MessageBody() payload?: { resueltas?: unknown },
   ): Promise<{ ok: boolean; conversations?: unknown; error?: string }> {
     const data = client.data as ChatSocketData;
     // Sin bandeja (operador de la red dependiente / no-staff) → sin acceso.
@@ -259,6 +260,9 @@ export class ChatGateway
     const conversations = await this.chat.listOperatorInbox(
       data.db,
       data.inboxOwnerId,
+      // La pestaña "Resueltas" del CRM las pide explícitamente. Sin el flag, la
+      // respuesta es idéntica a la de siempre.
+      { resueltas: payload?.resueltas === true },
     );
     return { ok: true, conversations };
   }

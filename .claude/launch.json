@@ -48,6 +48,16 @@
       ],
       "port": 3002,
       "autoPort": false
+    },
+    {
+      "name": "api-crm",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set CRM_ENABLED=1&& pnpm --filter @casino/api dev"
+      ],
+      "port": 3000,
+      "autoPort": false
     }
   ]
 }

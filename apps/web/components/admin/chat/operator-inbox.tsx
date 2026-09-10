@@ -9,14 +9,7 @@
 
 'use client';
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import {
   Info,
   MessageCircle,
@@ -28,17 +21,10 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { useChatSocket } from '@/lib/chat/use-chat-socket';
+import { useBandeja, nombreDelContacto } from '@/lib/chat/use-bandeja';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { ContactPanel } from './contact-panel';
-import type {
-  ChatAttachment,
-  ChatMessage,
-  CrmTemplate,
-  InboxItem,
-  MessageNewEvent,
-  TypingEvent,
-} from '@/lib/chat/types';
+import type { ChatMessage, CrmTemplate } from '@/lib/chat/types';
 import {
   createTemplate,
   deleteTemplate,
@@ -47,277 +33,65 @@ import {
 import {
   CHAT_ATTACHMENT_ACCEPT,
   CHAT_ATTACHMENT_MAX_COUNT,
-  uploadChatAttachment,
 } from '@/lib/chat/upload';
 import { MessageAttachments } from '@/components/chat/message-attachments';
 import { AttachmentChips } from '@/components/chat/attachment-chips';
 
-interface ListAck {
-  ok: boolean;
-  conversations?: InboxItem[];
-}
-interface OpenAck {
-  ok: boolean;
-  messages?: ChatMessage[];
-  error?: string;
-}
-interface ReplyAck {
-  ok: boolean;
-  message?: ChatMessage;
-  error?: string;
-}
-
-function contactName(item: InboxItem): string {
-  const c = item.contact;
-  return (
-    c.userDisplayName ??
-    c.username ??
-    c.displayName ??
-    c.phone ??
-    (c.isLead ? 'Lead anónimo' : 'Jugador')
-  );
-}
+/**
+ * El nombre visible de un contacto.
+ *
+ * Alias del que exporta el hook: lo usan las dos vistas y con dos copias, un
+ * respaldo nuevo —o un orden distinto— aparecería en una bandeja y en la otra
+ * no.
+ */
+const contactName = nombreDelContacto;
 
 export function OperatorInbox(): React.ReactElement {
   const isDesktop = useIsDesktop();
-  const { socket, status } = useChatSocket(true);
-  const [conversations, setConversations] = useState<InboxItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
-  const [contactTyping, setContactTyping] = useState(false);
-  const [pending, setPending] = useState<ChatAttachment[]>([]);
-  const [uploading, setUploading] = useState(false);
+
+  // Toda la conversación —socket, borrador, adjuntos, tipeo— vive en el hook,
+  // compartida con la bandeja del CRM. Acá sólo queda lo que es de ESTA vista.
+  // Ver el encabezado de `lib/chat/use-bandeja.ts` para por qué no está
+  // duplicada.
+  const {
+    status,
+    conversations,
+    selected,
+    selectedId,
+    messages,
+    draft,
+    sending,
+    contactTyping,
+    pending,
+    uploading,
+    errorEnvio,
+    listEndRef,
+    fileInputRef,
+    textareaRef,
+    setSelectedId,
+    selectConversation,
+    onDraftChange,
+    onPickFiles,
+    removePending,
+    insertTemplate: insertarPlantilla,
+    reply,
+  } = useBandeja();
+
   // En desktop el detalle arranca visible (panel lateral); en mobile arranca
-  // oculto (se ve el hilo primero, y el detalle se abre con el botón "Info").
+  // oculto (se ve el hilo primero, y el detalle se abre con el boton "Info").
   const [showContext, setShowContext] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 1024,
   );
   const [showTemplates, setShowTemplates] = useState(false);
-  /** Por qué no se pudo mandar lo último que intentó. */
-  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
 
-  const selectedRef = useRef<string | null>(null);
-  selectedRef.current = selectedId;
-  const convRef = useRef<InboxItem[]>([]);
-  convRef.current = conversations;
-  const listEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const typingClear = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const addMessage = useCallback((m: ChatMessage) => {
-    setMessages((prev) =>
-      prev.some((x) => x.id === m.id)
-        ? prev
-        : [...prev, m].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    );
-  }, []);
-
-  const loadInbox = useCallback(() => {
-    if (!socket) return;
-    socket.emit('conversation:list', {}, (ack: ListAck) => {
-      if (ack?.ok) setConversations(ack.conversations ?? []);
-    });
-  }, [socket]);
-
-  // Al (re)conectar: cargar la bandeja.
-  useEffect(() => {
-    if (socket && status === 'connected') loadInbox();
-  }, [socket, status, loadInbox]);
-
-  const selectConversation = useCallback(
-    (id: string) => {
-      if (!socket) return;
-      setSelectedId(id);
-      setContactTyping(false);
-      setPending([]);
-      setDraft('');
-      // El error es de la conversación anterior: acá ya no significa nada.
-      setErrorEnvio(null);
-      socket.emit(
-        'conversation:open',
-        { conversationId: id },
-        (ack: OpenAck) => {
-          if (!ack?.ok) return;
-          setMessages(
-            (ack.messages ?? [])
-              .slice()
-              .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-          );
-        },
-      );
-      // Marcar leído localmente en la lista.
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.conversation.id === id
-            ? {
-                ...c,
-                conversation: { ...c.conversation, unreadForOperator: 0 },
-              }
-            : c,
-        ),
-      );
+  /** Cerrar el panel de plantillas es cosa de la vista, no de la bandeja. */
+  const insertTemplate = useCallback(
+    (body: string) => {
+      insertarPlantilla(body);
+      setShowTemplates(false);
     },
-    [socket],
+    [insertarPlantilla],
   );
-
-  // Mensajes entrantes en vivo.
-  useEffect(() => {
-    if (!socket) return;
-    const onNew = (evt: MessageNewEvent) => {
-      const exists = convRef.current.some(
-        (c) => c.conversation.id === evt.conversationId,
-      );
-      if (!exists) {
-        loadInbox(); // conversación nueva → refrescar para traer el contacto
-      } else {
-        setConversations((prev) => {
-          const item = prev.find(
-            (c) => c.conversation.id === evt.conversationId,
-          );
-          if (!item) return prev;
-          const isSel = selectedRef.current === evt.conversationId;
-          const bump =
-            !isSel && evt.message.direction === 'inbound'
-              ? item.conversation.unreadForOperator + 1
-              : item.conversation.unreadForOperator;
-          const updated: InboxItem = {
-            ...item,
-            conversation: {
-              ...item.conversation,
-              lastMessageAt: evt.message.createdAt,
-              unreadForOperator: bump,
-            },
-          };
-          // Movemos la conversación actualizada al tope.
-          const rest = prev.filter(
-            (c) => c.conversation.id !== evt.conversationId,
-          );
-          return [updated, ...rest];
-        });
-      }
-      if (selectedRef.current === evt.conversationId) addMessage(evt.message);
-    };
-    const onTyping = (evt: TypingEvent) => {
-      if (evt.conversationId !== selectedRef.current) return;
-      setContactTyping(evt.isTyping);
-      if (typingClear.current) clearTimeout(typingClear.current);
-      if (evt.isTyping) {
-        typingClear.current = setTimeout(() => setContactTyping(false), 3000);
-      }
-    };
-    socket.on('message:new', onNew);
-    socket.on('typing', onTyping);
-    return () => {
-      socket.off('message:new', onNew);
-      socket.off('typing', onTyping);
-    };
-  }, [socket, loadInbox, addMessage]);
-
-  useEffect(() => {
-    listEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, contactTyping]);
-
-  const emitTyping = useCallback(
-    (isTyping: boolean) => {
-      if (!socket || !selectedId) return;
-      socket.emit('typing', { conversationId: selectedId, isTyping });
-    },
-    [socket, selectedId],
-  );
-
-  const onDraftChange = useCallback(
-    (v: string) => {
-      setDraft(v);
-      emitTyping(true);
-      if (typingTimer.current) clearTimeout(typingTimer.current);
-      typingTimer.current = setTimeout(() => emitTyping(false), 1500);
-    },
-    [emitTyping],
-  );
-
-  const onPickFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      setUploading(true);
-      try {
-        const slots = CHAT_ATTACHMENT_MAX_COUNT - pending.length;
-        for (const f of Array.from(files).slice(0, Math.max(0, slots))) {
-          try {
-            const att = await uploadChatAttachment(f);
-            setPending((p) => [...p, att]);
-          } catch {
-            // Un archivo que falla no corta los demás.
-          }
-        }
-      } finally {
-        setUploading(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    },
-    [pending.length],
-  );
-
-  const removePending = useCallback(
-    (key: string) => setPending((p) => p.filter((a) => a.storageKey !== key)),
-    [],
-  );
-
-  /** Inserta el cuerpo de una plantilla en el borrador (lo agrega si ya hay texto). */
-  const insertTemplate = useCallback((body: string) => {
-    setDraft((d) => (d.trim() ? `${d.trimEnd()}\n${body}` : body));
-    setShowTemplates(false);
-    // Devolvemos el foco al compositor para seguir editando.
-    setTimeout(() => textareaRef.current?.focus(), 0);
-  }, []);
-
-  const reply = useCallback(() => {
-    const body = draft.trim();
-    if (
-      (!body && pending.length === 0) ||
-      !socket ||
-      !selectedId ||
-      sending ||
-      uploading
-    ) {
-      return;
-    }
-    setSending(true);
-    socket.emit(
-      'message:reply',
-      { conversationId: selectedId, body, attachments: pending },
-      (ack: ReplyAck) => {
-        setSending(false);
-        if (ack?.ok && ack.message) {
-          setErrorEnvio(null);
-          addMessage(ack.message);
-          setDraft('');
-          setPending([]);
-          emitTyping(false);
-          return;
-        }
-        // ⚠️ Antes esta rama no existía: si el envío se rechazaba, el spinner
-        // paraba y no pasaba **nada**. El operador volvía a apretar sin
-        // entender.
-        //
-        // Ahora hay motivos que sólo se pueden explicar acá — el principal es
-        // que por Telegram todavía no salen archivos (2.7): sin el aviso, el
-        // operador adjunta un comprobante, lo ve desaparecer y no sabe por qué.
-        //
-        // El borrador NO se limpia: lo que escribió sigue ahí para reintentar.
-        setErrorEnvio(ack?.error ?? 'No se pudo enviar el mensaje.');
-      },
-    );
-  }, [draft, pending, socket, selectedId, sending, uploading, addMessage, emitTyping]);
-
-  const selected = useMemo(
-    () => conversations.find((c) => c.conversation.id === selectedId) ?? null,
-    [conversations, selectedId],
-  );
-
   const statusLabel =
     status === 'connected'
       ? 'En línea'

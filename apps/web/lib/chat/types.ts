@@ -50,6 +50,14 @@ export interface ChatConversation {
 /** Ítem de la bandeja del operador (conversación + contacto mínimo). */
 export interface InboxItem {
   conversation: ChatConversation;
+  /**
+   * Por qué canal llegó: `web`, `telegram`, y más adelante `whatsapp`.
+   *
+   * Opcional porque una bandeja abierta antes de este cambio puede tener en
+   * memoria items sin el campo. Sin él, la fila se muestra sin la etiqueta de
+   * canal en vez de romperse.
+   */
+  channelType?: string;
   contact: {
     id: string;
     displayName: string | null;

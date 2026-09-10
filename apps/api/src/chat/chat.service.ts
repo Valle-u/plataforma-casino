@@ -25,6 +25,14 @@ import {
 /** Fila de la bandeja del operador: conversación + datos mínimos del contacto. */
 export interface OperatorInboxItem {
   conversation: CrmConversation;
+  /**
+   * Por qué canal llegó: `web`, `telegram`, y más adelante `whatsapp`.
+   *
+   * La bandeja del CRM filtra por canal y muestra de cuál viene cada fila, y sin
+   * esto tendría que pedir los canales aparte y cruzarlos en el cliente — una
+   * consulta más y una copia de la relación en el front.
+   */
+  channelType: string;
   contact: {
     id: string;
     displayName: string | null;
@@ -342,11 +350,13 @@ export class ChatService {
   async listOperatorInbox(
     db: TenantDb,
     operatorId: string,
-    limit = 100,
+    opciones: { limit?: number; resueltas?: boolean } = {},
   ): Promise<OperatorInboxItem[]> {
+    const limit = opciones.limit ?? 100;
     return db
       .select({
         conversation: crmConversations,
+        channelType: crmChannels.type,
         contact: {
           id: crmContacts.id,
           displayName: crmContacts.displayName,
@@ -359,11 +369,23 @@ export class ChatService {
       })
       .from(crmConversations)
       .innerJoin(crmContacts, eq(crmContacts.id, crmConversations.contactId))
+      .innerJoin(crmChannels, eq(crmChannels.id, crmConversations.channelId))
       .leftJoin(users, eq(users.id, crmContacts.userId))
       .where(
         and(
           eq(crmConversations.assignedOperatorId, operatorId),
-          ne(crmConversations.status, 'resolved'),
+          // ── Las resueltas se piden aparte, no vienen de arrastre ───────────
+          //
+          // La bandeja del CRM tiene una pestaña "Resueltas", así que hay que
+          // poder traerlas. Pero **no** mezcladas: con un tope de 100 filas, un
+          // historial de conversaciones cerradas le comería el lugar a las
+          // abiertas, que son las que alguien está esperando que le contesten.
+          //
+          // Por eso es un pedido explícito y no un filtro del cliente: el
+          // default sigue siendo exactamente el de antes.
+          opciones.resueltas
+            ? eq(crmConversations.status, 'resolved')
+            : ne(crmConversations.status, 'resolved'),
         ),
       )
       .orderBy(sql`${crmConversations.lastMessageAt} desc nulls last`)
