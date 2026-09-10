@@ -12,6 +12,7 @@
 
 'use client';
 
+import * as Sentry from '@sentry/nextjs';
 import { AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect } from 'react';
@@ -26,6 +27,15 @@ export default function AdminError({
 }) {
   useEffect(() => {
     console.error('[AdminError]', error);
+    // ⚠️ Hasta acá esto era **sólo** el `console.error`, así que cualquier
+    // error dentro del panel moría en la consola del navegador de un operador
+    // que no la tiene abierta. Las otras dos fronteras —`global-error` y la del
+    // jugador— ya reportaban; ésta quedó afuera y es la que más se usa: es el
+    // panel donde trabajan los cajeros todo el día.
+    //
+    // Sin `NEXT_PUBLIC_SENTRY_DSN` cargado, `captureException` no hace nada y
+    // no rompe. Con DSN, es la diferencia entre enterarse y no enterarse.
+    Sentry.captureException(error, { tags: { boundary: 'admin' } });
   }, [error]);
 
   return (
