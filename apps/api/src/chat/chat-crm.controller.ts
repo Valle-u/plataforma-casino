@@ -18,6 +18,7 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  Patch,
   Query,
   ParseUUIDPipe,
   Post,
@@ -364,6 +365,72 @@ export class ChatCrmController {
   @Get('tags')
   async listTags(@Req() req: RequestWithTenantUser) {
     return this.crm.listTagCatalog(this.db(req));
+  }
+
+  /**
+   * El catálogo con **cuántos contactos usa cada etiqueta**, para la pantalla
+   * de Configuración.
+   *
+   * Va aparte de `GET tags` y no lo reemplaza: ese lo usa el selector de la
+   * ficha, donde el conteo no sirve para nada y sería un `count` por etiqueta
+   * en cada apertura de contacto.
+   */
+  @Get('tags/catalogo')
+  async listTagsConUso(@Req() req: RequestWithTenantUser) {
+    return this.crm.listTagCatalogConUso(this.db(req));
+  }
+
+  /**
+   * Renombrar o recolorear una etiqueta.
+   *
+   * ⚠️ **Pide `tenant.settings.edit`, no basta con tener acceso al CRM.** El
+   * catálogo es de TODO el tenant: una etiqueta que renombra un socio
+   * independiente se le renombra también al staff central y a los demás. El
+   * comentario de las plantillas ya anticipaba que la gestión fina tenía que
+   * ser admin-only; acá es donde se cumple.
+   */
+  @Patch('tags/:tagId')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('tenant.settings.edit')
+  async editTag(
+    @Req() req: RequestWithTenantUser,
+    @Param('tagId', ParseUUIDPipe) tagId: string,
+    @Body() body: { label?: unknown; color?: unknown },
+  ) {
+    const cambios: { label?: string; color?: string | null } = {};
+    if (typeof body?.label === 'string') {
+      const label = body.label.trim();
+      if (!label) throw new BadRequestException('El tag necesita un nombre.');
+      if (label.length > 40) {
+        throw new BadRequestException('El nombre del tag es muy largo (máx 40).');
+      }
+      cambios.label = label;
+    }
+    if (typeof body?.color === 'string' || body?.color === null) {
+      cambios.color = body.color || null;
+    }
+    if (Object.keys(cambios).length === 0) {
+      throw new BadRequestException('No hay nada que cambiar.');
+    }
+    return this.crm.editarTag(this.db(req), tagId, cambios);
+  }
+
+  /**
+   * Borrar una etiqueta del catálogo.
+   *
+   * ⚠️ **La saca de todos los contactos que la tenían** (`ON DELETE CASCADE`) y
+   * no se puede deshacer. Mismo permiso que renombrar, y por el mismo motivo:
+   * el catálogo es de todo el tenant.
+   */
+  @Delete('tags/:tagId')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('tenant.settings.edit')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteTag(
+    @Req() req: RequestWithTenantUser,
+    @Param('tagId', ParseUUIDPipe) tagId: string,
+  ) {
+    await this.crm.borrarTag(this.db(req), tagId);
   }
 
   @Post('tags')

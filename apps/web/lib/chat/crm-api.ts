@@ -6,7 +6,7 @@
 
 'use client';
 
-import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client';
 import type { ContactContext, CrmNote, CrmTag, CrmTemplate } from './types';
 
 export const getContactContext = (contactId: string) =>
@@ -19,6 +19,38 @@ export const addContactNote = (contactId: string, body: string) =>
   apiPost<CrmNote>(`/tenant/chat/contacts/${contactId}/notes`, { body });
 
 export const listTagCatalog = () => apiGet<CrmTag[]>(`/tenant/chat/tags`);
+
+/**
+ * El catálogo con **cuántos contactos usa cada etiqueta**, para Configuración.
+ *
+ * Va aparte del catálogo simple a propósito: el selector de la ficha no
+ * necesita el conteo, y pedirlo ahí sería un `count` por etiqueta cada vez que
+ * se abre un contacto.
+ */
+export const listarCatalogoDeEtiquetas = () =>
+  apiGet<EtiquetaConUso[]>(`/tenant/chat/tags/catalogo`);
+
+export interface EtiquetaConUso {
+  id: string;
+  label: string;
+  color: string | null;
+  /** Cuántos contactos la tienen puesta. */
+  uso: number;
+}
+
+/** Renombrar o recolorear. Pide `tenant.settings.edit`. */
+export const editarEtiqueta = (
+  tagId: string,
+  cambios: { label?: string; color?: string | null },
+) => apiPatch<CrmTag>(`/tenant/chat/tags/${tagId}`, cambios);
+
+/**
+ * Borrar una etiqueta del catálogo.
+ *
+ * ⚠️ **La saca de todos los contactos que la tenían** y no se puede deshacer.
+ */
+export const borrarEtiqueta = (tagId: string) =>
+  apiDelete<void>(`/tenant/chat/tags/${tagId}`);
 
 export const createTag = (label: string, color?: string | null) =>
   apiPost<CrmTag>(`/tenant/chat/tags`, { label, color });

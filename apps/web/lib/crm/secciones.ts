@@ -85,7 +85,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
     titulo: 'Ajustes',
     items: [
       { href: '/support/canales', label: 'Canales', icono: 'plug', lista: true },
-      { href: '/support/configuracion', label: 'Configuración', icono: 'settings', lista: false },
+      { href: '/support/configuracion', label: 'Configuración', icono: 'settings', lista: true },
     ],
   },
 ];

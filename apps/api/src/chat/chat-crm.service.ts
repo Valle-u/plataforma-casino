@@ -807,6 +807,33 @@ export class ChatCrmService {
     return db.select().from(crmTags).orderBy(crmTags.label).limit(200);
   }
 
+  /**
+   * El catálogo con **cuántos contactos usa cada etiqueta**.
+   *
+   * El número no es decorativo: es lo que deja decidir si una etiqueta se puede
+   * borrar. Borrar una que usan doscientos contactos y borrar una que no usa
+   * nadie son dos cosas muy distintas, y sin el número las dos se ven igual.
+   *
+   * Va como `LEFT JOIN` con `count`, no como una consulta por etiqueta.
+   */
+  async listTagCatalogConUso(
+    db: TenantDb,
+  ): Promise<Array<CrmTag & { uso: number }>> {
+    return db
+      .select({
+        id: crmTags.id,
+        label: crmTags.label,
+        color: crmTags.color,
+        createdAt: crmTags.createdAt,
+        uso: sql<number>`count(${crmContactTags.contactId})::int`,
+      })
+      .from(crmTags)
+      .leftJoin(crmContactTags, eq(crmContactTags.tagId, crmTags.id))
+      .groupBy(crmTags.id)
+      .orderBy(crmTags.label)
+      .limit(200);
+  }
+
   async createTag(
     db: TenantDb,
     label: string,
@@ -817,6 +844,41 @@ export class ChatCrmService {
       .values({ label, color })
       .returning();
     return inserted[0]!;
+  }
+
+  /** Renombra o recolorea una etiqueta del catálogo. */
+  async editarTag(
+    db: TenantDb,
+    tagId: string,
+    cambios: { label?: string; color?: string | null },
+  ): Promise<CrmTag> {
+    const actualizado = await db
+      .update(crmTags)
+      .set(cambios)
+      .where(eq(crmTags.id, tagId))
+      .returning();
+    const tag = actualizado[0];
+    if (!tag) throw new NotFoundException('Etiqueta no encontrada.');
+    return tag;
+  }
+
+  /**
+   * Borra una etiqueta del catálogo.
+   *
+   * ⚠️ **Se la saca de todos los contactos que la tenían.**
+   * `crm_contact_tags.tag_id` es `ON DELETE CASCADE`, así que esto no es sólo
+   * sacarla de una lista: desaparece de cada ficha donde estaba, y no hay forma
+   * de volver atrás. Por eso la pantalla muestra cuántos contactos la usan
+   * **antes** de ofrecer el botón.
+   */
+  async borrarTag(db: TenantDb, tagId: string): Promise<void> {
+    const borrado = await db
+      .delete(crmTags)
+      .where(eq(crmTags.id, tagId))
+      .returning({ id: crmTags.id });
+    if (borrado.length === 0) {
+      throw new NotFoundException('Etiqueta no encontrada.');
+    }
   }
 
   /** Tags asignados a un contacto. */
