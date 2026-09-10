@@ -138,4 +138,104 @@ describe('FileValidationService', () => {
       expect(detectRealType(Buffer.from('random'))).toBeNull();
     });
   });
+
+  /**
+   * Audio (**3.5**): el dueño decidió **audio sí, video no**.
+   *
+   * Lo que se prueba acá no es que reconozca formatos: es que **la mitad "video
+   * no" sea cierta en el código**. OGG y MP4 son contenedores que llevan las dos
+   * cosas, así que mirar sólo la firma dejaría entrar justo lo que se cerró — y
+   * la decisión quedaría escrita en los docs y falsa en el producto.
+   */
+  describe('audio (3.5)', () => {
+    const AUDIO = { allow: ['image', 'pdf', 'audio'] as const, maxBytes: 1_000_000 };
+
+    /** Un OGG con la cabecera del códec que se le pida. */
+    function ogg(codec: string): Buffer {
+      const pagina = Buffer.alloc(28);
+      pagina.write('OggS', 0, 'ascii');
+      return Buffer.concat([pagina, Buffer.from(codec, 'latin1'), Buffer.alloc(64)]);
+    }
+
+    /** Un ISOBMFF con la marca que se le pida (`M4A `, `isom`, `avif`…). */
+    function ftyp(marca: string): Buffer {
+      const b = Buffer.alloc(32);
+      b.write('ftyp', 4, 'ascii');
+      b.write(marca, 8, 'ascii');
+      return b;
+    }
+
+    it('acepta una nota de voz OGG/opus', async () => {
+      const res = await svc.validate(ogg('OpusHead'), AUDIO);
+      expect(res.kind).toBe('audio');
+      expect(res.mimeType).toBe('audio/ogg');
+      expect(res.extension).toBe('.ogg');
+    });
+
+    it('acepta OGG/vorbis', async () => {
+      expect((await svc.validate(ogg('\x01vorbis'), AUDIO)).mimeType).toBe('audio/ogg');
+    });
+
+    /**
+     * ⚠️ **El test que sostiene "video no".**
+     *
+     * Un `.ogv` con Theora arranca con los **mismos cuatro bytes** que una nota
+     * de voz. Sin mirar el códec, entraría — y entraría por la puerta de audio,
+     * que es la que se acaba de abrir.
+     */
+    it('RECHAZA un OGG con video adentro (Theora)', async () => {
+      expect(await rejectCode(svc.validate(ogg('\x80theora'), AUDIO))).toBe(
+        'FILE_TYPE_UNKNOWN',
+      );
+    });
+
+    it('acepta un M4A (memo de voz de iPhone)', async () => {
+      const res = await svc.validate(ftyp('M4A '), AUDIO);
+      expect(res.kind).toBe('audio');
+      expect(res.mimeType).toBe('audio/mp4');
+    });
+
+    /**
+     * ⚠️ **La otra mitad de "video no".** Un MP4 de video tiene el mismo `ftyp`
+     * que un M4A: sólo cambia la marca. Aceptar `isom`/`mp42` traería archivos
+     * decenas de veces más pesados por el mismo camino.
+     */
+    it('RECHAZA un MP4 de video (marca isom)', async () => {
+      expect(await rejectCode(svc.validate(ftyp('isom'), AUDIO))).toBe(
+        'FILE_TYPE_UNKNOWN',
+      );
+    });
+
+    it('sigue reconociendo AVIF, que comparte el mismo ftyp', () => {
+      expect(detectRealType(ftyp('avif'))?.mimeType).toBe('image/avif');
+    });
+
+    it('acepta MP3 con tag ID3 y sin él', () => {
+      expect(detectRealType(Buffer.from('ID3\x04\x00\x00'))?.mimeType).toBe('audio/mpeg');
+      expect(detectRealType(Buffer.from([0xff, 0xfb, 0x90, 0x00]))?.mimeType).toBe(
+        'audio/mpeg',
+      );
+    });
+
+    it('acepta AMR, que es lo que manda WhatsApp en Android viejo', () => {
+      expect(detectRealType(Buffer.from('#!AMR\n'))?.mimeType).toBe('audio/amr');
+    });
+
+    /**
+     * El audio **no se re-encodea** —eso pediría ffmpeg— así que se guarda tal
+     * cual vino. Es el mismo trato que ya tiene el PDF. Que quede fijado: si
+     * alguien agrega un procesamiento, este test lo obliga a pensarlo.
+     */
+    it('guarda los bytes originales, sin tocar', async () => {
+      const original = ogg('OpusHead');
+      const res = await svc.validate(original, AUDIO);
+      expect(res.buffer.equals(original)).toBe(true);
+    });
+
+    it('un caller que no permite audio lo rechaza', async () => {
+      expect(await rejectCode(svc.validate(ogg('OpusHead'), IMG_PDF))).toBe(
+        'FILE_TYPE_NOT_ALLOWED',
+      );
+    });
+  });
 });

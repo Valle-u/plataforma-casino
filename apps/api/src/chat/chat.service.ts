@@ -75,6 +75,7 @@ import {
   CHAT_ATTACHMENT_MAX_BYTES,
   CHAT_ATTACHMENT_MAX_COUNT,
   CHAT_ATTACHMENT_MIMES,
+  kindDelMime,
   type ChatAttachment,
 } from './chat.types';
 import { ventanaDe, type VentanaDe24h } from './ventana-24h';
@@ -401,7 +402,7 @@ export class ChatService {
         mime: a.mime,
         sizeBytes: size,
         name: typeof a.name === 'string' ? a.name.slice(0, 120) : 'adjunto',
-        kind: a.mime === 'application/pdf' ? 'pdf' : 'image',
+        kind: kindDelMime(a.mime),
       });
     }
     return out;

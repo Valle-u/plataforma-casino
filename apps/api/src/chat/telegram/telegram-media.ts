@@ -41,12 +41,18 @@ export type Decision =
  * miniatura ilegible — y estas fotos suelen ser **comprobantes de
  * transferencia**, donde lo que importa es poder leer el monto.
  *
- * **Notas de voz: se rechazan, pero se avisa.** La gente las manda todo el
- * tiempo. Tragárselas en silencio dejaría al operador viendo un mensaje vacío;
- * mejor decir que llegó un audio y que no se puede escuchar acá.
+ * **Notas de voz y audios: se bajan** (**3.5**, decidido el 2026-09-10). Los
+ * mensajes de voz son cómo habla media Argentina, y sin ellos el operador no
+ * puede oír al cliente: le tiene que pedir que lo escriba, que es la fricción
+ * que este canal vino a sacar.
  *
- * **Stickers y videos: se rechazan igual.** No aportan a una conversación de
- * soporte y pesan.
+ * Hasta el 3.5 se rechazaban con un aviso. El aviso era lo correcto **mientras**
+ * no se pudieran guardar —mejor decir que llegó un audio que mostrar un mensaje
+ * vacío— pero era un rodeo, no la solución.
+ *
+ * **Videos, GIFs y figuritas: se siguen rechazando, con su aviso.** El video pesa
+ * entre 10 y 50 veces más que un audio y es raro en soporte; el resto no aporta.
+ * Es la otra mitad de la misma decisión: *audio sí, video no*.
  */
 export function queBajar(msg: MensajeConMedios, maxBytes: number): Decision {
   // Fotos primero: es el caso que importa (comprobantes).
@@ -88,10 +94,46 @@ export function queBajar(msg: MensajeConMedios, maxBytes: number): Decision {
     };
   }
 
+  // ── Audio (3.5) ──────────────────────────────────────────────────────────
+  //
+  // `voice` y `audio` son dos cosas distintas para Telegram: `voice` es la nota
+  // grabada con el micrófono —siempre OGG/opus— y `audio` es un archivo de
+  // música o una grabación mandada como tal. Las dos se aceptan, pero se nombran
+  // distinto porque no se leen igual en la conversación.
+  //
+  // El `mime_type` que manda Telegram va como pista, no como verdad: el tipo
+  // real lo decide `detectRealType()` por los bytes al validar la descarga.
+  const voz = msg.voice?.file_id;
+  if (voz) {
+    if ((msg.voice!.file_size ?? 0) > maxBytes) {
+      return { tipo: 'rechazar', motivo: 'mandó una nota de voz demasiado larga' };
+    }
+    return {
+      tipo: 'bajar',
+      fileId: voz,
+      mime: msg.voice!.mime_type ?? 'audio/ogg',
+      nombre: 'nota-de-voz.ogg',
+      bytes: msg.voice!.file_size ?? null,
+    };
+  }
+
+  const audio = msg.audio?.file_id;
+  if (audio) {
+    if ((msg.audio!.file_size ?? 0) > maxBytes) {
+      return { tipo: 'rechazar', motivo: 'mandó un audio demasiado grande' };
+    }
+    return {
+      tipo: 'bajar',
+      fileId: audio,
+      mime: msg.audio!.mime_type ?? null,
+      nombre: 'audio',
+      bytes: msg.audio!.file_size ?? null,
+    };
+  }
+
   // Lo que no aceptamos, pero conviene nombrar para que el operador entienda
-  // qué pasó en vez de ver un mensaje vacío.
-  if (msg.voice) return { tipo: 'rechazar', motivo: 'mandó una nota de voz' };
-  if (msg.audio) return { tipo: 'rechazar', motivo: 'mandó un audio' };
+  // qué pasó en vez de ver un mensaje vacío. **Video no** es la otra mitad de la
+  // decisión que dejó entrar el audio, no un pendiente.
   if (msg.video || msg.video_note) {
     return { tipo: 'rechazar', motivo: 'mandó un video' };
   }

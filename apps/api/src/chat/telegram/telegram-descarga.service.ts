@@ -71,7 +71,10 @@ export class TelegramDescargaService {
       // rechaza PDFs con contenido activo. Que Telegram lo haya intermediado no
       // vuelve confiable un archivo que salió del teléfono de un desconocido.
       const limpio = await this.validacion.validate(bytes, {
-        allow: ['image', 'pdf'],
+        // El audio entra por **3.5**. Que Telegram diga que es una nota de voz
+        // no alcanza: el tipo real lo decide el validador por los bytes, y de
+        // paso es lo que impide que un `voice` con un video adentro pase.
+        allow: ['image', 'pdf', 'audio'],
         maxBytes: CHAT_ATTACHMENT_MAX_BYTES,
       });
 
@@ -90,7 +93,10 @@ export class TelegramDescargaService {
         mime: limpio.mimeType,
         sizeBytes: subido.sizeBytes,
         name: params.nombre,
-        kind: limpio.mimeType === 'application/pdf' ? 'pdf' : 'image',
+        // Del validador, que lo detectó por los bytes. Deducirlo del MIME acá
+        // era la tercera copia de la misma línea, y con audio las tres estaban
+        // mal: una nota de voz habría quedado etiquetada como imagen.
+        kind: limpio.kind,
       };
     } catch (err) {
       this.logger.warn(

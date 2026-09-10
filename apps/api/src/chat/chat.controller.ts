@@ -119,7 +119,10 @@ export class ChatController {
       });
     }
     const clean = await this.fileValidation.validate(file.buffer, {
-      allow: ['image', 'pdf'],
+      // El audio entra por **3.5** (audio sí, video no). Que un `.ogv` o un
+      // `.mp4` de video no se cuelen por acá lo resuelve `detectRealType`,
+      // mirando el códec y no la firma del contenedor.
+      allow: ['image', 'pdf', 'audio'],
       maxBytes: CHAT_ATTACHMENT_MAX_BYTES,
     });
     const uploaded = await this.storage.upload({
@@ -135,7 +138,11 @@ export class ChatController {
       mime: clean.mimeType,
       sizeBytes: uploaded.sizeBytes,
       name: safeName(file.originalname, `adjunto${clean.extension}`),
-      kind: clean.mimeType === 'application/pdf' ? 'pdf' : 'image',
+      // Sale del validador, que ya lo detectó por los bytes. Antes se deducía
+      // acá con `mime === 'application/pdf' ? 'pdf' : 'image'`, que con audio
+      // habría etiquetado **toda nota de voz como imagen** — y la burbuja habría
+      // intentado dibujarla con un `<img>`.
+      kind: clean.kind,
     };
   }
 }

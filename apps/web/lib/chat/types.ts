@@ -11,7 +11,7 @@ export interface ChatAttachment {
   mime: string;
   sizeBytes: number;
   name: string;
-  kind: 'image' | 'pdf';
+  kind: 'image' | 'pdf' | 'audio';
   url?: string;
 }
 

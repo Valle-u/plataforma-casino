@@ -442,10 +442,17 @@ describe('CRM · webhook de Telegram', () => {
     });
 
     /**
-     * Una nota de voz **no se intenta bajar**: se nombra. La gente las manda
-     * todo el tiempo, y tragárselas dejaría al operador sin saber que existió.
+     * Una nota de voz **se intenta bajar** desde el **3.5** (audio sí, video
+     * no). Antes se nombraba sin intentarlo, que era el rodeo correcto mientras
+     * no se pudieran guardar.
+     *
+     * Acá el canal no tiene token, así que la descarga falla y el mensaje dice
+     * *"no se pudo traer"* — igual que la foto de arriba. Eso es justamente lo
+     * que fija el test: la nota de voz dejó de tomar el camino del rechazo y
+     * toma el de los adjuntos. Si volviera al rechazo, el texto diría *"mandó
+     * una nota de voz"* y esto fallaría.
      */
-    it('una nota de voz se nombra y conserva lo que la persona escribió', async () => {
+    it('una nota de voz se intenta bajar y conserva lo que la persona escribió', async () => {
       const chatId = 559002;
       await postWebhook(canalLitoral, {
         update_id: proximoUpdate(),
@@ -460,7 +467,9 @@ describe('CRM · webhook de Telegram', () => {
 
       const msgs = await mensajesDe(chatId, litoral.id);
       expect(msgs[0]!.body).toContain('escuchá esto');
-      expect(msgs[0]!.body).toContain('nota de voz');
+      expect(msgs[0]!.body).toContain('no se pudo traer');
+      // Y NO el aviso de rechazo, que es lo que decía antes del 3.5.
+      expect(msgs[0]!.body).not.toContain('mandó una nota de voz');
     });
 
     it('un video también, sin intentar bajarlo', async () => {

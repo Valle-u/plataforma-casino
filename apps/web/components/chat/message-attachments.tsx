@@ -1,7 +1,20 @@
 /**
  * MessageAttachments — render de los adjuntos dentro de una burbuja de chat.
- * Imágenes como miniatura (click → abre el original); PDF como chip con nombre.
+ * Imágenes como miniatura (click → abre el original); PDF como chip con nombre;
+ * **audio con un reproductor** (**3.5**).
  * Compartido por el widget del jugador y la bandeja del operador.
+ *
+ * ## Por qué el audio se escucha acá y no se baja
+ *
+ * Una nota de voz que hay que descargar y abrir en otra aplicación es una nota
+ * de voz que el operador no escucha: la conversación se corta mientras busca el
+ * archivo. Con el reproductor inline, apretar play es un clic y el hilo sigue a
+ * la vista.
+ *
+ * `preload="none"` a propósito: la URL es **firmada y vence a los 15 minutos**
+ * (**D12**). Precargar cada audio de un hilo largo serían decenas de descargas
+ * de archivos que nadie va a escuchar, y todas contra URLs que quizá ya
+ * vencieron cuando alguien apriete play.
  */
 
 import type { CSSProperties } from 'react';
@@ -18,7 +31,23 @@ export function MessageAttachments({
   return (
     <div style={wrapStyle}>
       {attachments.map((a, i) =>
-        a.kind === 'image' && a.url ? (
+        a.kind === 'audio' && a.url ? (
+          <audio
+            key={a.storageKey || i}
+            controls
+            preload="none"
+            src={a.url}
+            style={audioStyle}
+          >
+            {/*
+              El fallback importa: si el navegador no sabe decodificar ese
+              códec, sin esto queda un reproductor mudo que no explica nada.
+            */}
+            <a href={a.url} target="_blank" rel="noopener noreferrer">
+              {a.name}
+            </a>
+          </audio>
+        ) : a.kind === 'image' && a.url ? (
           <a
             key={a.storageKey || i}
             href={a.url}
@@ -51,6 +80,13 @@ const wrapStyle: CSSProperties = {
   flexWrap: 'wrap',
   gap: 6,
   marginTop: 4,
+};
+const audioStyle: CSSProperties = {
+  // El reproductor nativo mide distinto en cada navegador. El ancho fijo evita
+  // que una burbuja se estire hasta romper la columna del hilo.
+  width: 240,
+  maxWidth: '100%',
+  height: 36,
 };
 const imgStyle: CSSProperties = {
   maxWidth: 190,

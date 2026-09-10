@@ -31,7 +31,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import sharp from 'sharp';
 
-export type AllowedKind = 'image' | 'pdf';
+export type AllowedKind = 'image' | 'pdf' | 'audio';
 
 export interface ValidationResult {
   /** Buffer LIMPIO a guardar. Imágenes: re-encodeadas. PDF: original validado. */
@@ -107,9 +107,11 @@ export class FileValidationService {
       );
     }
 
-    return detected.kind === 'image'
-      ? this.sanitizeImage(buffer)
-      : this.sanitizePdf(buffer);
+    if (detected.kind === 'image') return this.sanitizeImage(buffer);
+    if (detected.kind === 'audio') {
+      return sanitizeAudio(buffer, detected.mimeType);
+    }
+    return this.sanitizePdf(buffer);
   }
 
   /** Redibuja la imagen desde los píxeles → descarta cualquier payload embebido. */
@@ -197,8 +199,63 @@ export class FileValidationService {
 }
 
 /**
+ * El audio se guarda **tal como vino**, y eso hay que decirlo.
+ *
+ * ## Lo que este camino NO hace
+ *
+ * No hay nada equivalente al **redibujado** de las imágenes, que es la defensa
+ * más fuerte del filtro: una imagen se re-encodea desde los píxeles y lo que se
+ * guarda es un archivo nuevo, sin metadata ni payload embebido. Para audio eso
+ * pediría **ffmpeg** —una dependencia binaria pesada— y re-encodear una nota de
+ * voz además la degrada.
+ *
+ * ## Por qué se acepta igual
+ *
+ * Es el mismo trato que ya tiene el **PDF**, que también se guarda con sus bytes
+ * originales después de mirarlos. Y el riesgo es distinto al de un ejecutable:
+ * un audio se decodifica en el sandbox del navegador, no se ejecuta. Lo que
+ * queda expuesto es una vulnerabilidad del decodificador, que es el mismo riesgo
+ * que acepta cualquier app de mensajería.
+ *
+ * Lo que sí se hace, y es lo que importa acá, es **no confiar en la etiqueta del
+ * cliente**: el tipo sale de los bytes mágicos, y de los contenedores se mira el
+ * códec de adentro para que no entre video disfrazado (ver `detectRealType`).
+ *
+ * ⚠️ Si algún día entra ClamAV —anotado arriba como ampliación—, este es el
+ * camino que más lo necesita.
+ */
+function sanitizeAudio(buffer: Buffer, mimeType: string): ValidationResult {
+  const ext = {
+    'audio/ogg': '.ogg',
+    'audio/mpeg': '.mp3',
+    'audio/mp4': '.m4a',
+    'audio/amr': '.amr',
+  }[mimeType];
+
+  return {
+    buffer,
+    mimeType,
+    // Un tipo detectado que no esté en el mapa sería un bug de `detectRealType`,
+    // no una entrada del usuario. `.bin` antes que romper la subida.
+    extension: ext ?? '.bin',
+    kind: 'audio',
+  };
+}
+
+/**
  * Detecta el tipo REAL por firma de bytes. Solo los formatos que aceptamos.
  * Devuelve null para cualquier otra cosa (que se rechaza).
+ *
+ * ## ⚠️ Con audio no alcanza la firma del archivo
+ *
+ * El dueño decidió **audio sí, video no**. Pero OGG y MP4 no son formatos: son
+ * **contenedores**, y los dos llevan video igual de bien que audio. Un `.ogv` con
+ * Theora adentro empieza con los mismos cuatro bytes que una nota de voz, y un
+ * `.mp4` de 40 MB empieza con el mismo `ftyp` que un audio de iPhone.
+ *
+ * O sea que mirar sólo la firma dejaría entrar **exactamente lo que se decidió
+ * dejar afuera**, y la decisión quedaría escrita en los docs y falsa en el
+ * código. Por eso de los contenedores se mira **qué códec traen adentro**.
  */
 export function detectRealType(
   b: Buffer,
@@ -229,16 +286,59 @@ export function detectRealType(
   ) {
     return { kind: 'image', mimeType: 'image/webp' };
   }
-  // AVIF: ISOBMFF con box "ftyp" y marca "avif"/"avis" en el header.
+  // ISOBMFF (box "ftyp"): la misma familia sirve para AVIF, para audio M4A y
+  // para video MP4. Los distingue la **marca**, no la firma.
   if (b.length >= 12 && b.toString('ascii', 4, 8) === 'ftyp') {
     const brands = b.toString('ascii', 8, Math.min(b.length, 32));
     if (brands.includes('avif') || brands.includes('avis')) {
       return { kind: 'image', mimeType: 'image/avif' };
     }
+    // Sólo `M4A `, que es audio. `isom`, `mp42` y `avc1` son las marcas de un
+    // MP4 de **video** — aceptarlas sería dejar entrar video por la puerta que
+    // se cerró a propósito, y con un archivo cuarenta veces más pesado.
+    if (brands.includes('M4A ')) {
+      return { kind: 'audio', mimeType: 'audio/mp4' };
+    }
   }
   // PDF: "%PDF-"
   if (b.length >= 5 && b.toString('ascii', 0, 5) === '%PDF-') {
     return { kind: 'pdf', mimeType: 'application/pdf' };
+  }
+  // OGG: "OggS". Es el de las notas de voz de WhatsApp y de Telegram — pero
+  // también el de los videos Theora, así que hay que mirar el códec.
+  if (b.length >= 4 && b.toString('ascii', 0, 4) === 'OggS') {
+    return codecDelOgg(b);
+  }
+  // MP3: "ID3" (con tag) o el sync de frame `FF Ex/Fx`.
+  if (b.length >= 3 && b.toString('ascii', 0, 3) === 'ID3') {
+    return { kind: 'audio', mimeType: 'audio/mpeg' };
+  }
+  if (b.length >= 2 && b[0] === 0xff && (b[1]! & 0xe0) === 0xe0) {
+    return { kind: 'audio', mimeType: 'audio/mpeg' };
+  }
+  // AMR: "#!AMR". Viejo, pero es lo que manda WhatsApp en algunos Android.
+  if (b.length >= 5 && b.toString('ascii', 0, 5) === '#!AMR') {
+    return { kind: 'audio', mimeType: 'audio/amr' };
+  }
+  return null;
+}
+
+/**
+ * Qué códec trae un OGG, mirando la cabecera de identificación.
+ *
+ * El contenedor OGG no dice qué lleva: lo dice el **primer paquete** de la
+ * primera página, que arranca con un nombre reconocible —`OpusHead`,
+ * `\x01vorbis`, `\x80theora`—. Vive en los primeros bytes, así que alcanza con
+ * mirar el arranque en vez de parsear el archivo entero.
+ *
+ * Devuelve `null` para lo que no sea audio conocido, incluido **Theora**, que es
+ * video adentro del mismo contenedor. Ese es todo el punto de esta función: sin
+ * ella, "video no" sería cierto para los `.mp4` y falso para los `.ogv`.
+ */
+function codecDelOgg(b: Buffer): { kind: AllowedKind; mimeType: string } | null {
+  const arranque = b.toString('latin1', 0, Math.min(b.length, 128));
+  if (arranque.includes('OpusHead') || arranque.includes('vorbis')) {
+    return { kind: 'audio', mimeType: 'audio/ogg' };
   }
   return null;
 }

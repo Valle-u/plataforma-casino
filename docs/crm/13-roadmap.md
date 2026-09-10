@@ -241,7 +241,7 @@ lo normal, no la excepción. La pantalla tiene que estar diseñada para eso.
 | 3.2 | Webhook (igual que 2.2, con la firma de Meta) | 🟡 Arquitectura decidida (**D23**), sin escribir |
 | 3.3 | Vínculo por teléfono, con las **tres defensas** de D4 | ✅ **Hecho** (`a8256a3` + la UI) |
 | 3.4 | **El aviso de la ventana de 24 h, antes de escribir** | ✅ **Hecho** |
-| 3.5 | Qué se hace con audios y videos | ✅ Decidido, sin implementar |
+| 3.5 | Qué se hace con audios y videos | ✅ **Hecho** |
 
 **El 3.1 es la mitad del trabajo y no es código.** Por **D13** el socio hace su
 propia verificación, y un socio trabado en el trámite es un socio sin canal. Se
@@ -287,6 +287,53 @@ cuatro estados: sin banda con 23 h por delante, *"Quedan 44 min"* a las 23.2 h,
 *"venció hace 82 días"* con un inbound viejo, y *"Nunca escribió por acá"* sin
 ningún inbound. Con la prueba negativa que importa: en un hilo de livechat no
 aparece nada de esto y el compositor sigue habilitado.
+
+### 3.5 — Audio sí, video no
+
+**Lo difícil no fue sumar el MIME.** El filtro de archivos apoya casi toda su
+seguridad en el **redibujado**: una imagen se re-encodea desde los píxeles y lo
+que se guarda es un archivo nuevo, sin metadata ni payload embebido. **Para
+audio no hay equivalente** —pediría ffmpeg, y re-encodear una nota de voz además
+la degrada—, así que se guarda tal cual vino. Es el mismo trato que ya tiene el
+PDF, y está escrito en el código en vez de disimulado.
+
+**La trampa de verdad: "video no" no se sostiene mirando la firma del archivo.**
+OGG y MP4 no son formatos, son **contenedores**, y los dos llevan video igual de
+bien que audio:
+
+| Lo que parece | Lo que es |
+|---|---|
+| `OggS…` | una nota de voz **o** un video Theora |
+| `…ftyp…` | un AVIF, un audio M4A **o** un MP4 de video |
+
+Aceptar la firma a secas habría dejado entrar **justo lo que se cerró**, por la
+puerta que se acababa de abrir, y la decisión habría quedado escrita en los docs
+y falsa en el producto. Por eso de los contenedores se mira el **códec de
+adentro**: se acepta Opus y Vorbis, se rechaza Theora; y en ISOBMFF sólo la
+marca `M4A `, no `isom`/`mp42`/`avc1`.
+
+**Una línea repetida tres veces que con audio estaba mal en las tres.** El tipo
+del adjunto se deducía con `mime === 'application/pdf' ? 'pdf' : 'image'` en el
+upload, al persistir el mensaje y al bajar de Telegram. Correcta mientras
+hubiera dos tipos; con audio, **toda nota de voz habría quedado etiquetada como
+imagen** y la burbuja habría intentado dibujarla con un `<img>`. Ahora sale del
+validador (que lo detectó por los bytes) o de `kindDelMime()`.
+
+**Telegram deja de rechazar las notas de voz.** Antes se nombraban con un aviso
+—el rodeo correcto mientras no se pudieran guardar— y ahora se bajan. Video,
+GIFs y figuritas se siguen rechazando con su aviso: es la otra mitad de la misma
+decisión, no un pendiente.
+
+**Verificado contra el endpoint real**, con sesión de verdad: Theora, un MP4
+`isom` y un ejecutable renombrado `.ogg` se rechazan los tres con `400
+FILE_TYPE_UNKNOWN`. Los tests del validador se probaron **rompiendo las dos
+comprobaciones de códec a propósito** para confirmar que fallan.
+
+> ⚠️ **Lo que NO se pudo verificar en local, y hay que mirar en staging:** el
+> **guardado** del audio y **la burbuja con el reproductor**. El entorno local no
+> tiene credenciales de R2 —una imagen falla igual, así que no es de este
+> cambio— y sin storage no hay adjunto que dibujar. La prueba que cierra esto es
+> **mandarle una nota de voz al bot de Telegram** desde staging.
 
 ### 3.3 — El backend estaba y no lo llamaba nadie
 

@@ -134,15 +134,68 @@ describe('documentos', () => {
   });
 });
 
+/**
+ * Audio (**3.5**, decidido el 2026-09-10).
+ *
+ * **Hasta acá se rechazaban con un aviso**, y estos tests fijaban ese rechazo.
+ * El aviso era lo correcto *mientras* no se pudieran guardar —mejor decir que
+ * llegó un audio que mostrar un mensaje vacío— pero era un rodeo. Ahora se
+ * bajan: los mensajes de voz son cómo habla media Argentina, y sin ellos el
+ * operador no puede oír al cliente.
+ */
+describe('audio: se baja (3.5)', () => {
+  /**
+   * `voice` y `audio` no son lo mismo para Telegram: `voice` es la grabación
+   * del micrófono —siempre OGG/opus— y `audio` es un archivo mandado como tal.
+   * Se nombran distinto porque no se leen igual en la conversación.
+   */
+  it('una nota de voz se baja, con nombre propio', () => {
+    expect(queBajar({ voice: { file_id: 'v', file_size: 40_000 } }, MAX)).toEqual({
+      tipo: 'bajar',
+      fileId: 'v',
+      mime: 'audio/ogg',
+      nombre: 'nota-de-voz.ogg',
+      bytes: 40_000,
+    });
+  });
+
+  it('un audio suelto también', () => {
+    expect(
+      queBajar({ audio: { file_id: 'a', file_size: 90_000, mime_type: 'audio/mpeg' } }, MAX),
+    ).toMatchObject({ tipo: 'bajar', fileId: 'a', mime: 'audio/mpeg' });
+  });
+
+  /**
+   * El `mime_type` de Telegram va como **pista, no como verdad**: el tipo real
+   * lo decide `detectRealType()` por los bytes al validar la descarga. Acá sólo
+   * se comprueba que no se invente nada cuando Telegram no lo manda.
+   */
+  it('sin mime_type, la nota de voz asume OGG y el audio no asume nada', () => {
+    expect(queBajar({ voice: { file_id: 'v' } }, MAX)).toMatchObject({
+      mime: 'audio/ogg',
+    });
+    expect(queBajar({ audio: { file_id: 'a' } }, MAX)).toMatchObject({ mime: null });
+  });
+
+  it('uno que no entra en el límite se rechaza con motivo', () => {
+    expect(queBajar({ voice: { file_id: 'v', file_size: MAX * 2 } }, MAX)).toEqual({
+      tipo: 'rechazar',
+      motivo: 'mandó una nota de voz demasiado larga',
+    });
+  });
+});
+
 describe('lo que no aceptamos se NOMBRA, no se traga', () => {
   /**
    * Tragárselos en silencio dejaría al operador viendo un mensaje vacío y
    * pensando que se rompió algo. Decir qué llegó le permite pedirle a la
-   * persona que lo escriba.
+   * persona que lo mande de otra forma.
+   *
+   * ⚠️ **El video sigue afuera y no es un pendiente**: es la otra mitad de la
+   * decisión que dejó entrar el audio. Pesa entre 10 y 50 veces más y es raro
+   * en soporte.
    */
   it.each([
-    ['una nota de voz', { voice: { file_id: 'v' } }, 'mandó una nota de voz'],
-    ['un audio', { audio: { file_id: 'a' } }, 'mandó un audio'],
     ['un video', { video: { file_id: 'v' } }, 'mandó un video'],
     ['un video redondo', { video_note: { file_id: 'v' } }, 'mandó un video'],
     ['un GIF', { animation: { file_id: 'g' } }, 'mandó un GIF'],
