@@ -42,7 +42,8 @@ export class StorageService {
     return this.driver.presignPutUrl(storageKey, contentType, ttlSeconds);
   }
 
-  async delete(storageKey: string): Promise<void> {
+  /** `true` = el archivo ya no está. Ver el contrato en `storage.types.ts`. */
+  async delete(storageKey: string): Promise<boolean> {
     return this.driver.delete(storageKey);
   }
 }

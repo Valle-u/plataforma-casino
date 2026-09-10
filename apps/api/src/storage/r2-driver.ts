@@ -23,13 +23,14 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { FetchHttpHandler } from '@smithy/fetch-http-handler';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import type { StorageDriver, UploadParams, UploadResult } from './storage.types';
 
 @Injectable()
 export class R2Driver implements StorageDriver {
+  private readonly logger = new Logger(R2Driver.name);
   private readonly client: S3Client;
   private readonly bucket: string;
   /** Si está set, las URLs son públicas (CDN); sino, signed. */
@@ -107,10 +108,23 @@ export class R2Driver implements StorageDriver {
     );
   }
 
-  async delete(storageKey: string): Promise<void> {
-    await this.client.send(
-      new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }),
-    );
+  async delete(storageKey: string): Promise<boolean> {
+    try {
+      // S3 `DeleteObject` es idempotente: una key que no existe devuelve 204
+      // igual, así que "no estaba" y "lo borré" llegan acá como el mismo caso —
+      // que es exactamente lo que el contrato quiere decir con `true`.
+      await this.client.send(
+        new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }),
+      );
+      return true;
+    } catch (err) {
+      // Antes esto tiraba. El contrato ahora dice que no tira y que informa: un
+      // proceso de retención necesita distinguir "ya no está" de "no pude".
+      this.logger.error(
+        `No se pudo borrar "${storageKey}" de R2: ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 }
 

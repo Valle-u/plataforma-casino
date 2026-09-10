@@ -12,6 +12,14 @@ export interface ChatAttachment {
   sizeBytes: number;
   name: string;
   kind: 'image' | 'pdf' | 'audio';
+  /**
+   * Se borró por retención a los 6 meses (**D15**). ISO.
+   *
+   * El mensaje queda; el archivo no. Viene **sin `url`** a propósito: pedirle
+   * una firmada al storage daría un link que devuelve 404, o sea un adjunto que
+   * se ve normal y no abre. Hay que mirar este campo antes que la `url`.
+   */
+  purgedAt?: string;
   url?: string;
 }
 

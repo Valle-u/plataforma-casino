@@ -18,6 +18,18 @@ export interface ChatAttachment {
   kind: 'image' | 'pdf' | 'audio';
   /** Presente en la respuesta del upload y al hidratar; NO se persiste. */
   url?: string;
+  /**
+   * Cuándo se borró el archivo por retención (**D15**, 4.1). ISO.
+   *
+   * El mensaje **no se borra**: se le saca el archivo y le queda la marca. Por
+   * eso `name`, `kind` y `sizeBytes` se conservan — sirven para decir *"había un
+   * comprobante acá"*, que es distinto de que nunca hubiera habido nada.
+   *
+   * `storageKey` también queda, apuntando a algo que ya no existe. Es a
+   * propósito: es el rastro de qué archivo era. Quien lea un adjunto tiene que
+   * mirar **este campo**, no la clave, antes de intentar servirlo.
+   */
+  purgedAt?: string;
 }
 
 /**

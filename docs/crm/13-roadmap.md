@@ -423,7 +423,7 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 
 | | Qué | Estado |
 |---|---|---|
-| 4.1 | Retención de adjuntos a 6 meses (**D15**) | Decidido, sin fecha. Verificar que R2 borra de verdad. |
+| 4.1 | Retención de adjuntos a 6 meses (**D15**) | ✅ **Hecho**, apagado por default (ver abajo) |
 | 4.2 | Cierre de red auditado (**D14**) | 🔴 **Delicado**: habilita una excepción a R6. Sólo el admin, auditado. |
 | 4.3 | Llenar `crm_timeline_events` | La tabla está lista y vacía |
 | 4.4 | Métricas por tramos | ✅ **Hecho** (migración `0115`). Sin backfill: mide desde que se instaló |
@@ -431,6 +431,69 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 | 4.6 | Varios agentes en la misma bandeja | Se ofreció excluirlo y no se marcó |
 | 4.7 | Búsqueda global de mensajes | Ídem. Por **D6** hay que acotarla por bandeja. |
 | 4.8 | Campañas y mensajes masivos | ✅ **Adentro por D21** (D19 revertida) |
+
+### 4.1 — Borrar los adjuntos vencidos, y por qué va apagado
+
+**El cron va apagado salvo `CHAT_RETENCION_ENABLED=1`**, al revés que los otros
+crons de retención de la plataforma, que se prenden salvo que alguien los apague.
+No es simetría rota por descuido: los otros borran **logs**; éste borra **fotos
+de DNI y comprobantes que mandó gente real**, sin vuelta atrás. Un proceso así no
+se prende porque el contenedor arrancó.
+
+Y tiene **modo simulacro** (`CHAT_RETENCION_SIMULACRO=1`): recorre todo, cuenta
+lo que borraría y no toca nada. Es la forma de ver qué haría la primera corrida
+sobre un historial real —y cuánto volumen hay acumulado— antes de dejarla borrar.
+
+**El orden es: primero el archivo, después la base.** Al revés dejaría archivos
+huérfanos **invisibles**: la base diría que se borró, el archivo seguiría en el
+bucket, y nadie lo buscaría nunca porque el registro dice que está todo bien.
+Así, un fallo deja un estado que la corrida siguiente arregla.
+
+#### 🔴 Lo que hubo que arreglar antes: `delete()` no informaba nada
+
+El roadmap ya avisaba que el borrado en R2 es nuevo y que **conviene verificarlo,
+no darlo por hecho**. Al mirarlo apareció algo peor: **los tres drivers de
+storage devolvían `void`**, y el de Cloudflare Worker —el que sirve producción—
+**se tragaba el fallo a propósito**, logueando y siguiendo.
+
+Para limpiar el comprobante de un depósito rechazado eso está bien: lo que
+importaba ya pasó, y hacer fallar la operación por un archivo sería cambiar un
+problema de housekeeping por uno de negocio. **Para retención no alcanza**:
+marcaría en la base que una foto de DNI se borró mientras el archivo sigue en el
+bucket, y esa mentira no la descubre nadie porque el registro dice que está bien.
+
+`delete()` ahora devuelve **si el archivo ya no está** (`true`) o **si sigue ahí**
+(`false`), y sigue sin tirar. Los llamadores viejos no cambian de
+comportamiento; el de depósitos ya envolvía la llamada en un `try`.
+
+#### ⚠️ El cinturón: qué claves puede borrar
+
+**Sólo las que están bajo `/chat/attachments/`.** D15 lo dice explícitamente: el
+comprobante oficial de un depósito (`deposits/proofs/…`) es **otro archivo, con
+su propio ciclo de vida**, y que se borre la foto que el jugador mandó por chat
+no toca el comprobante con el que se aprobó el depósito.
+
+Hoy nada mete una clave de comprobante adentro de un mensaje. El chequeo está
+igual porque el costo de equivocarse **no es un bug: es un documento financiero
+borrado sin vuelta atrás**, y porque esto va a seguir corriendo mucho después de
+que nadie recuerde por qué era seguro. Si el contador de omitidos no da cero, el
+cron lo grita en el log.
+
+**Verificado contra el storage de verdad**, no contra un mock: la suite sube
+archivos con el driver de disco —el mismo que corre en staging—, purga, y
+comprueba en el filesystem que **el archivo ya no está**. Un mock que devuelve
+`true` probaría justo la parte que no importa. Se probó además **rompiendo a
+propósito** el filtro de antigüedad y el cinturón: cada rotura la agarra
+exactamente el test que corresponde.
+
+**En pantalla el mensaje queda**, con la marca en vez del adjunto — y sin `url`,
+para que no quede un link que devuelve 404 y parezca que algo se rompió.
+
+> **Falta lo único que no se puede probar en local:** que el borrado ande contra
+> **R2 de verdad**. En test y en staging el driver es `local`. La primera corrida
+> real conviene hacerla **en simulacro**, y después sobre un casino chico.
+
+---
 
 > **Sobre 4.6 y 4.7:** se ofrecieron como exclusiones de la v1 y no se marcaron,
 > así que formalmente siguen adentro. Con las dos, la v1 crece bastante. **Éste

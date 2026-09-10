@@ -53,8 +53,22 @@ export interface StorageDriver {
   presignPutUrl?(storageKey: string, contentType: string, ttlSeconds?: number): Promise<string>;
 
   /**
-   * Borra un archivo. Idempotente — si no existe, no falla.
-   * Pensado para limpieza de comprobantes rechazados / reemplazos.
+   * Borra un archivo. Idempotente — si no existe, cuenta como borrado.
+   *
+   * **Nunca tira.** Un fallo de limpieza no puede voltear la operación que la
+   * disparó: cuando se rechaza un depósito, lo que importa ya pasó y hacerlo
+   * fallar entero cambiaría un problema de housekeeping por uno de negocio.
+   *
+   * ## ⚠️ Devuelve si el archivo YA NO ESTÁ, y eso no es decorativo
+   *
+   * `true` = no está más (se borró, o nunca existió). `false` = **sigue ahí**.
+   *
+   * Hasta la retención de adjuntos (**D15**, 4.1) los tres drivers se tragaban
+   * el fallo y devolvían `void`, así que el que llamaba **no tenía forma de
+   * saber si el archivo se había borrado**. Para limpiar un comprobante
+   * rechazado alcanzaba; para un proceso de retención no: marcaría en la base
+   * que una foto de DNI se borró mientras el archivo sigue en el bucket, y esa
+   * mentira no la descubre nadie porque el registro dice que está todo bien.
    */
-  delete(storageKey: string): Promise<void>;
+  delete(storageKey: string): Promise<boolean>;
 }

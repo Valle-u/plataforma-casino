@@ -421,6 +421,11 @@ export class ChatService {
       atts.map(async (item) => {
         const a = item as ChatAttachment;
         if (!a?.storageKey) return item;
+        // Borrado por retención (**D15**): la clave sigue ahí como rastro, pero
+        // el archivo no. Pedirle una URL firmada al storage daría un link que
+        // devuelve 404 — o sea, un adjunto que se ve normal y no abre. Mejor
+        // que llegue sin `url` y la pantalla diga que se borró.
+        if (a.purgedAt) return a;
         try {
           const url = await this.storage.getUrl(a.storageKey);
           return { ...a, url };

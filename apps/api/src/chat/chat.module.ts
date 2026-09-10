@@ -25,6 +25,8 @@ import { TelegramInboundService } from './telegram/telegram-inbound.service';
 import { TelegramOutboundService } from './telegram/telegram-outbound.service';
 import { TelegramWebhookController } from './telegram/telegram-webhook.controller';
 import { WhatsappWebhookController } from './whatsapp/whatsapp-webhook.controller';
+import { RetencionDeAdjuntosService } from './retencion-de-adjuntos.service';
+import { RetencionDeAdjuntosCron } from './retencion-de-adjuntos.cron';
 import { CrmAccessGuard } from './crm-access.guard';
 
 @Module({
@@ -47,6 +49,10 @@ import { CrmAccessGuard } from './crm-access.guard';
     TelegramInboundService,
     TelegramOutboundService,
     TelegramDescargaService,
+    // El cron va apagado salvo `CHAT_RETENCION_ENABLED=1`. El servicio se
+    // provee igual: se puede invocar a mano o desde un test sin prender nada.
+    RetencionDeAdjuntosService,
+    RetencionDeAdjuntosCron,
   ],
 })
 export class ChatModule {}

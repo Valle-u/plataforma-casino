@@ -60,14 +60,21 @@ export class LocalDiskDriver implements StorageDriver {
     );
   }
 
-  async delete(storageKey: string): Promise<void> {
+  async delete(storageKey: string): Promise<boolean> {
     try {
       const absPath = this.resolveSafe(storageKey);
       await fs.unlink(absPath);
+      return true;
     } catch (err: unknown) {
-      // ENOENT = ya no existe — idempotente.
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw err;
+      // ENOENT = ya no existe. Cuenta como borrado: el contrato es "¿ya no
+      // está?", no "¿lo borraste vos?".
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return true;
+      // Antes esto tiraba. Ahora se reporta: el contrato dice que no tira, y
+      // un `false` es más útil que una excepción que el caller iba a tragarse.
+      this.logger.error(
+        `No se pudo borrar "${storageKey}": ${(err as Error).message}`,
+      );
+      return false;
     }
   }
 

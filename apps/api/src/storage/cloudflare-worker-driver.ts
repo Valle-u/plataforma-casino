@@ -154,7 +154,7 @@ export class CloudflareWorkerDriver implements StorageDriver {
    * housekeeping por uno de negocio. Queda en el log como `error` para que se
    * pueda encontrar y limpiar.
    */
-  async delete(storageKey: string): Promise<void> {
+  async delete(storageKey: string): Promise<boolean> {
     try {
       const res = await fetch(`${this.workerUrl}/files/${storageKey}`, {
         method: 'DELETE',
@@ -162,16 +162,20 @@ export class CloudflareWorkerDriver implements StorageDriver {
         signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) {
+        // 404 = ya no está, que es lo que el contrato pregunta.
+        if (res.status === 404) return true;
         this.logger.error(
           `No se pudo borrar "${storageKey}" (${res.status}): ${await res.text()}`,
         );
-        return;
+        return false;
       }
       this.logger.log(`Borrado de R2: ${storageKey}`);
+      return true;
     } catch (err) {
       this.logger.error(
         `No se pudo borrar "${storageKey}": ${(err as Error).message}`,
       );
+      return false;
     }
   }
 }

@@ -18,7 +18,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, FileX } from 'lucide-react';
 import type { ChatAttachment } from '@/lib/chat/types';
 import { formatBytes } from '@/lib/chat/upload';
 
@@ -31,7 +31,20 @@ export function MessageAttachments({
   return (
     <div style={wrapStyle}>
       {attachments.map((a, i) =>
-        a.kind === 'audio' && a.url ? (
+        a.purgedAt ? (
+          /*
+            Borrado por retención (**D15**). El mensaje se conserva y el archivo
+            no, así que lo que queda es **decirlo**: sin esto, un hilo de hace un
+            año mostraría un adjunto que no abre y el operador pensaría que algo
+            se rompió. El nombre se mantiene porque "había un comprobante acá" es
+            distinto de "no había nada".
+          */
+          <span key={a.storageKey || i} style={purgadoStyle} title={a.name}>
+            <FileX size={14} style={{ flexShrink: 0 }} />
+            <span style={pdfNameStyle}>{a.name}</span>
+            <span style={pdfSizeStyle}>eliminado · retención</span>
+          </span>
+        ) : a.kind === 'audio' && a.url ? (
           <audio
             key={a.storageKey || i}
             controls
@@ -80,6 +93,19 @@ const wrapStyle: CSSProperties = {
   flexWrap: 'wrap',
   gap: 6,
   marginTop: 4,
+};
+const purgadoStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 10px',
+  borderRadius: 10,
+  // Sin borde ni fondo de "tarjeta": no es algo que se pueda abrir, y que no lo
+  // parezca es la mitad del mensaje.
+  background: 'transparent',
+  border: '1px dashed var(--color-border)',
+  color: 'var(--color-fg-subtle)',
+  maxWidth: 220,
 };
 const audioStyle: CSSProperties = {
   // El reproductor nativo mide distinto en cada navegador. El ancho fijo evita
