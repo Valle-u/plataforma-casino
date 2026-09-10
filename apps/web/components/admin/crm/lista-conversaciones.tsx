@@ -285,14 +285,56 @@ function Fila({
           )}
         </span>
 
-        {!densa && (
-          <span className="truncate text-[12px] text-[var(--color-fg-muted)]">
-            {item.contact.isLead ? 'Lead' : 'Jugador'}
+        {/* El preview va siempre, también en compacto: es lo que hace que la
+            lista sirva para elegir sin abrir cada conversación. Lo que se
+            esconde en compacto son las etiquetas. */}
+        <span className="truncate text-[12px] text-[var(--color-fg-muted)]">
+          {preview(item)}
+        </span>
+
+        {!densa && item.tags && item.tags.length > 0 && (
+          <span className="flex flex-wrap gap-1 pt-0.5">
+            {item.tags.map((t) => (
+              <span
+                key={t.id}
+                className="rounded-[7px] px-1.5 py-px text-[10px] font-medium"
+                style={{
+                  // El color de la etiqueta lo elige el operador y puede ser
+                  // cualquiera: se usa como tinte del texto sobre un fondo
+                  // neutro, no como fondo. Así ninguna combinación queda
+                  // ilegible.
+                  color: t.color ?? 'var(--color-fg-muted)',
+                  background: 'var(--color-bg-subtle)',
+                }}
+              >
+                {t.label}
+              </span>
+            ))}
           </span>
         )}
       </span>
     </button>
   );
+}
+
+/**
+ * Qué mostrar como preview de la fila.
+ *
+ * Tres casos distintos, y los tres se dicen distinto:
+ *
+ *   - **Sin mensajes** → si es un lead o un jugador. Es lo único que se sabe.
+ *   - **Cuerpo vacío** → el último mensaje era sólo un archivo. No se deja la
+ *     línea en blanco: parecería que el preview no cargó.
+ *   - **Con texto** → el texto. El salto de línea se aplana porque la fila es
+ *     de una sola línea y con `\n` el `truncate` corta en el lugar equivocado.
+ */
+function preview(item: InboxItem): string {
+  const body = item.lastMessageBody;
+  if (body === null || body === undefined) {
+    return item.contact.isLead ? 'Lead' : 'Jugador';
+  }
+  const texto = body.replace(/\s+/g, ' ').trim();
+  return texto || 'Archivo adjunto';
 }
 
 /** La hora del último mensaje. Vacío si la conversación no tuvo ninguno. */

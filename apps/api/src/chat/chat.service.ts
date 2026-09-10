@@ -9,12 +9,14 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   crmChannels,
   crmContacts,
   crmConversations,
+  crmContactTags,
   crmMessages,
+  crmTags,
   tenants,
   users,
   type ControlDb,
@@ -33,6 +35,16 @@ export interface OperatorInboxItem {
    * consulta más y una copia de la relación en el front.
    */
   channelType: string;
+  /**
+   * El cuerpo del último mensaje, para el preview de la fila.
+   *
+   * `null` cuando la conversación no tiene ninguno; **string vacío** cuando el
+   * último fue sólo un adjunto (el cuerpo se guarda vacío y el archivo va
+   * aparte). Los dos casos son distintos y la pantalla los dice distinto.
+   */
+  lastMessageBody: string | null;
+  /** Las etiquetas del contacto, para mostrarlas en la fila. */
+  tags: Array<{ id: string; label: string; color: string | null }>;
   contact: {
     id: string;
     displayName: string | null;
@@ -353,10 +365,30 @@ export class ChatService {
     opciones: { limit?: number; resueltas?: boolean } = {},
   ): Promise<OperatorInboxItem[]> {
     const limit = opciones.limit ?? 100;
-    return db
+    const filas = await db
       .select({
         conversation: crmConversations,
         channelType: crmChannels.type,
+        /**
+         * El último mensaje, como **subconsulta correlacionada** y no como una
+         * consulta por fila.
+         *
+         * Hacerlo desde el código —traer la lista y después pedir el último
+         * mensaje de cada una— serían cien viajes a la base para abrir la
+         * bandeja. Acá va todo en la misma consulta, y cada subconsulta usa el
+         * índice `crm_messages_conv_idx (conversation_id, created_at)`
+         * recorriéndolo hacia atrás: una búsqueda de índice por conversación,
+         * no un scan.
+         *
+         * `body` puede venir vacío: es un mensaje que era sólo un adjunto.
+         */
+        lastMessageBody: sql<string | null>`(
+          SELECT m.body
+            FROM crm_messages m
+           WHERE m.conversation_id = ${crmConversations.id}
+           ORDER BY m.created_at DESC
+           LIMIT 1
+        )`,
         contact: {
           id: crmContacts.id,
           displayName: crmContacts.displayName,
@@ -390,6 +422,50 @@ export class ChatService {
       )
       .orderBy(sql`${crmConversations.lastMessageAt} desc nulls last`)
       .limit(limit);
+
+    return this.conEtiquetas(db, filas);
+  }
+
+  /**
+   * Le pega las etiquetas a las filas de la bandeja.
+   *
+   * **Una consulta para todas**, no una por contacto: se piden las etiquetas de
+   * los contactos que ya salieron y se agrupan en memoria. Con cien filas, eso
+   * es una consulta más — la versión ingenua serían cien.
+   *
+   * No va como subconsulta adentro de la anterior porque son varias filas por
+   * contacto: habría que agregarlas a jsonb ahí adentro y el resultado se lee
+   * bastante peor que esto.
+   */
+  private async conEtiquetas(
+    db: TenantDb,
+    filas: Array<Omit<OperatorInboxItem, 'tags'>>,
+  ): Promise<OperatorInboxItem[]> {
+    if (filas.length === 0) return [];
+
+    const contactIds = [...new Set(filas.map((f) => f.contact.id))];
+    const asignadas = await db
+      .select({
+        contactId: crmContactTags.contactId,
+        id: crmTags.id,
+        label: crmTags.label,
+        color: crmTags.color,
+      })
+      .from(crmContactTags)
+      .innerJoin(crmTags, eq(crmTags.id, crmContactTags.tagId))
+      .where(inArray(crmContactTags.contactId, contactIds));
+
+    const porContacto = new Map<string, OperatorInboxItem['tags']>();
+    for (const t of asignadas) {
+      const lista = porContacto.get(t.contactId) ?? [];
+      lista.push({ id: t.id, label: t.label, color: t.color });
+      porContacto.set(t.contactId, lista);
+    }
+
+    return filas.map((f) => ({
+      ...f,
+      tags: porContacto.get(f.contact.id) ?? [],
+    }));
   }
 
   /**

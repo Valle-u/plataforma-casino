@@ -58,6 +58,16 @@ export interface InboxItem {
    * canal en vez de romperse.
    */
   channelType?: string;
+  /**
+   * El cuerpo del último mensaje, para el preview.
+   *
+   * `null` = la conversación no tiene ninguno. **String vacío** = el último fue
+   * sólo un adjunto: el cuerpo se guarda vacío y el archivo va aparte. Los dos
+   * casos se muestran distinto.
+   */
+  lastMessageBody?: string | null;
+  /** Etiquetas del contacto. Vienen con la lista, no se piden por fila. */
+  tags?: Array<{ id: string; label: string; color: string | null }>;
   contact: {
     id: string;
     displayName: string | null;
