@@ -354,7 +354,7 @@ export class MovementAlertsService {
       .where(conds.length ? and(...conds) : undefined)
       .groupBy(movementAlerts.status);
     const out: MovementAlertStats = { suspected: 0, confirmed: 0, dismissed: 0 };
-    for (const r of rows) out[r.status as AlertStatus] = r.n;
+    for (const r of rows) out[r.status] = r.n;
     return out;
   }
 

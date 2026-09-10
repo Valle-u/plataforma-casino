@@ -43,7 +43,6 @@ import {
   PALACE_RESULT,
   type PalaceCallbackRequest,
   type PalaceCallbackResponse,
-  type PalaceCommand,
 } from './palace.types';
 import { PalaceCallbackService } from './palace-callback.service';
 
@@ -236,7 +235,7 @@ export class PalaceCallbackController implements OnModuleInit {
       : [];
 
     // 5. Procesar
-    const command = body.command as PalaceCommand;
+    const command = body.command;
     const data = body.data ?? {};
 
     return this.callbackService.handle(tenantDb, command, data, checks);

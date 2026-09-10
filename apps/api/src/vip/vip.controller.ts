@@ -27,7 +27,10 @@ export class VipController {
   }
 
   @Get('me')
-  async getMine() {
+  // Sin `async` mientras esté deshabilitado: no hay nada que esperar, y un
+  // `async` sin `await` es error de lint. Al reactivarlo vuelve el `async`
+  // junto con el `await` del service — Nest sirve igual las dos formas.
+  getMine() {
     // DESHABILITADO temporalmente (2026-07-24): devuelve tier default
     // sin recomputar ni aplicar perks. Ver nota en AGENTS.md.
     return {

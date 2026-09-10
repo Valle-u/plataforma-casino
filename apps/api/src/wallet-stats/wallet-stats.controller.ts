@@ -280,7 +280,7 @@ export class WalletStatsController {
       { header: 'Fecha y hora', value: (r) => formatArDateTime(r.createdAt) },
       {
         header: 'Tipo de movimiento',
-        value: (r) => CSV_TX_TYPE_LABELS[r.type as WalletTxType] ?? r.type,
+        value: (r) => CSV_TX_TYPE_LABELS[r.type] ?? r.type,
       },
       {
         header: 'Entrada o salida',

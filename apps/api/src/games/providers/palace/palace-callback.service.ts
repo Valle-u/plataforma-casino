@@ -273,7 +273,7 @@ export class PalaceCallbackService {
           version: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
-        } as Wallet;
+        };
       } else {
         wallet = await this.walletService.getOrCreateWalletForUser(db, row.id);
       }
@@ -320,7 +320,7 @@ export class PalaceCallbackService {
               version: 0,
               createdAt: new Date(),
               updatedAt: new Date(),
-            } as Wallet;
+            };
           } else {
             wallet = await this.walletService.getOrCreateWalletForUser(db, row.id);
           }
@@ -776,7 +776,7 @@ export class PalaceCallbackService {
           netAmount: '0.00',
           status: 'placed',
           betWalletTxId: walletTxId,
-          payload: data as Record<string, unknown>,
+          payload: data,
           placedAt: data.time_stamp
             ? new Date(Number(data.time_stamp))
             : new Date(),
@@ -821,7 +821,7 @@ export class PalaceCallbackService {
           netAmount: winAmount,
           status: 'settled',
           winWalletTxId: walletTxId,
-          payload: data as Record<string, unknown>,
+          payload: data,
           placedAt: data.time_stamp
             ? new Date(Number(data.time_stamp))
             : new Date(),

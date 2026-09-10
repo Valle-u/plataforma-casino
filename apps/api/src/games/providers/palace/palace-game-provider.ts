@@ -159,7 +159,7 @@ export class PalaceGameProvider implements IGameProvider {
           `Usuario Palace regenerado: account=${account}, user_code=${userCode}`,
         );
         urlResult = await this.client.gameUrl(tenantDb, {
-          userCode: userCode!,
+          userCode: userCode,
           providerId,
           gameSymbol,
         });

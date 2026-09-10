@@ -271,9 +271,9 @@ export class WalletStatsService {
     let totalWonNum = 0;
     for (const row of allTxRows) {
       const amt = Number(row.amount);
-      if (INFLOW_TYPES.includes(row.type as any)) {
+      if (INFLOW_TYPES.includes(row.type)) {
         totalInNum += amt;
-      } else if (OUTFLOW_TYPES.includes(row.type as any)) {
+      } else if (OUTFLOW_TYPES.includes(row.type)) {
         totalOutNum += amt;
       }
       if (row.type === 'bet' || row.type === 'bonus_debit') totalBetNum += amt;

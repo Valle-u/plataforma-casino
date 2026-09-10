@@ -77,7 +77,10 @@ export class AchievementsController {
    */
   @Post('me/check')
   @HttpCode(HttpStatus.OK)
-  async checkMine() {
+  // Sin `async` mientras esté deshabilitado: no hay nada que esperar, y un
+  // `async` sin `await` es error de lint. Al reactivarlo vuelve el `async`
+  // junto con el `await` del service — Nest sirve igual las dos formas.
+  checkMine() {
     // DESHABILITADO — no grants, no mints.
     return { data: [] };
   }
