@@ -17460,9 +17460,9 @@ redeploy), `CHANNEL_SECRET_KEY` en producción distinta de la de staging, y
 
 ---
 
-## [2026-09-10 22:30 AR] — Claude Code (Opus 5)
+## [2026-09-10 23:50 AR] — Claude Code (Opus 5)
 
-**Duración**: ~2h
+**Duración**: ~3h30
 **Usuario**: Uriel
 
 > ⚠️ **Sesión en paralelo.** Mientras corría ésta, **otra sesión trabajaba el
@@ -17473,11 +17473,13 @@ redeploy), `CHANNEL_SECRET_KEY` en producción distinta de la de staging, y
 ### Qué hicimos
 
 1. ✅ **CI: el lint no significaba nada, y no era por lo que decía el handoff.**
-   Es lo único sustancial de la sesión. El detalle en `DEVLOG.md` 2026-09-10.
+   El detalle en `DEVLOG.md` 2026-09-10.
 2. ✅ **Verifiqué —sin commitear— la UI del vínculo por teléfono** que estaba en
    el árbol al empezar (`vincular-jugador.tsx` + ficha + `crm-api.ts`). Resultó
    ser trabajo de la otra sesión, así que lo dejé donde estaba.
 3. ✅ **Limpieza**: dos worktrees huérfanos y siete ramas locales mergeadas.
+4. ✅ **Diseño de la ruleta diaria** → **`docs/27-ruleta-diaria.md`**. Es la
+   parte más larga de la sesión y la que más consecuencias tiene.
 
 ### Decisiones tomadas
 
@@ -17492,6 +17494,23 @@ redeploy), `CHANNEL_SECRET_KEY` en producción distinta de la de staging, y
 - **NO se derivó `WalletTxType` del enum.** Es la solución de fondo al problema
   que destapó el `as any`, pero es un cambio de diseño en el camino de la plata
   y va con el dueño, no de rebote en un arreglo de CI. Queda anotado en DEVLOG.
+
+**De la ruleta** (todas del dueño, el porqué de cada una está en el doc 27):
+
+- **La ruleta es sólo de la red central.** Los jugadores de sub-redes
+  independientes no la ven. Es lo que exige **E8** y hoy el código lo viola.
+- **El premio es bono con rollover, no plata retirable.** Rollover y vencimiento
+  configurables por segmento, desde una `bonus_definition` propia de la ruleta.
+- **Un giro por día, y el día corta a medianoche argentina**, no UTC.
+- **Sólo `usuario_final` gira.** Ni operadores, ni empleados, ni admin.
+- **Tope diario de fichas, configurable.** Es la única contención real contra
+  las cuentas múltiples mientras el antifraude siga desenganchado.
+- **El costo de la ruleta se descuenta de la base de comisión** (C1/C4b), para
+  que el operador no cobre sobre plata que regaló la Casa.
+- **El sorteo pasa a ser verificable por el jugador**, reusando el provably fair
+  de los juegos propios.
+- **Tiradas gratis fuera de alcance**, y el tipo de premio se bloquea.
+- **`login_streak` queda apagado**: premia lo mismo que la ruleta.
 
 ### Lo que hay que corregir de lo que veníamos creyendo
 
@@ -17515,17 +17534,24 @@ de la otra sesión); la versión correcta está en DEVLOG.
 - `d7ad1ed` — `fix(api): los 18 errores de lint que CI nunca frenaba`
 - `3f10b13` — `fix(ci): el lint corria sin tipos y ademas no frenaba nada`
 - `d9395cc` — `docs: por que el lint de CI no significaba nada`
+- `311e082` — `docs: bitacora de la sesion del CI y el lint`
+- `8d08876` — `docs: diseno de la ruleta diaria (27), acordado con el dueno`
+- `8dde8f9` — `docs: la tabla de premios de la ruleta, mas barata y sin re-giro`
 
-En `staging` por fast-forward. **CI verde**, corrida `34535583746`: los dos jobs,
-con el paso Lint pasando por mérito propio y compilando `@casino/db` adentro.
+Todos en `staging` por fast-forward. **CI verde** en la corrida `34535583746`:
+los dos jobs, con el paso Lint pasando por mérito propio y compilando
+`@casino/db` adentro.
 
 ### Estado al cerrar
 
 - **Fase actual**: CRM etapa 3 (la lleva la otra sesión). Plataforma: CI sano.
-- **Próximo paso lógico**: decidir sobre `fix/panel-sin-sentry`, que sigue
-  pusheada y **sin mergear** desde ayer. Un commit, 10 líneas en
-  `app/(admin)/error.tsx`. Sin eso ningún error del panel llega a Sentry.
-- **Bloqueos**: ninguno de esta sesión.
+  **Ruleta diaria: diseño aprobado, sin una línea de código escrita.**
+- **Próximo paso lógico**: implementar la ruleta según `docs/27-ruleta-diaria.md`
+  §14, que lista qué tocar en base, backend y frontend. **Sólo `staging`**, sin
+  fecha de producción.
+- **Bloqueos**: ninguno de esta sesión. Para la ruleta hay un **prerrequisito
+  del dueño**, no un bloqueo: el límite de 2 cuentas por persona conviene que
+  exista antes de abrirla a producción (ver abajo).
 
 ### Notas para próximo agente
 
@@ -17563,6 +17589,56 @@ contrato del vínculo se desvinculó y volvió a vincular el contacto de "Juan
 Prueba". El contacto quedó idéntico, pero `crm_timeline_events` tiene una
 desvinculación y una vinculación de esta sesión, ~19:40 AR. No son de un
 operador.
+
+### Sobre la ruleta, para el que la implemente
+
+**Lo primero: no la construyas de cero, ya existe.** El dueño pidió "añadir una
+ruleta diaria" y está construida desde julio de 2026 — motor de sorteo, editor
+de admin y pantalla de jugador en `/play/wheel`, 597 líneas con animación y
+confetti. El trabajo no es hacerla: es **taparle seis agujeros**, listados en
+`docs/27-ruleta-diaria.md` §2.
+
+**Los dos que tocan plata, y que estaban vivos en el código:**
+
+1. **El premio en fichas caía en el saldo RETIRABLE.** `promo_reward` acredita
+   el balance común; sólo `bonus_credit` toca el `bonus_balance`. Girar, ganar
+   200 y retirar 200 sin haber jugado nada.
+2. **La ruleta llegaba a las redes independientes y la pagaba la Casa.**
+   `listActiveForPlayer` no filtra por red **en absoluto**. Es **E8** sin
+   matices.
+
+Y `free_spins` **escribe el reward, tira el confetti y no entrega nada** — el
+awarder loguea un warning y devuelve `null`. Es el mismo modo de falla del freno
+del alta de la entrada anterior: no rompe, miente.
+
+**Dos decisiones del dueño que NO son bugs y no hay que "arreglar":**
+
+- Cuando se agota el tope, la ruleta **sigue girando y sale siempre "suerte la
+  próxima"**, indistinguible de la mala suerte. Se le planteó el reparo —que el
+  patrón es detectable por cualquiera que compare— y lo sostuvo. Por eso hay
+  **dos** gajos vacíos y no uno: para que el patrón se note menos.
+- **Las cuentas de prueba internas NO están excluidas** del gasto ni de las
+  métricas. Cuando los números no cierren, esa es la razón.
+
+**El diseño de Claude Design es sólo estético**, dicho por el dueño. El bundle
+describe otra ruleta —3 tiradas por día, giros gratis en 4 de los 12 gajos,
+"conseguí más tiradas", bono x2, cashback— y **nada de eso aplica**. De ahí sale
+la rueda neón, la geometría de 12 gajos y los tokens; las mecánicas salen del
+doc 27. El bundle **no está en el repo** (`.gitignore` excluye
+`design_handoff_*/`): hay que pedírselo al dueño, y el zip original se llama
+`Sidebar vs header en dashboard.zip`, que no dice nada de la ruleta.
+
+**El número que nadie tiene**: cuánto del bono vuelve realmente a la Casa por el
+rollover. El costo nominal de la tabla propuesta es ≈24,6 fichas por giro, pero
+el real es bastante menor y **no se sabe cuánto**. Es lo primero a medir en
+staging y es la condición para hablar de producción.
+
+**Proyecto aparte que conviene hacer antes**: el límite de **2 cuentas por
+persona**, que el dueño quiere como regla de toda la plataforma. Toca registro,
+identidad y detección de multicuenta. Importa acá porque la ruleta gira desde el
+registro, sin depósito previo, y el enganche del antifraude quedó diferido.
+
+---
 
 Sigue pendiente del lado del dueño, sin cambios: `NEXT_PUBLIC_SENTRY_DSN` en el
 servicio **web** de Dokploy (build var, pide redeploy), `CHANNEL_SECRET_KEY` en
