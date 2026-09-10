@@ -2,9 +2,14 @@
 
 > Cómo se mide la atención cuando el hilo es eterno.
 >
-> **No está decidido si va en la v1**: se ofreció como exclusión y no se marcó
-> (**D19**), así que sigue como candidata. Este documento sirve para decidirlo con
-> el peso a la vista.
+> ✅ **Construido el 2026-09-10** (migración `0115`, sección *Métricas de
+> atención*). Este documento describía el diseño antes de existir; abajo queda
+> marcado qué se hizo, qué se agregó y qué sigue sin hacerse.
+>
+> ⚠️ **No hay backfill, y no puede haberlo.** Los tramos se anotan cuando pasan.
+> Las conversaciones anteriores a la migración no tienen ninguno y no se les
+> puede inventar: **la medición arranca el día que se instaló**, y la pantalla
+> dice desde cuándo mide.
 
 ---
 
@@ -57,13 +62,41 @@ El tramo **no existe en el modelo de datos**. Dos formas de obtenerlo:
 | **A** | Derivarlo al consultar, mirando la secuencia de mensajes y los cambios de estado | Cero tablas nuevas; consulta pesada y difícil de leer |
 | **B** | Una tabla `crm_conversation_segments` que se escribe al abrir y al resolver | Una tabla más; consultas triviales y baratas |
 
-**Recomendación: B.** Con A, cada consulta tiene que reconstruir la historia
-entera de cada hilo — y esto crece para siempre, porque nada se borra (**D15**
-sólo borra adjuntos, no mensajes).
+**Se hizo B**, y al construirlo apareció que **A ni siquiera era posible**. Un
+tramo empieza cuando la conversación estaba resuelta, y `crm_conversations
+.status` es una sola columna mutable: **no hay historia de cuándo se marcó
+resuelta**. Mirando sólo los mensajes no se puede saber dónde terminaba un tramo
+y empezaba el siguiente — se podría adivinar por huecos de tiempo, que es
+inventar un dato y presentarlo como medido.
 
-> Y hay un requisito previo: **cerrar y reabrir no existen todavía**. Sin esas
-> acciones no hay tramos que medir. Ver
+Vale la pena decirlo junto a **D22**, que decidió lo contrario para Circuitos:
+la etapa de un contacto es un **estado actual** y siempre se puede recalcular;
+un tramo es **historia**, pasa una vez y hay que anotarlo cuando pasa. No es una
+contradicción, es la misma pregunta con dos respuestas correctas.
+
+> El requisito previo —**cerrar y reabrir**— se construyó en la etapa 1.4 y
+> tiene botones desde la ficha del CRM. Ver
 > [`06-operacion-diaria.md`](06-operacion-diaria.md).
+
+### Lo que quedó fijado al construirlo
+
+- **Abre tramo** un mensaje `inbound` o `system`. Los avisos de **D8** cuentan a
+  propósito, igual que en el parte diario: un aviso ignorado es el agujero que
+  dejan D8 y D10 juntos.
+- **No abre tramo un `outbound`.** Si el operador escribe primero no hay espera
+  que medir, y ese tramo entraría con primera respuesta instantánea bajando la
+  mediana de todos los demás sin que nadie haya atendido mejor.
+- **Sólo un `outbound` marca la primera respuesta.** Un aviso del sistema no es
+  una respuesta al jugador.
+- **Sólo `resolved` cierra.** `pending` es "se respondió y se espera algo de
+  afuera": la atención sigue abierta.
+- **Un tramo abierto por conversación**, garantizado por un índice único parcial
+  en la base. Chequearlo desde el código no alcanza: dos mensajes simultáneos
+  pasan los dos el `SELECT` antes de que cualquiera inserte, y a partir de ahí
+  todas las medianas mienten sin que nadie lo note.
+- **Anotar un tramo nunca rompe un mensaje.** Si la escritura falla se registra
+  y se sigue: perder una métrica es infinitamente más barato que perder la
+  respuesta a un jugador.
 
 ---
 
@@ -143,11 +176,26 @@ un cajero que abandona a sus jugadores sin leer conversaciones privadas.
 
 ---
 
-## Por dónde empezar
+## Por dónde empezar — y en qué quedó
 
-1. **Chats sin responder en el parte diario.** Barato, ya hay dónde ponerlo, y
-   tapa el único hueco real. **Se puede hacer antes que el resto del CRM.**
-2. Cerrar / reabrir (hace falta igual, por [`06`](06-operacion-diaria.md)).
-3. La tabla de tramos, al implementar el punto 2.
-4. Las métricas 2 y 3, cuando haya tramos.
-5. La 4, sólo si se decide cambiar D10.
+1. ✅ **Chats sin responder en el parte diario.** Se hizo primero, como estaba
+   previsto: `CONSULTA_CHATS_SIN_RESPONDER` en `health-report.cron.ts`.
+2. ✅ **Cerrar / reabrir** (etapa 1.4, con botones en la ficha).
+3. ✅ **La tabla de tramos** (migración `0115`).
+4. ✅ **Las métricas 2 y 3** (primera respuesta y volumen por canal), más una
+   quinta que no estaba en esta lista y sale gratis de la misma tabla:
+   **tiempo hasta resolver**. Es la compañera natural de la primera respuesta —
+   una dice cuánto tardás en aparecer, la otra cuánto en terminar.
+5. ⬜ **La 4 (supervisión para el socio)**: sigue sin hacerse, y sigue
+   necesitando una decisión que cambie **D10**. No se construyó nada de eso.
+
+### Lo que la sección todavía no puede contestar
+
+**Nada que necesite historia de transiciones.** Se sabe cuánto tardó cada tramo,
+no por qué etapas pasó ni cuánto estuvo en cada una. Preguntas como "¿cuánto
+tarda alguien desde que escribe hasta que hace su primer depósito?" cruzan esto
+con los circuitos (**D22**), que se derivan y no guardan historia.
+
+El día que haga falta, la respuesta **no** es agregarle una columna `etapa` a
+`crm_contacts`: es registrar las transiciones en `crm_timeline_events` —que ya
+existe para eso— sin dejar de derivar la etapa actual.

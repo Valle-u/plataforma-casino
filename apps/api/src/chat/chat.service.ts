@@ -8,7 +8,7 @@
  * contacts/conversations/messages. Ver docs/22-crm-livechat.md.
  */
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   crmChannels,
@@ -73,6 +73,8 @@ const WEB_CHANNEL = 'web-livechat';
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @Inject(CONTROL_DB) private readonly controlDb: ControlDb,
     private readonly tenantCache: TenantConnectionCache,
@@ -276,7 +278,75 @@ export class ChatService {
       .set({ lastMessageAt: msg.createdAt, updatedAt: new Date(), ...bump })
       .where(eq(crmConversations.id, params.conversationId));
 
+    await this.anotarElTramo(db, params.direction, params.conversationId, msg);
+
     return this.hydrateMessage(msg);
+  }
+
+  /**
+   * Mueve el **tramo** con este mensaje (migración `0115`).
+   *
+   * Un tramo va desde que alguien escribe estando la conversación resuelta
+   * hasta que se vuelve a marcar resuelta, y es la unidad con la que se mide la
+   * atención: por **D11** el hilo es eterno, así que medir sobre la
+   * conversación mide la antigüedad del cliente.
+   *
+   * ## Nunca rompe un mensaje
+   *
+   * Si esto falla, se registra y se sigue. Es la misma regla que la línea de
+   * tiempo del contacto: **una métrica no puede tumbar una respuesta a un
+   * jugador**. Se pierde un tramo, que es infinitamente más barato que perder
+   * el mensaje que lo generó.
+   *
+   * ## Quién abre y quién responde
+   *
+   * - `inbound` y `system` **abren** tramo si no hay uno abierto. Los avisos de
+   *   **D8** cuentan a propósito: un aviso ignorado es el agujero que dejan D8
+   *   y D10 juntos, igual que en el parte diario.
+   * - `outbound` **no abre** tramo. Si el operador escribe primero no hay
+   *   espera que medir, y ese tramo entraría con primera respuesta instantánea
+   *   bajando la mediana de todos los demás.
+   * - Sólo un `outbound` marca `first_response_at`. Un aviso del sistema no es
+   *   una respuesta al jugador.
+   *
+   * El `ON CONFLICT DO NOTHING` se apoya en el índice **único parcial**
+   * `crm_segments_abierto_idx`: dos mensajes simultáneos pasarían los dos un
+   * chequeo hecho en el código, y la conversación quedaría con dos tramos
+   * abiertos.
+   */
+  private async anotarElTramo(
+    db: TenantDb,
+    direction: 'inbound' | 'outbound' | 'system',
+    conversationId: string,
+    msg: CrmMessage,
+  ): Promise<void> {
+    // ⚠️ La fecha va como ISO, no como `Date`. En un `sql` crudo no hay columna
+    // de la que deducir el tipo, así que el driver recibe el objeto y falla con
+    // un `TypeError` que este `catch` se tragaría **en silencio**: no se
+    // anotaría ningún tramo y las métricas quedarían en cero para siempre, sin
+    // un solo error a la vista.
+    const cuando = new Date(msg.createdAt).toISOString();
+    try {
+      if (direction === 'outbound') {
+        await db.execute(sql`
+          UPDATE crm_conversation_segments
+             SET first_response_at = ${cuando}
+           WHERE conversation_id = ${conversationId}
+             AND resolved_at IS NULL
+             AND first_response_at IS NULL
+        `);
+        return;
+      }
+      await db.execute(sql`
+        INSERT INTO crm_conversation_segments (conversation_id, started_at)
+        VALUES (${conversationId}, ${cuando})
+        ON CONFLICT (conversation_id) WHERE resolved_at IS NULL DO NOTHING
+      `);
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo anotar el tramo de ${conversationId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /** Historial de mensajes de una conversación (más nuevos primero). */
@@ -636,7 +706,28 @@ export class ChatService {
         ),
       )
       .returning();
-    return filas[0] ?? null;
+    const conv = filas[0];
+    if (!conv) return null;
+
+    // Resolver **cierra el tramo**: es el único momento en que un tramo
+    // termina. Va después del `UPDATE` y sólo si devolvió fila, así que el
+    // filtro por bandeja también protege esto — nadie cierra la medición de
+    // una conversación ajena sabiendo su id.
+    if (params.status === 'resolved') {
+      try {
+        await db.execute(sql`
+          UPDATE crm_conversation_segments
+             SET resolved_at = now()
+           WHERE conversation_id = ${params.conversationId}
+             AND resolved_at IS NULL
+        `);
+      } catch (err) {
+        this.logger.warn(
+          `No se pudo cerrar el tramo de ${params.conversationId}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return conv;
   }
 
   /**

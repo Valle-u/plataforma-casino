@@ -78,7 +78,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
   {
     titulo: 'Medición',
     items: [
-      { href: '/support/metricas', label: 'Métricas de atención', icono: 'bar-chart-3', lista: false },
+      { href: '/support/metricas', label: 'Métricas de atención', icono: 'bar-chart-3', lista: true },
     ],
   },
   {
@@ -99,7 +99,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
 export const TABBAR_MOBILE: SeccionDelCrm[] = [
   { href: '/support', label: 'Bandeja', icono: 'messages-square', lista: true },
   { href: '/support/contactos', label: 'Contactos', icono: 'contact', lista: true },
-  { href: '/support/metricas', label: 'Métricas', icono: 'bar-chart-3', lista: false },
+  { href: '/support/metricas', label: 'Métricas', icono: 'bar-chart-3', lista: true },
   { href: '/support/canales', label: 'Canales', icono: 'plug', lista: true },
 ];
 

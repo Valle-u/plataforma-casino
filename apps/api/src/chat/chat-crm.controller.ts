@@ -40,6 +40,11 @@ import { TelegramChannelsService } from './telegram/telegram-channels.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { CrmAccessGuard, type RequestWithCrmInbox } from './crm-access.guard';
+import {
+  CrmMetricasService,
+  VENTANAS,
+  type Ventana,
+} from './crm-metricas.service';
 
 type Operator = { id: string; username: string };
 
@@ -62,6 +67,7 @@ export class ChatCrmController {
     // ChatService, junto al resto del hilo; el CRM es la ficha del contacto.
     private readonly chat: ChatService,
     private readonly telegramChannels: TelegramChannelsService,
+    private readonly metricasDeAtencion: CrmMetricasService,
   ) {}
 
   private db(req: RequestWithTenantUser) {
@@ -226,6 +232,34 @@ export class ChatCrmController {
       { limit, offset: (pagina - 1) * limit },
     );
     return { items, total, page: pagina, pageSize: limit };
+  }
+
+  // ── Métricas de atención ──────────────────────────────────────────────────
+
+  /**
+   * Cómo se está atendiendo, medido sobre **tramos** (sección **Métricas**).
+   *
+   * Acotado a la bandeja de quien pregunta, como todo el CRM. Un tablero con
+   * todos los operadores es exactamente lo que **R6** prohíbe, y además sería
+   * un ranking — que `docs/crm/10-metricas.md` descarta por su cuenta: el que
+   * cierra rápido no es el que atiende mejor.
+   */
+  @Get('metricas')
+  async metricas(
+    @Req() req: RequestWithTenantUser,
+    @Query('dias') dias?: string,
+  ) {
+    // La ventana entra a un `interval`: se valida contra la lista cerrada y no
+    // se acepta un número cualquiera del cliente.
+    const pedida = Number(dias);
+    const ventana = (VENTANAS as readonly number[]).includes(pedida)
+      ? (pedida as Ventana)
+      : 30;
+    return this.metricasDeAtencion.deLaBandeja(
+      this.db(req),
+      this.owner(req),
+      ventana,
+    );
   }
 
   // ── Alta de jugador desde el chat (D9) ────────────────────────────────────

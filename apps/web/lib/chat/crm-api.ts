@@ -299,3 +299,41 @@ export interface PaginaDeEtapa {
   page: number;
   pageSize: number;
 }
+
+// ── Métricas de atención ─────────────────────────────────────────────────────
+//
+// Todo se mide sobre **tramos**, no sobre conversaciones: por D11 el hilo es
+// eterno —el que escribió en marzo y vuelve en septiembre es la misma
+// conversación—, así que medir la conversación mide la antigüedad del cliente,
+// no la atención. Un tramo va desde que alguien escribe estando la conversación
+// resuelta hasta que se vuelve a marcar resuelta.
+//
+// ⚠️ La medición **arrancó con la migración 0115 y no hay backfill**. Lo
+// anterior no existe: `midiendoDesde` dice desde cuándo hay algo, y la pantalla
+// lo muestra para que una ventana de 30 días recién instalada no se lea como un
+// mes flojo.
+
+export const metricasDeAtencion = (dias: 7 | 30) =>
+  apiGet<MetricasDeAtencion>(`/tenant/chat/metricas?dias=${dias}`);
+
+export interface MetricasDeAtencion {
+  /** Quién está esperando **ahora**. No depende de la ventana. */
+  sinResponder: {
+    total: number;
+    /** De ésos, los que llevan más de 24 horas. */
+    viejos: number;
+    masViejo: string | null;
+  };
+  ventana: number;
+  /** Tramos que **empezaron** dentro de la ventana. */
+  tramos: number;
+  respondidos: number;
+  resueltos: number;
+  /** Mediana —no promedio— de la espera hasta la primera respuesta, en segundos. */
+  medianaRespuesta: number | null;
+  /** Mediana de lo que tardó en resolverse, en segundos. */
+  medianaResolucion: number | null;
+  porCanal: Array<{ canal: string; total: number }>;
+  /** El tramo más viejo de esta bandeja: desde cuándo hay algo medido. */
+  midiendoDesde: string | null;
+}

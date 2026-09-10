@@ -223,7 +223,7 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 | 4.1 | Retención de adjuntos a 6 meses (**D15**) | Decidido, sin fecha. Verificar que R2 borra de verdad. |
 | 4.2 | Cierre de red auditado (**D14**) | 🔴 **Delicado**: habilita una excepción a R6. Sólo el admin, auditado. |
 | 4.3 | Llenar `crm_timeline_events` | La tabla está lista y vacía |
-| 4.4 | Métricas por tramos | Necesita 1.4 primero ([`10`](10-metricas.md)) |
+| 4.4 | Métricas por tramos | ✅ **Hecho** (migración `0115`). Sin backfill: mide desde que se instaló |
 | 4.5 | Aviso al operador por Telegram | La mejora descartada en **D16**, si el hueco molesta |
 | 4.6 | Varios agentes en la misma bandeja | Se ofreció excluirlo y no se marcó |
 | 4.7 | Búsqueda global de mensajes | Ídem. Por **D6** hay que acotarla por bandeja. |

@@ -412,6 +412,64 @@ export const crmTimelineEvents = pgTable(
   }),
 );
 
+/**
+ * **El tramo**: la unidad con la que se mide la atención (migración `0115`).
+ *
+ * Va desde que alguien escribe estando la conversación resuelta hasta que se
+ * vuelve a marcar resuelta. Existe porque por **D11** el hilo es eterno —el que
+ * escribió en marzo y vuelve en septiembre es la misma conversación—, así que
+ * medir sobre la conversación mide la antigüedad del cliente, no la atención.
+ *
+ * ## Se anota cuando pasa, no se deriva
+ *
+ * Es lo contrario de Circuitos (**D22**), y a propósito: la etapa de un contacto
+ * es un **estado actual** que siempre se puede recalcular; un tramo es
+ * **historia**. `crm_conversations.status` es una columna mutable sin historial,
+ * así que mirando los mensajes no hay forma de saber dónde terminaba un tramo y
+ * empezaba el siguiente.
+ *
+ * ⚠️ **No hay backfill.** Las conversaciones que ya existían no tienen tramos y
+ * no se les pueden inventar: la medición arranca el día que se instaló.
+ *
+ * ## Quién lo abre y quién lo responde
+ *
+ * Lo abre un `inbound` o un `system` (los avisos de **D8** cuentan, igual que en
+ * el parte diario). **No lo abre un `outbound`**: si el operador escribe
+ * primero no hay espera que medir, y ese tramo bajaría la mediana de todos los
+ * demás sin que nadie haya atendido mejor.
+ *
+ * `firstResponseAt` sólo lo marca un `outbound`: un aviso del sistema no es una
+ * respuesta al jugador.
+ */
+export const crmConversationSegments = pgTable(
+  'crm_conversation_segments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => crmConversations.id, { onDelete: 'cascade' }),
+    /** Cuándo llegó el mensaje que abrió el tramo. */
+    startedAt: timestamp('started_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Cuándo contestó el operador por primera vez. NULL = nadie contestó. */
+    firstResponseAt: timestamp('first_response_at', { withTimezone: true }),
+    /** Cuándo se marcó resuelta. NULL = el tramo sigue abierto. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (t) => ({
+    convIdx: index('crm_segments_conv_idx').on(t.conversationId, t.startedAt),
+  }),
+);
+
+// ⚠️ El índice que importa de verdad —`crm_segments_abierto_idx`, ÚNICO y
+// PARCIAL sobre `conversation_id WHERE resolved_at IS NULL`— vive sólo en la
+// migración `0115`: drizzle no expresa índices parciales. Es lo que garantiza
+// **un tramo abierto por conversación**, y no es una optimización: sin él, dos
+// mensajes simultáneos abren dos tramos y todas las medianas mienten en
+// silencio. Si algún día se regenera el esquema desde el código, hay que
+// volver a agregarlo a mano.
+
 // ── Tipos inferidos (para el módulo de la API) ────────────────────────────
 export type CrmContact = typeof crmContacts.$inferSelect;
 export type NewCrmContact = typeof crmContacts.$inferInsert;
@@ -425,5 +483,7 @@ export type CrmTag = typeof crmTags.$inferSelect;
 export type CrmContactTag = typeof crmContactTags.$inferSelect;
 export type CrmTemplate = typeof crmTemplates.$inferSelect;
 export type CrmTimelineEvent = typeof crmTimelineEvents.$inferSelect;
+export type CrmConversationSegment =
+  typeof crmConversationSegments.$inferSelect;
 export type CrmRawEvent = typeof crmRawEvents.$inferSelect;
 export type NewCrmRawEvent = typeof crmRawEvents.$inferInsert;
