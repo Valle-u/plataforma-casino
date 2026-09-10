@@ -150,31 +150,35 @@ probabilidades mirando el costo esperado.
 
 | # | Etiqueta en la rueda | Premio | Rollover | Prob. |
 |---|---|---|---|---|
-| 0 | 25 FICHAS | bono 25 | x1 | 24 % |
-| 1 | 50 FICHAS | bono 50 | x3 | 20 % |
-| 2 | 15 FICHAS | bono 15 | x1 | 18 % |
-| 3 | 100 FICHAS | bono 100 | x5 | 9 % |
-| 4 | 75 FICHAS | bono 75 | x3 | 7 % |
-| 5 | GIRÁ DE NUEVO | devuelve la tirada | — | 5 % |
-| 6 | 5.000 FICHAS · JACKPOT | bono 5.000 | x10 | 0,1 % |
-| 7 | 150 FICHAS | bono 150 | x5 | 3 % |
-| 8 | 20 FICHAS | bono 20 | x1 | 6 % |
-| 9 | 300 FICHAS | bono 300 | x8 | 1,5 % |
-| 10 | 1.000 FICHAS | bono 1.000 | x10 | 0,4 % |
-| 11 | SUERTE LA PRÓXIMA | nada | — | 6 % |
+| 0 | 15 FICHAS | bono 15 | x1 | 26 % |
+| 1 | 25 FICHAS | bono 25 | x1 | 20 % |
+| 2 | 10 FICHAS | bono 10 | x1 | 18 % |
+| 3 | 50 FICHAS | bono 50 | x3 | 8 % |
+| 4 | 40 FICHAS | bono 40 | x3 | 6 % |
+| 5 | SUERTE LA PRÓXIMA | nada | — | 5 % |
+| 6 | 2.500 FICHAS · JACKPOT | bono 2.500 | x10 | 0,05 % |
+| 7 | 100 FICHAS | bono 100 | x5 | 2,5 % |
+| 8 | 20 FICHAS | bono 20 | x1 | 7 % |
+| 9 | 200 FICHAS | bono 200 | x8 | 0,8 % |
+| 10 | 500 FICHAS | bono 500 | x10 | 0,15 % |
+| 11 | SUERTE LA PRÓXIMA | nada | — | 6,5 % |
 
-**Costo nominal esperado: ≈ 52 fichas por giro.** El costo *real* es bastante
+**Costo nominal esperado: ≈ 24,6 fichas por giro.** El costo *real* es bastante
 menor, porque el rollover devuelve buena parte a la Casa. **Cuánto exactamente
-no se sabe todavía** y es una de las cosas que hay que medir en `staging`
-(§12) antes de prender esto en producción.
+no se sabe todavía** y es lo primero que hay que medir en `staging` (§12) antes
+de prender esto en producción.
 
-**Gana algo el 89 % de los giros.** El 6 % saca "suerte la próxima" y el 5 %
-"girá de nuevo", que no es premio pero tampoco es perder.
+**Gana algo el 88,5 % de los giros.** El 11,5 % restante son los dos gajos
+vacíos.
 
-> ⚠️ **"GIRÁ DE NUEVO" necesita el OK del dueño.** Viene del diseño y no se
-> conversó. Es barato y da un buen momento, pero **estira la regla de "un giro
-> por día"**: el jugador termina girando dos veces. Si molesta, se saca y esa
-> probabilidad se reparte.
+**Dos gajos vacíos y no uno**, en lados opuestos de la rueda (5 y 11). Le dan al
+tope agotado (§6.3) un lugar creíble donde caer: un único gajo perdedor que
+además fuera el que sale siempre después del tope se nota mucho más.
+
+**No hay "girá de nuevo".** Venía del diseño y se descartó: devolvía la tirada,
+o sea que el jugador giraba dos veces el mismo día y la regla de un giro
+diario quedaba con una excepción. Esa probabilidad se repartió entre los
+premios chicos.
 
 ---
 
@@ -393,8 +397,9 @@ Este documento define **qué se toma y qué no**. El detalle visual fino
 - El estudio de sidebar vs. header, que el propio handoff marca como material de
   decisión y no para implementar.
 
-**Dónde vive**: sección propia en el menú del jugador. La ruta actual es
-`/play/wheel`; el diseño sugiere `/play/roulette`. Decisión menor, pendiente.
+**Dónde vive**: sección propia en el menú del jugador, en **`/play/wheel`** — la
+que ya existe. El diseño sugería `/play/roulette` y se descartó: no hay nada
+roto que arreglar, y en un casino "roulette" es además el juego de mesa.
 
 **Aviso al jugador**: por la campanita del casino, cuando se le renueva el giro.
 Nada de Telegram, WhatsApp ni notificaciones del navegador en esta versión.
