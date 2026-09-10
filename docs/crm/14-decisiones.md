@@ -751,6 +751,10 @@ después la API**. Está en D12.
 
 ### D19 · Fuera de la versión 1: campañas y mensajes masivos
 
+> 🔄 **REVERTIDA el 2026-09-09 por D21.** Las campañas entran. Los motivos de
+> abajo siguen siendo ciertos: dejaron de ser argumentos para excluirlas y
+> pasaron a ser **requisitos de cómo construirlas**. Ver D21 en el bloque 7.
+
 Escribirle a todos los jugadores que no vuelven hace un mes **no va en la v1**.
 
 **Por qué.** Necesita plantillas aprobadas por Meta una por una (ver las
@@ -867,3 +871,91 @@ horas no sale.
 **Traducción para el producto:** cualquier función de "escribirle al jugador que
 no vuelve" necesita plantillas aprobadas de antemano, y eso es un trámite con
 tiempos propios.
+
+---
+---
+
+## Bloque 7 — Lo que trajo el diseño
+
+**Decidido el 2026-09-09**, al recibir el handoff de diseño del CRM
+(`docs/design_handoff_crm/`).
+
+El diseño llegó con tres cosas que **contradecían decisiones ya tomadas**. No se
+construye nada que revierta una decisión sin que la reversión quede escrita: si
+sólo se implementara lo nuevo, dentro de seis meses el documento diría una cosa
+y el producto haría otra, y nadie sabría cuál de las dos fue a propósito.
+
+---
+
+### D21 · Las campañas entran: D19 queda revertida
+
+**D19 dejaba fuera de la v1 las campañas y los mensajes masivos.** El diseño los
+trae —armador de difusión en cuatro pasos y carga de bases CSV de hasta 50.000
+filas—, y **se decidió que entran**.
+
+**Lo que NO cambia: por qué D19 los había excluido.** Los motivos siguen siendo
+ciertos y ahora son requisitos de implementación, no argumentos en contra:
+
+- **Las plantillas las aprueba Meta una por una.** El diseño ya lo refleja
+  separando las aprobadas de las que están en revisión. Sin esa distinción a la
+  vista, el operador arma una difusión con una plantilla que Meta todavía no
+  aceptó y no se entera hasta que falla.
+- **Es donde más fácil se gana una denuncia que tumba el número** — y por
+  **D13** ese número es del socio, no nuestro. Por eso el ritmo de envío por
+  minuto y el semáforo de riesgo de bloqueo **no son adorno**: son la defensa
+  de un activo ajeno.
+- **"Pidieron no recibir" no se puede desmarcar.** El diseño lo fija así y
+  queda como regla, no como default.
+
+**Lo que hay que resolver al construirlo, y no está en el diseño:** de qué
+bandeja sale una difusión. Por **D1** un canal es de un panel concreto, así que
+una difusión **no puede ser del casino en general**: sale del canal de alguien,
+y le llega a los jugadores de esa red. Un socio no puede difundir a la red de
+otro. Eso hay que fijarlo con un test antes de que exista el botón.
+
+---
+
+### D17 sigue en pie · la IA no contesta sola
+
+El diseño trae una sección entera de **IA y bots**, con reglas que responden
+solas y burbujas firmadas *"IA · respondió sola"*. **Se ratificó D17**: no hay
+respuestas automáticas, contesta un humano o nadie.
+
+**Por qué se sostuvo.** Un casino donde un bot le contesta a alguien que
+pregunta por su plata es un riesgo distinto a uno donde siempre hay una persona.
+El propio diseño lo admite con su regla dura —la IA nunca mueve fichas ni
+promete montos—, pero eso acota el daño, no lo elimina: entre "no toco fichas" y
+"no digo nada que comprometa" hay bastante lugar para un problema.
+
+**Consecuencia sobre el diseño:** la sección *IA y bots* no se construye. Queda
+como candidata para más adelante, y si algún día entra, la forma con menos
+riesgo es la que se ofreció y no se eligió — **que la IA redacte y el operador
+decida si lo manda**. Ahí nada sale sin una persona y D17 se respeta igual.
+
+---
+
+### La caja desde el chat · diferida, no decidida
+
+El diseño mete la caja adentro de la conversación: cargar fichas, retirar, bonos
+y correcciones desde la ficha del contacto. Los documentos del CRM dicen lo
+contrario —**el CRM no toca fichas**— y sobre eso se apoyaba todo el argumento
+de que **E8/P3 no le aplican**.
+
+**No se decidió.** Se construye primero todo lo demás, que es la mayor parte del
+diseño y no toca plata, y la caja queda como un hueco marcado en la ficha.
+
+**Lo que hay que rederivar el día que se decida**, y conviene tenerlo escrito
+antes de que la urgencia lo apure:
+
+1. **E8/P3 dejan de no aplicar.** Hoy el argumento es "el CRM no mueve plata,
+   así que la ley económica no lo toca". Si mueve, hay que responder qué puede
+   hacer un operador sobre un jugador de **otra** red desde una conversación que
+   sí ve.
+2. **El techo del empleado (P2)** y su cupo mensual de corrección tienen que
+   valer igual desde el chat que desde el panel. Dos caminos a la misma
+   operación son dos lugares donde se puede olvidar el límite.
+3. **La auditoría.** El diseño ya propone registrar cada operación con su
+   `conversation_id`, que es lo correcto: es lo que permite reconstruir por qué
+   se movió esa plata.
+4. Es trabajo sobre `packages/db/wallet/*`, marcado en `CLAUDE.md` como **plata
+   real**: errores ahí son pérdidas.

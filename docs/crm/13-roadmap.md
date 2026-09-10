@@ -227,7 +227,7 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 | 4.5 | Aviso al operador por Telegram | La mejora descartada en **D16**, si el hueco molesta |
 | 4.6 | Varios agentes en la misma bandeja | Se ofreció excluirlo y no se marcó |
 | 4.7 | Búsqueda global de mensajes | Ídem. Por **D6** hay que acotarla por bandeja. |
-| 4.8 | ~~Campañas y mensajes masivos~~ | ❌ **Fuera por D19** |
+| 4.8 | Campañas y mensajes masivos | ✅ **Adentro por D21** (D19 revertida) |
 
 > **Sobre 4.6 y 4.7:** se ofrecieron como exclusiones de la v1 y no se marcaron,
 > así que formalmente siguen adentro. Con las dos, la v1 crece bastante. **Éste
