@@ -10794,3 +10794,77 @@ agregue un host —ya pasó con el CRM— toca un solo lugar.
 **Alternativa abierta**: sí, pero angosta. Si algún día el operador tiene que
 llegar al panel desde el sitio del jugador, es **B** con un link visible, no un
 redirect automático.
+
+---
+
+## 2026-09-10 — El lint de CI no estaba flojo: estaba mirando otro código
+
+**Contexto**: se arrastraban "18 errores de ESLint que CI nunca ve". La
+explicación que circulaba —y que quedó escrita en `docs/crm/HANDOFF-etapa-3.md`—
+era que las reglas con tipos quedaban **ciegas** a lo que viene de `@casino/db`
+y por eso no reportaban nada. Al medirlo resultó ser al revés, y el "al revés"
+explica mucho mejor por qué nadie lo arreglaba.
+
+**Lo que se midió**, en un árbol con y sin `packages/db/dist/`:
+
+| Estado | Problemas | Errores |
+|---|---|---|
+| sin `dist/` (= CI) | 9361 | 4046 |
+| con `dist/` (= local) | 27 | 18 |
+
+Sin `dist/`, typescript-eslint no resuelve nada de `@casino/db` y las reglas
+`no-unsafe-*` **no se callan: se disparan en todos lados**. CI no veía de menos,
+veía 4046 errores de puro ruido.
+
+**Por qué pasaba**: en `turbo.json`, `type-check` dependía de `^build` y `lint`
+no. En un checkout limpio —CI— `pnpm lint` corría antes de que existiera
+`packages/db/dist/`. En local nunca se notó porque `dist/` ya estaba de correr
+la app.
+
+**Y por qué sobrevivió tanto**: con 4046 errores, la única forma de tener CI en
+verde era `continue-on-error: true` en el paso Lint. La nota al lado decía "hay
+errores preexistentes, sacarlo cuando estén arreglados" — pero eran incontables
+y no eran arreglables, porque no eran reales. La marca provisoria se volvió
+permanente, y con ella el lint dejó de significar nada.
+
+**Decisión**: `lint` depende de `^build` en `turbo.json`, y se saca el
+`continue-on-error`. El paso Lint **sigue antes del Build** en el workflow: es
+el feedback más rápido y ya no importa el orden, porque turbo compila
+`@casino/db` por su cuenta antes de lintear.
+
+**Opción descartada**: mover el paso Lint después del Build en `ci.yml`
+arreglaba este workflow y dejaba el agujero en cualquier otro lado donde se
+corra `pnpm lint` (una máquina nueva, un hook, otro workflow). El problema está
+en el grafo de tareas, no en el orden de los pasos.
+
+**Implicaciones**: **el lint ahora frena el CI.** Un error de lint bloquea
+`staging` y `main`. Si aparece un rojo, se arregla el error — volver a poner
+`continue-on-error` es volver a no tener lint.
+
+**Lo que había adentro del ruido**: de los 18, dos eran `as any` sobre
+`WalletTxType` en `wallet-stats.service.ts`, en el camino de la plata. Ese
+archivo define `WalletTxType` como una unión escrita a mano con el comentario
+"mantener en sync con `walletTxTypeEnum`", y lo único que hace cumplir ese
+comentario es que TypeScript compare las dos. El `as any` apagaba justo esa
+comparación: un tipo nuevo en el enum de la DB sin su línea en la unión no iba a
+contar ni como entrada ni como salida, sin error y sin test en rojo. Hoy los dos
+conjuntos coinciden (25 valores), así que sacarlo no cambia ningún número.
+
+**Alternativa abierta**: derivar la unión del enum
+(`type WalletTxType = (typeof walletTxTypeEnum.enumValues)[number]`) y que el
+problema de sincronización deje de existir. **No se hizo**: es un cambio de
+diseño en un archivo del camino de la plata y va con el dueño, no de rebote en
+un arreglo de CI.
+
+**Dos cosas que aparecieron de paso y no se tocaron**:
+
+1. `pnpm --filter @casino/db build` con `dist/` borrado pero
+   `tsconfig.tsbuildinfo` presente **sale 0 y no emite nada**, y turbo cachea
+   ese vacío como build exitosa. En CI no puede pasar (checkout limpio, no hay
+   `tsbuildinfo`), pero en local envenena la caché y cuesta un rato entender por
+   qué el lint sigue viendo 4046 errores después de "buildear".
+2. `apps/api/tsconfig.json` excluye `src/test/**` y `src/scripts/**` del
+   `type-check`. `src/scripts/simulate-operation.ts` tiene 6 errores de tipos
+   escondidos ahí. El árbol de tests, en cambio, compila limpio — se verificó
+   con un tsconfig aparte que lo incluye, porque el autofix tocó helpers de test
+   y `type-check` no los mira.
