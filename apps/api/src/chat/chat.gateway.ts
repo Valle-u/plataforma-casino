@@ -32,6 +32,7 @@ import type { Server, Socket } from 'socket.io';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { ChatService } from './chat.service';
 import { CrmNetworkService } from './crm-network.service';
+import type { ChatAttachment } from './chat.types';
 import { TelegramOutboundService } from './telegram/telegram-outbound.service';
 
 interface WsTokenPayload {
@@ -332,23 +333,9 @@ export class ChatGateway
     );
     if (!conv) return { ok: false, error: 'no autorizado' };
 
-    // ── ¿Esto sale por un canal externo? (2.7) ───────────────────────────────
-    //
-    // Se pregunta ANTES de persistir, por los adjuntos: en esta versión no
-    // salen para Telegram, y guardar un mensaje con un archivo que nunca va a
-    // viajar sería mostrarle al operador un comprobante "enviado" que el
-    // jugador no va a recibir nunca. Se rechaza y se le dice por qué.
+    // ¿Esto sale por un canal externo? (2.7) Si sí, después de persistir hay
+    // que despacharlo: el jugador de Telegram no escucha en socket.io.
     const externo = await this.telegramOut.canalExterno(data.db, conv.id);
-    if (externo && attachments.length > 0) {
-      return {
-        ok: false,
-        error:
-          'Todavía no se pueden mandar archivos por Telegram. Escribí la respuesta como texto.',
-      };
-    }
-    if (externo && !body) {
-      return { ok: false, error: 'mensaje vacío' };
-    }
 
     try {
       let message = await this.chat.postMessage(data.db, {
@@ -368,6 +355,10 @@ export class ChatGateway
         const envio = await this.telegramOut.enviar(data.db, {
           conversationId: conv.id,
           texto: body,
+          // Los adjuntos ya guardados, no los del payload: `postMessage` los
+          // devuelve saneados y con la `url` rehidratada. Mandar los crudos
+          // sería confiar en lo que llegó del cliente.
+          adjuntos: (message.attachments as ChatAttachment[]) ?? [],
         });
         await this.chat.marcarEntrega(data.db, message.id, envio);
         // El resultado también viaja en el evento que se emite: el operador ve

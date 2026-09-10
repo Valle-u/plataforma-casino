@@ -34,12 +34,35 @@ import { createTestUser, type TestUser } from '../helpers/test-users';
 import { TelegramApiService } from '../../chat/telegram/telegram-api.service';
 import { TelegramOutboundService } from '../../chat/telegram/telegram-outbound.service';
 import { ChatService } from '../../chat/chat.service';
+import { StorageService } from '../../storage/storage.service';
+import type { ChatAttachment } from '../../chat/chat.types';
 import { cifrar } from '../../common/secreto-cifrado';
 
 const SUITE = `tgout-${Date.now().toString(36)}`;
 const TOKEN = '7891234567:AAF-xYzAbCdEfGhIjKlMnOpQrStUvWxYz12';
 
-const telegramFalso = { sendMessage: jest.fn() };
+const telegramFalso = { sendMessage: jest.fn(), sendDocument: jest.fn() };
+
+/**
+ * El adjunto no se stubea: se stubea **de dónde salen sus bytes**.
+ *
+ * `getUrl` devuelve una `data:` URL —que `fetch` sabe resolver— así que todo el
+ * camino real corre de verdad: la descarga, el control de tamaño y el `Buffer`
+ * que termina en el multipart. Lo único simulado es el bucket, que en la suite
+ * no tiene los archivos.
+ */
+const BYTES = Buffer.from('%PDF-1.4 un comprobante de prueba');
+
+/** Un adjunto como los que devuelve `postMessage`, ya saneado. */
+function adjunto(name: string, mime = 'application/pdf'): ChatAttachment {
+  return {
+    storageKey: `tenants/test/chat/attachments/${name}`,
+    mime,
+    sizeBytes: BYTES.byteLength,
+    name,
+    kind: mime === 'application/pdf' ? 'pdf' : 'image',
+  };
+}
 
 let ctx: TestApp;
 let adminToken = '';
@@ -143,6 +166,17 @@ describe('CRM · responder por Telegram', () => {
     jest
       .spyOn(tg, 'sendMessage')
       .mockImplementation((...a) => telegramFalso.sendMessage(...a));
+    jest
+      .spyOn(tg, 'sendDocument')
+      .mockImplementation((...a) => telegramFalso.sendDocument(...a));
+
+    // El bucket de la suite no tiene los archivos: se le da una `data:` URL y
+    // el resto del camino —fetch, tope de tamaño, Buffer— corre de verdad.
+    jest
+      .spyOn(ctx.app.get(StorageService), 'getUrl')
+      .mockResolvedValue(
+        `data:application/pdf;base64,${BYTES.toString('base64')}`,
+      );
 
     salida = ctx.app.get(TelegramOutboundService);
     chat = ctx.app.get(ChatService);
@@ -174,6 +208,7 @@ describe('CRM · responder por Telegram', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     telegramFalso.sendMessage.mockResolvedValue('4242');
+    telegramFalso.sendDocument.mockResolvedValue('4343');
     await limpiar();
   });
 
@@ -277,6 +312,109 @@ describe('CRM · responder por Telegram', () => {
 
     expect(r.entregado).toBe(false);
     expect(telegramFalso.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // ── Archivos (2.8) ────────────────────────────────────────────────────────
+
+  /**
+   * ⚠️ **Siempre `sendDocument`, nunca `sendPhoto`.**
+   *
+   * `sendPhoto` recomprime del lado de Telegram. En un comprobante eso puede
+   * dejar ilegible un CBU o un monto, y son documentos financieros. El precio
+   * es que el jugador lo ve como adjunto y no como foto inline.
+   */
+  it('una imagen sale como archivo, sin pasar por sendPhoto', async () => {
+    const conv = await crearConversacion(await crearCanal(litoral.id), '555010');
+
+    const r = await salida.enviar(ctx.tenantDb, {
+      conversationId: conv,
+      texto: '',
+      adjuntos: [adjunto('comprobante.jpg', 'image/jpeg')],
+    });
+
+    expect(r.entregado).toBe(true);
+    expect(telegramFalso.sendDocument).toHaveBeenCalledTimes(1);
+    expect(telegramFalso.sendDocument).toHaveBeenCalledWith(
+      TOKEN,
+      '555010',
+      expect.objectContaining({ nombre: 'comprobante.jpg', mime: 'image/jpeg' }),
+    );
+  });
+
+  /**
+   * El texto va en su **propio** mensaje y no como `caption` del archivo: el
+   * caption se corta en 1024 caracteres, y una respuesta cortada por la mitad
+   * es peor que dos globos.
+   */
+  it('con texto y archivo salen los dos, el texto primero', async () => {
+    const conv = await crearConversacion(await crearCanal(litoral.id), '555011');
+
+    const r = await salida.enviar(ctx.tenantDb, {
+      conversationId: conv,
+      texto: 'te mando el comprobante',
+      adjuntos: [adjunto('c.pdf', 'application/pdf')],
+    });
+
+    expect(r.entregado).toBe(true);
+    expect(telegramFalso.sendMessage).toHaveBeenCalledTimes(1);
+    expect(telegramFalso.sendDocument).toHaveBeenCalledTimes(1);
+    // El orden importa: el texto explica el archivo que viene atrás.
+    const tTexto = telegramFalso.sendMessage.mock.invocationCallOrder[0]!;
+    const tArchivo = telegramFalso.sendDocument.mock.invocationCallOrder[0]!;
+    expect(tTexto).toBeLessThan(tArchivo);
+  });
+
+  it('varios archivos salen todos, en orden', async () => {
+    const conv = await crearConversacion(await crearCanal(litoral.id), '555012');
+
+    const r = await salida.enviar(ctx.tenantDb, {
+      conversationId: conv,
+      texto: '',
+      adjuntos: [adjunto('uno.pdf'), adjunto('dos.pdf'), adjunto('tres.pdf')],
+    });
+
+    expect(r.entregado).toBe(true);
+    expect(
+      telegramFalso.sendDocument.mock.calls.map(
+        (c) => (c[2] as { nombre: string }).nombre,
+      ),
+    ).toEqual(['uno.pdf', 'dos.pdf', 'tres.pdf']);
+  });
+
+  /**
+   * ⚠️ **Un envío puede fallar por la mitad**, porque son varias llamadas a
+   * Telegram para una sola fila. Si el motivo no dijera qué alcanzó a salir, el
+   * operador lo mandaría de nuevo entero y el jugador recibiría el texto dos
+   * veces.
+   */
+  it('si falla el archivo, el motivo dice que el texto sí salió', async () => {
+    const conv = await crearConversacion(await crearCanal(litoral.id), '555013');
+    telegramFalso.sendDocument.mockRejectedValue(
+      Object.assign(new Error('x'), {
+        getResponse: () => ({ message: 'Bad Request: file is too big' }),
+      }),
+    );
+
+    const r = await salida.enviar(ctx.tenantDb, {
+      conversationId: conv,
+      texto: 'ahí va',
+      adjuntos: [adjunto('grande.pdf')],
+    });
+
+    expect(r.entregado).toBe(false);
+    expect(telegramFalso.sendMessage).toHaveBeenCalledTimes(1);
+    expect(r.error).toMatch(/una parte/i);
+    expect(r.error).toContain('file is too big');
+  });
+
+  it('un mensaje sin texto ni archivos no sale', async () => {
+    const conv = await crearConversacion(await crearCanal(litoral.id), '555014');
+
+    const r = await salida.enviar(ctx.tenantDb, { conversationId: conv, texto: '   ' });
+
+    expect(r.entregado).toBe(false);
+    expect(telegramFalso.sendMessage).not.toHaveBeenCalled();
+    expect(telegramFalso.sendDocument).not.toHaveBeenCalled();
   });
 
   // ── Lo que queda anotado en el mensaje ────────────────────────────────────

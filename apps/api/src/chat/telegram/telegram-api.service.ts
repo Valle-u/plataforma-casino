@@ -24,6 +24,9 @@ const BASE = 'https://api.telegram.org';
 /** Telegram suele responder en menos de un segundo. */
 const TIMEOUT_MS = 10_000;
 
+/** Subir un archivo tarda más. Tope del adjunto: 5 MB. */
+const TIMEOUT_ARCHIVO_MS = 45_000;
+
 /** Lo que devuelve `getMe`, recortado a lo que usamos. */
 export interface BotDeTelegram {
   id: number;
@@ -148,6 +151,50 @@ export class TelegramApiService {
     return String(r.message_id ?? '');
   }
 
+  /**
+   * Manda un archivo al chat, subiendo los bytes (**2.8**).
+   *
+   * ## Siempre `sendDocument`, nunca `sendPhoto`
+   *
+   * `sendPhoto` **recomprime la imagen del lado de Telegram**. Para una foto de
+   * vacaciones da igual; para un **comprobante** no: un CBU, un CUIT o un monto
+   * chico pueden quedar ilegibles, y esos archivos son documentos financieros.
+   *
+   * `sendDocument` entrega el archivo **exacto**. El jugador lo ve como adjunto
+   * con miniatura en vez de foto inline — se pierde un poco de estética y se
+   * gana que el número se lea.
+   *
+   * Es el mismo criterio que ya se aplicó del lado que recibe, donde se elige
+   * la foto **más grande que entre** justamente para que se pueda leer.
+   *
+   * ## Por qué se suben los bytes y no se pasa una URL
+   *
+   * Telegram acepta una URL y la baja él. Sería menos código, pero: los
+   * adjuntos son privados y firmados (**D12**), o sea que la URL vence; si
+   * Telegram la baja tarde o reintenta, ya no resuelve. Y cuando falla, lo que
+   * contesta es *"wrong file identifier/HTTP URL specified"*, que no le dice
+   * nada a nadie. Subiendo los bytes, el error que se ve es el real.
+   */
+  async sendDocument(
+    token: string,
+    chatId: string,
+    archivo: { bytes: Buffer; nombre: string; mime: string },
+  ): Promise<string> {
+    const form = new FormData();
+    form.append('chat_id', chatId);
+    form.append(
+      'document',
+      new Blob([new Uint8Array(archivo.bytes)], { type: archivo.mime }),
+      archivo.nombre,
+    );
+    const r = await this.llamarMultipart<{ message_id?: number }>(
+      token,
+      'sendDocument',
+      form,
+    );
+    return String(r.message_id ?? '');
+  }
+
   /** Corta el webhook. Se usa al desvincular. */
   async deleteWebhook(token: string): Promise<void> {
     await this.llamar(token, 'deleteWebhook', { drop_pending_updates: true });
@@ -164,13 +211,56 @@ export class TelegramApiService {
     metodo: string,
     body?: Record<string, unknown>,
   ): Promise<T> {
+    return this.enviarPeticion<T>(token, metodo, {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      timeoutMs: TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Igual que `llamar`, pero subiendo un archivo.
+   *
+   * Sin `Content-Type` propio: lo arma `FormData` con su boundary. Y con
+   * **timeout más largo** — acá se están subiendo hasta 5 MB, no mandando una
+   * línea de JSON.
+   */
+  private async llamarMultipart<T>(
+    token: string,
+    metodo: string,
+    form: FormData,
+  ): Promise<T> {
+    return this.enviarPeticion<T>(token, metodo, {
+      body: form,
+      timeoutMs: TIMEOUT_ARCHIVO_MS,
+    });
+  }
+
+  /**
+   * El POST a Telegram, con el token tapado en todo lo que salga de acá.
+   *
+   * Las dos formas —JSON y multipart— pasan por acá **a propósito**: es el
+   * único lugar donde se construye la URL con el token, y el único que traduce
+   * un fallo de Telegram a un error que se entienda. Con dos copias, la
+   * segunda se olvida de `taparToken` y la credencial termina en un log.
+   */
+  private async enviarPeticion<T>(
+    token: string,
+    metodo: string,
+    opts: {
+      headers?: Record<string, string>;
+      /** JSON serializado, o el `FormData` de una subida. */
+      body: string | FormData;
+      timeoutMs: number;
+    },
+  ): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${BASE}/bot${token}/${metodo}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body ?? {}),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        ...(opts.headers ? { headers: opts.headers } : {}),
+        body: opts.body,
+        signal: AbortSignal.timeout(opts.timeoutMs),
       });
     } catch (err) {
       // Red caída, DNS, timeout. No es culpa del operador y no dice nada de su

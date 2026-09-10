@@ -1,5 +1,6 @@
 /**
- * La respuesta del operador, saliendo por Telegram (**2.7**).
+ * La respuesta del operador, saliendo por Telegram (**2.7** texto, **2.8**
+ * archivos).
  *
  * Cierra el hueco de la etapa 2: hasta acá el operador **recibía y no podía
  * contestar**. Su respuesta se guardaba y se emitía por socket.io, que es donde
@@ -32,11 +33,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { crmChannels, crmContacts, crmConversations } from '@casino/db';
 import type { TenantDb } from '../../tenant-resolver/tenant-context';
+import { StorageService } from '../../storage/storage.service';
+import { CHAT_ATTACHMENT_MAX_BYTES, type ChatAttachment } from '../chat.types';
 import { TelegramApiService } from './telegram-api.service';
 import { tokenDelCanal } from './telegram-token';
 
 /** El tipo de canal que atiende este servicio. */
 const TIPO = 'telegram';
+
+/** Traer un adjunto de nuestro propio storage es un salto corto. */
+const TIMEOUT_BAJADA_MS = 20_000;
 
 /** Lo que se le anota al mensaje después de intentar mandarlo. */
 export interface ResultadoDeEnvio {
@@ -52,13 +58,16 @@ export interface ResultadoDeEnvio {
 export class TelegramOutboundService {
   private readonly logger = new Logger(TelegramOutboundService.name);
 
-  constructor(private readonly api: TelegramApiService) {}
+  constructor(
+    private readonly api: TelegramApiService,
+    private readonly storage: StorageService,
+  ) {}
 
   /**
    * ¿Esta conversación sale por un canal externo?
    *
-   * Lo usa el gateway **antes** de persistir, para dos cosas: saber si después
-   * hay que despachar, y rechazar los adjuntos (que en esta versión no salen).
+   * Lo usa el gateway para saber si, después de persistir el mensaje, además
+   * hay que despacharlo para afuera.
    */
   async canalExterno(
     db: TenantDb,
@@ -83,11 +92,16 @@ export class TelegramOutboundService {
    */
   async enviar(
     db: TenantDb,
-    params: { conversationId: string; texto: string },
+    params: {
+      conversationId: string;
+      texto: string;
+      adjuntos?: ChatAttachment[];
+    },
   ): Promise<ResultadoDeEnvio> {
     const texto = params.texto.trim();
-    if (!texto) {
-      return { entregado: false, error: 'El mensaje no tenía texto.' };
+    const adjuntos = params.adjuntos ?? [];
+    if (!texto && adjuntos.length === 0) {
+      return { entregado: false, error: 'El mensaje estaba vacío.' };
     }
 
     const filas = await db
@@ -143,8 +157,45 @@ export class TelegramOutboundService {
       };
     }
 
+    // ── El orden: primero el texto, después los archivos (2.8) ──────────────
+    //
+    // Un mensaje del operador es UNA fila con cuerpo y adjuntos, pero Telegram
+    // no tiene eso: son llamadas distintas. Se podría meter el texto como
+    // `caption` del primer archivo y quedaría un solo globo, más prolijo — pero
+    // el caption se corta en 1024 caracteres, y **una respuesta cortada por la
+    // mitad es peor que dos globos**. Además serían dos comportamientos según
+    // el largo, y el que casi nunca corre es el que se rompe sin que nadie mire.
+    let primerId = '';
+    let mandados = 0;
+
     try {
-      const messageId = await this.api.sendMessage(token, chatId, texto);
+      if (texto) {
+        primerId = await this.api.sendMessage(token, chatId, texto);
+        mandados += 1;
+      }
+
+      for (const adjunto of adjuntos) {
+        const bytes = await this.bajarDelStorage(adjunto.storageKey);
+        if (!bytes) {
+          // El archivo está en la base pero no se pudo traer del storage.
+          return {
+            entregado: false,
+            error: parcial(
+              mandados,
+              `no se pudo leer el archivo "${adjunto.name}".`,
+            ),
+          };
+        }
+        const id = await this.api.sendDocument(token, chatId, {
+          bytes,
+          nombre: adjunto.name,
+          mime: adjunto.mime,
+        });
+        if (!primerId) primerId = id;
+        mandados += 1;
+      }
+
+      const messageId = primerId;
       return {
         entregado: true,
         // ⚠️ Prefijo propio, distinto del de los mensajes que entran.
@@ -166,9 +217,61 @@ export class TelegramOutboundService {
       this.logger.warn(
         `No salió la respuesta por el canal ${fila.canalId}: ${motivo}`,
       );
-      return { entregado: false, error: motivo };
+      return { entregado: false, error: parcial(mandados, motivo) };
     }
   }
+
+  /**
+   * Los bytes de un adjunto nuestro. `null` si no se pudieron traer.
+   *
+   * Va por la URL que da el storage —firmada y de vida corta si el bucket es
+   * privado (**D12**)— en vez de leer el archivo directo, porque **el driver no
+   * expone leer**: sólo subir, dar URL y borrar. Agregarle un método a los tres
+   * drivers para esto sería más superficie de la que el caso justifica.
+   *
+   * El salto es corto y del lado de adentro: la API le pide a su propio
+   * storage. No es la URL la que viaja a Telegram — eso está descartado a
+   * propósito (ver `sendDocument`).
+   */
+  private async bajarDelStorage(storageKey: string): Promise<Buffer | null> {
+    try {
+      const url = await this.storage.getUrl(storageKey, 120);
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(TIMEOUT_BAJADA_MS),
+      });
+      if (!res.ok) {
+        this.logger.warn(`El storage devolvió ${res.status} para ${storageKey}`);
+        return null;
+      }
+      const bytes = Buffer.from(await res.arrayBuffer());
+      // El tope ya se aplicó al subir, pero el archivo pudo haberse subido con
+      // otro límite, o por otra vía. Telegram rechazaría igual; mejor un
+      // mensaje nuestro que uno suyo.
+      if (bytes.byteLength > CHAT_ATTACHMENT_MAX_BYTES) {
+        this.logger.warn(`${storageKey} pesa más que el tope de adjuntos.`);
+        return null;
+      }
+      return bytes;
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo traer ${storageKey} del storage: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+}
+
+/**
+ * El motivo, diciendo **qué alcanzó a salir**.
+ *
+ * Un mensaje del operador puede ser texto y varios archivos, o sea varias
+ * llamadas a Telegram, y una puede fallar con las anteriores ya entregadas. Sin
+ * esto el operador lee "no llegó", lo manda de nuevo entero, y el jugador
+ * recibe el texto dos veces.
+ */
+function parcial(mandados: number, motivo: string): string {
+  if (mandados === 0) return motivo;
+  return `Se entregó una parte (${mandados}) y el resto no: ${motivo}`;
 }
 
 /** El mensaje legible de un error de Nest, o algo que se entienda. */

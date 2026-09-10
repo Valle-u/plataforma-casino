@@ -119,7 +119,7 @@ rompiendo el filtro a propósito para confirmar que fallan.
 | 2.5 | ~~La pantalla explica que el jugador tiene que escribirle al bot primero~~ | ✅ |
 | 2.6 | ~~La clave de idempotencia tiene que incluir el chat~~ | ✅ 🔴 era un bug |
 | 2.7 | ~~Responder desde el panel por Telegram~~ | ✅ migración `0114` |
-| 2.8 | Mandar **archivos** por Telegram | ⬜ pendiente |
+| 2.8 | ~~Mandar **archivos** por Telegram~~ | ✅ |
 
 **Etapa 2 terminada el 2026-09-09.** Un operador vincula su bot desde
 `/support/canales`, reparte el link, los mensajes —con fotos— le entran a su
@@ -154,19 +154,36 @@ salió, y por eso existe `delivery_error` (migración `0114`): sin esa anotació
 una respuesta que nunca llegó se vería igual que una entregada y **el operador
 le estaría escribiendo a nadie sin saberlo**.
 
-Dos decisiones tomadas acá:
-
-- **Sólo texto.** Si el operador adjunta un archivo, el panel se lo rechaza
-  explicando por qué. Peor que no poder mandarlo sería que se vea enviado y no
-  llegue nunca — y son comprobantes.
-- **Un rechazo no borra el mensaje.** Queda en el hilo con la marca de "no
-  llegó" y el motivo que dio Telegram, que es lo accionable: *bot was blocked by
-  the user* se resuelve pidiéndole a la persona que lo desbloquee,
-  *Unauthorized* revinculando el bot.
+**Un rechazo no borra el mensaje.** Queda en el hilo con la marca de "no llegó"
+y el motivo que dio Telegram, que es lo accionable: *bot was blocked by the
+user* se resuelve pidiéndole a la persona que lo desbloquee, *Unauthorized*
+revinculando el bot.
 
 De paso se tapó un agujero viejo de la bandeja: **el error de un envío se
 descartaba en silencio**. El spinner paraba y no pasaba nada; el operador volvía
 a apretar sin entender.
+
+### 2.8 — Los archivos
+
+**Siempre `sendDocument`, nunca `sendPhoto`.** `sendPhoto` recomprime del lado
+de Telegram: para una foto cualquiera da igual, para un **comprobante** puede
+dejar ilegible un CBU o un monto. El jugador lo ve como adjunto con miniatura
+en vez de foto inline — se pierde estética y se gana que el número se lea. Es el
+mismo criterio que ya regía del lado que recibe, donde se elige la foto más
+grande que entre.
+
+**Se suben los bytes, no se le pasa una URL.** Telegram acepta una URL y la baja
+él, que sería menos código — pero los adjuntos son privados y firmados (**D12**),
+o sea que la URL vence, y si Telegram la baja tarde ya no resuelve. Además,
+cuando falla contesta *"wrong file identifier/HTTP URL specified"*, que no le
+dice nada a nadie.
+
+**El texto va en su propio mensaje, no como `caption`.** El caption se corta en
+1024 caracteres, y una respuesta cortada por la mitad es peor que dos globos.
+
+**Y un envío puede fallar por la mitad**, porque una fila del CRM son varias
+llamadas a Telegram. Si el motivo no dijera qué alcanzó a salir, el operador lo
+mandaría de nuevo entero y el jugador recibiría el texto dos veces.
 
 > ⚠️ **Falta probarlo con un bot real.** Todo está verificado con tests, pero
 > Telegram va simulado en la suite: pegarle de verdad ataría los tests a una red
