@@ -31,9 +31,12 @@
  * jugador y en el del operador, para siempre, en un canal que ninguno de los
  * dos controla.
  *
- * **No ofrece vincular con el jugador que ya existe.** Vincular mal mete la
- * conversación en la ficha de otra persona, así que necesita las mismas tres
- * defensas que el vínculo automático de **D4**. Queda para su propia tanda.
+ * **No ofrece vincular con el jugador que ya existe** — pero ese botón **ya
+ * existe**, en la sección *Vínculo* de la ficha (`vincular-jugador.tsx`).
+ * Sigue estando afuera de acá a propósito: vincular mal mete la conversación en
+ * la ficha de otra persona y le abre la billetera, así que es una decisión
+ * aparte y no un atajo dentro del formulario de alta. Si los homónimos de abajo
+ * son la misma persona, lo correcto es **cerrar esto y vincular**.
  */
 
 'use client';

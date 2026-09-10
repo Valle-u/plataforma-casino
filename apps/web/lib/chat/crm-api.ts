@@ -190,12 +190,79 @@ export const homonimosDelContacto = (contactId: string) =>
     `/tenant/chat/contacts/${contactId}/homonimos`,
   );
 
-export interface JugadorHomonimo {
+/**
+ * Un jugador, como lo devuelven las dos búsquedas del CRM.
+ *
+ * **Sin saldo, a propósito.** Ni el freno del alta ni el buscador del vínculo lo
+ * necesitan: los dos preguntan "¿es esta persona?", y para eso alcanza el
+ * usuario, el nombre y el estado.
+ */
+export interface JugadorDeLaRed {
   id: string;
   username: string;
   displayName: string | null;
   status: string;
 }
+
+/** El mismo jugador, visto desde el freno del alta. */
+export type JugadorHomonimo = JugadorDeLaRed;
+
+// ── El vínculo con el jugador (D4) ──────────────────────────────────────────
+//
+// **La tercera defensa de D4**, que exige que el vínculo se pueda deshacer y
+// quede registrado quién lo deshizo. Y su otra mitad: poder hacerlo a mano
+// cuando el automático no pudo.
+//
+// Hace falta más seguido de lo que parece. En **Telegram no llega el teléfono**
+// (`03-canales.md`), así que ahí el vínculo automático no funciona nunca y un
+// contacto nace como lead siempre. Y en WhatsApp, cuando el número matchea con
+// más de un jugador, la segunda defensa decide **no vincular a ninguno** — que
+// es justo el caso en que alguien tiene que mirar y elegir.
+
+/**
+ * Jugadores a los que se puede vincular un contacto.
+ *
+ * Busca por usuario, nombre o teléfono, y el teléfono entra **normalizado**:
+ * escribir `0341 15 555-1234` encuentra al que está cargado como
+ * `+5493415551234`.
+ *
+ * Acotado por red (**R6**): sólo aparecen jugadores que el que pregunta ya
+ * podría ver. Sin eso sería un buscador del padrón entero del casino disponible
+ * desde cualquier conversación.
+ *
+ * Con menos de 2 caracteres el backend devuelve vacío.
+ */
+export const jugadoresParaVincular = (texto: string) =>
+  apiGet<JugadorDeLaRed[]>(
+    `/tenant/chat/jugadores?q=${encodeURIComponent(texto)}`,
+  );
+
+/**
+ * Vincular el contacto a un jugador que ya existe.
+ *
+ * ⚠️ **Vincular es abrir la plata de ese jugador en esta ficha**: pasa a
+ * mostrarse el saldo, los últimos depósitos y los últimos retiros. El destino
+ * lo valida el backend contra R6 — un **404** para los de otra red, y no un
+ * 403, porque un 403 confirmaría que ese jugador existe.
+ */
+export const vincularContacto = (contactId: string, userId: string) =>
+  apiPost<{ id: string; userId: string | null }>(
+    `/tenant/chat/contacts/${contactId}/link`,
+    { userId },
+  );
+
+/**
+ * Deshacer el vínculo.
+ *
+ * El contacto vuelve a ser un lead y pierde el acceso a la plata. **No se
+ * pierde nada de la ficha** —conversaciones, notas y etiquetas son del contacto,
+ * no del vínculo— y queda constancia en `crm_timeline_events` de quién lo
+ * deshizo.
+ */
+export const desvincularContacto = (contactId: string) =>
+  apiDelete<{ id: string; userId: string | null }>(
+    `/tenant/chat/contacts/${contactId}/link`,
+  );
 
 // ── Plantillas (respuestas rápidas por tenant) ──────────────────────────────
 

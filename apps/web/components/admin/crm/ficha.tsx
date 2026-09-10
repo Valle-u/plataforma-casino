@@ -41,16 +41,19 @@ import {
   Check,
   CircleCheck,
   Copy,
+  Link2,
   Loader2,
   Lock,
   ShieldAlert,
   Timer,
+  Unlink,
   UserPlus,
 } from 'lucide-react';
 import type { ContactContext, InboxItem } from '@/lib/chat/types';
 import {
   avisarAlOperador,
   cambiarEstadoDeConversacion,
+  desvincularContacto,
   getContactContext,
 } from '@/lib/chat/crm-api';
 import { nombreDelContacto } from '@/lib/chat/use-bandeja';
@@ -58,6 +61,7 @@ import { currencyLabel } from '@/lib/format-currency';
 import { cn } from '@/lib/cn';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { AltaDeJugador } from './alta-de-jugador';
+import { VincularJugador } from './vincular-jugador';
 
 export function Ficha({
   item,
@@ -118,6 +122,17 @@ export function Ficha({
               // peor que no ofrecerlo.
               hasPermission(user, 'users.create') ? () => setAltaAbierta(true) : null
             }
+          />
+          <Vinculo
+            // Sin esto, el "¿seguro?" de deshacer sobrevive al cambio de
+            // contacto: el operador abriría otra ficha con la confirmación ya
+            // armada y un clic de más borraría un vínculo que no miró.
+            key={contactId}
+            contactId={contactId}
+            ctx={ctx}
+            nombreSugerido={nombre}
+            telefono={ctx?.contact.phone ?? item.contact.phone}
+            onCambio={recargar}
           />
           <CajaDiferida />
           <MedicionPendiente />
@@ -381,6 +396,156 @@ function Dinero({
           </span>
         )}
       </div>
+    </Seccion>
+  );
+}
+
+/**
+ * Quién es esta persona — **la tercera defensa de D4**, del lado del operador.
+ *
+ * D4 vincula solo por teléfono, y acepta a sabiendas dos costos: que un número
+ * compartido o mal cargado **una a dos personas en una sola ficha**, y que
+ * cuando el canal no da el teléfono no vincule a nadie. Los dos se arreglan
+ * acá: un botón para vincular a mano y otro para deshacer.
+ *
+ * ## Por qué esto no es un detalle de comodidad
+ *
+ * En **Telegram el teléfono no llega nunca**, así que el vínculo automático no
+ * funciona y **todo contacto nace como lead**. Sin este botón, el único camino
+ * para identificar a alguien que ya es jugador sería crearle una segunda cuenta
+ * — que es exactamente lo que el freno del alta existe para impedir.
+ *
+ * ## Deshacer pide confirmación, vincular no
+ *
+ * No son simétricos. Vincular mal se ve enseguida —aparece el nombre y el saldo
+ * de otro— y se deshace acá mismo. Deshacer, en cambio, borra un vínculo que
+ * quizá puso el sistema hace meses, y para rehacerlo hay que saber a quién
+ * apuntaba. Por eso el destructivo es el que pregunta.
+ */
+function Vinculo({
+  contactId,
+  ctx,
+  nombreSugerido,
+  telefono,
+  onCambio,
+}: {
+  contactId: string;
+  ctx: ContactContext | null;
+  nombreSugerido: string;
+  telefono: string | null;
+  /** Para que la ficha refleje el cambio sin cambiar de conversación. */
+  onCambio: () => void;
+}): React.ReactElement | null {
+  const [abierto, setAbierto] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const [trabajando, setTrabajando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sin contexto no se sabe si está vinculado, y ofrecer las dos cosas sería
+  // adivinar. El motivo ya se muestra en el bloque de Dinero.
+  if (!ctx) return null;
+
+  const deshacer = async (): Promise<void> => {
+    setTrabajando(true);
+    setError(null);
+    try {
+      await desvincularContacto(contactId);
+      setConfirmando(false);
+      onCambio();
+    } catch (err) {
+      setError(mensaje(err));
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
+  if (ctx.contact.userId) {
+    return (
+      <Seccion titulo="Vínculo">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-fg-muted)]">
+            <Link2 size={12} className="shrink-0 text-[var(--color-fg-subtle)]" />
+            <span>
+              Vinculado a{' '}
+              <b className="font-mono text-[var(--color-fg)]">
+                {ctx.identity?.username ?? 'un jugador'}
+              </b>
+            </span>
+          </div>
+
+          {confirmando ? (
+            <div className="flex flex-col gap-1.5 rounded-[12px] border-l-2 border-[var(--color-warning)] bg-[var(--color-warning-bg)] px-2.5 py-2">
+              <span className="text-[11.5px] leading-snug text-[var(--color-fg-muted)]">
+                El contacto vuelve a ser un lead y se deja de ver su plata.
+                Las conversaciones, las notas y las etiquetas <b>quedan</b>.
+              </span>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void deshacer()}
+                  disabled={trabajando}
+                  className="flex h-[32px] flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[var(--color-danger,#f2555a)] text-[12px] font-semibold text-white transition-opacity disabled:opacity-50"
+                >
+                  {trabajando ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
+                  Sí, deshacer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmando(false)}
+                  disabled={trabajando}
+                  className="h-[32px] rounded-[9px] border border-[var(--color-border)] px-3 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)] disabled:opacity-50"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmando(true)}
+              className="flex h-[32px] items-center justify-center gap-1.5 rounded-[9px] border border-[var(--color-border)] text-[12px] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]"
+            >
+              <Unlink size={12} />
+              No es esta persona
+            </button>
+          )}
+
+          {error && (
+            <p role="alert" className="text-[11.5px] text-[var(--color-warning)]">
+              {error}
+            </p>
+          )}
+        </div>
+      </Seccion>
+    );
+  }
+
+  return (
+    <Seccion titulo="Vínculo">
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[11.5px] leading-snug text-[var(--color-fg-muted)]">
+          No sabemos quién es. Si ya tiene cuenta, vinculalo y vas a ver su
+          saldo y sus movimientos acá.
+        </p>
+        <button
+          type="button"
+          onClick={() => setAbierto(true)}
+          className="flex h-[34px] items-center justify-center gap-1.5 rounded-[10px] border border-[var(--color-border)] text-[12.5px] text-[var(--color-fg)] transition-colors hover:border-[var(--color-border-strong)]"
+        >
+          <Link2 size={13} />
+          Vincular a un jugador
+        </button>
+      </div>
+
+      {abierto && (
+        <VincularJugador
+          contactId={contactId}
+          telefono={telefono}
+          nombreSugerido={nombreSugerido}
+          onCerrar={() => setAbierto(false)}
+          onVinculado={onCambio}
+        />
+      )}
     </Seccion>
   );
 }

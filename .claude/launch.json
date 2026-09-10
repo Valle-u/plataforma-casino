@@ -50,6 +50,21 @@
       "autoPort": false
     },
     {
+      "name": "web-crm",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@casino/web",
+        "exec",
+        "next",
+        "dev",
+        "-p",
+        "3003"
+      ],
+      "port": 3003,
+      "autoPort": false
+    },
+    {
       "name": "api-crm",
       "runtimeExecutable": "cmd",
       "runtimeArgs": [
