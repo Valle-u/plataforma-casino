@@ -14,7 +14,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import {
   crmContactTags,
   crmContacts,
@@ -95,6 +95,41 @@ export interface ContactoDeBandeja {
   conversationId: string;
   channelType: string;
   tags: Array<{ id: string; label: string; color: string | null }>;
+}
+
+/**
+ * Las etapas del circuito. **Se derivan**, no se guardan en ninguna columna —
+ * el porqué está en `cteDeEtapas`.
+ *
+ * El diseño pedía una sexta, "alta pedida", que no está: nada en el sistema
+ * registra que alguien pidió el alta y todavía no la tiene.
+ */
+export type EtapaDelCircuito =
+  | 'lead'
+  | 'cuenta'
+  | 'deposito'
+  | 'jugando'
+  | 'reactivacion';
+
+/** Cuántos hay en cada etapa. Siempre las cinco claves, aunque estén en cero. */
+export type ConteoDeEtapas = Record<EtapaDelCircuito, number>;
+
+/**
+ * Un contacto listado dentro de una etapa.
+ *
+ * Más flaco que `ContactoDeBandeja` a propósito: sin etiquetas y sin sin-leer.
+ * Circuitos es "a quién le tengo que escribir", y ninguna de las dos cosas
+ * cambia esa respuesta — traerlas serían dos consultas más por pantalla.
+ */
+export interface ContactoEnEtapa {
+  id: string;
+  displayName: string | null;
+  userId: string | null;
+  phone: string | null;
+  username: string | null;
+  userDisplayName: string | null;
+  lastMessageAt: string | null;
+  conversationId: string;
 }
 
 interface MovementRow {
@@ -331,6 +366,149 @@ export class ChatCrmService {
     `)) as unknown as Array<{ total: number }>;
 
     const items = await this.etiquetasDeContactos(db, filas);
+    return { items, total: totalRows[0]?.total ?? 0 };
+  }
+
+  /**
+   * ── Circuitos ──────────────────────────────────────────────────────────
+   *
+   * En qué etapa está cada contacto de la bandeja.
+   *
+   * ## La etapa se CALCULA, no se guarda
+   *
+   * Sale de hechos que ya existen —si tiene cuenta, si depositó, si jugó y
+   * cuándo—, no de una columna que alguien tiene que acordarse de mover.
+   *
+   * Por eso **no se puede desincronizar**: si un jugador deposita por la caja
+   * del panel, o juega un domingo a la madrugada, su etapa cambia sola. Con una
+   * columna avanzada por eventos habría que tocar los flujos de depósito y alta
+   * para que emitan, hacer backfill de todo lo viejo, y después convivir con la
+   * posibilidad de que la etapa mienta sin que nadie lo note.
+   *
+   * **Lo que se paga:** no hay historia. Se ve dónde está cada uno hoy, no
+   * cuándo pasó de una etapa a otra ni cuánto tardó. El embudo que sale de acá
+   * es una foto, no un flujo — y la pantalla lo dice así.
+   *
+   * ## Las etapas se excluyen entre sí, y el orden importa
+   *
+   * El `CASE` se evalúa de arriba abajo. **Jugando gana sobre primer depósito**
+   * a propósito: alguien que está jugando está jugando, aunque haya depositado
+   * ayer. Al revés, la etapa más interesante quedaría tapada por la anterior.
+   *
+   * `reactivacion` es el que jugó alguna vez y hace más de **14 días** que no
+   * (decidido el 2026-09-10): dos semanas es corto como para llegar a tiempo y
+   * largo como para no marcar a alguien que se tomó un fin de semana.
+   *
+   * ## Lo que estas señales NO son
+   *
+   * Una fila en `game_sessions` es **abrir un juego**, no apostar. Alguien que
+   * entró, miró y cerró cuenta como jugando. Es la señal más cercana que hay:
+   * contar rondas dejaría afuera al que está jugando ahora mismo y todavía no
+   * apostó.
+   *
+   * Y **no existe "alta pedida"**: nada en el sistema registra que alguien pidió
+   * el alta y todavía no la tiene. Se omite en vez de inventarla.
+   */
+  private cteDeEtapas(operatorId: string): SQL {
+    return sql`
+      hechos AS (
+        SELECT c.id,
+               c.display_name AS "displayName",
+               c.user_id      AS "userId",
+               c.phone,
+               u.username,
+               u.display_name AS "userDisplayName",
+               max(conv.last_message_at) AS "lastMessageAt",
+               (array_agg(conv.id ORDER BY conv.last_message_at DESC NULLS LAST))[1]
+                 AS "conversationId",
+               EXISTS (
+                 SELECT 1 FROM deposits d
+                  WHERE d.user_id = c.user_id AND d.status = 'approved'
+               ) AS deposito,
+               (
+                 SELECT max(gs.started_at) FROM game_sessions gs
+                  WHERE gs.user_id = c.user_id
+               ) AS ultimo_juego
+          FROM crm_contacts c
+          JOIN crm_conversations conv ON conv.contact_id = c.id
+          LEFT JOIN users u ON u.id = c.user_id
+         WHERE conv.assigned_operator_id = ${operatorId}
+         GROUP BY c.id, u.username, u.display_name
+      ),
+      etapas AS (
+        SELECT h.*,
+               CASE
+                 WHEN h."userId" IS NULL THEN 'lead'
+                 WHEN h.ultimo_juego >= now() - interval '14 days' THEN 'jugando'
+                 WHEN h.ultimo_juego IS NOT NULL THEN 'reactivacion'
+                 WHEN h.deposito THEN 'deposito'
+                 ELSE 'cuenta'
+               END AS etapa
+          FROM hechos h
+      )
+    `;
+  }
+
+  /**
+   * Cuánta gente hay en cada etapa. El resumen de arriba de Circuitos.
+   *
+   * Devuelve **siempre las cinco claves**, incluso en cero: si una etapa vacía
+   * desapareciera del objeto, el embudo tendría menos escalones de los que tiene
+   * y parecería que esa etapa no existe.
+   */
+  async etapasDeLaBandeja(
+    db: TenantDb,
+    operatorId: string,
+  ): Promise<ConteoDeEtapas> {
+    const filas = (await db.execute(sql`
+      WITH ${this.cteDeEtapas(operatorId)}
+      SELECT etapa, count(*)::int AS total FROM etapas GROUP BY etapa
+    `)) as unknown as Array<{ etapa: EtapaDelCircuito; total: number }>;
+
+    const conteo: ConteoDeEtapas = {
+      lead: 0,
+      cuenta: 0,
+      deposito: 0,
+      jugando: 0,
+      reactivacion: 0,
+    };
+    for (const f of filas) {
+      if (f.etapa in conteo) conteo[f.etapa] = f.total;
+    }
+    return conteo;
+  }
+
+  /**
+   * Quiénes están en una etapa, para poder abrirlos.
+   *
+   * Sin esto Circuitos sería un cartel con números: el operador vería que tiene
+   * once para reactivar y no tendría cómo llegar a ninguno. Cada fila trae la
+   * conversación más reciente, que es la que abre la bandeja.
+   */
+  async contactosDeLaEtapa(
+    db: TenantDb,
+    operatorId: string,
+    etapa: EtapaDelCircuito,
+    opciones: { limit?: number; offset?: number } = {},
+  ): Promise<{ items: ContactoEnEtapa[]; total: number }> {
+    const limit = Math.min(opciones.limit ?? 50, 100);
+    const offset = Math.max(opciones.offset ?? 0, 0);
+
+    const items = (await db.execute(sql`
+      WITH ${this.cteDeEtapas(operatorId)}
+      SELECT id, "displayName", "userId", phone, username, "userDisplayName",
+             "lastMessageAt", "conversationId"
+        FROM etapas
+       WHERE etapa = ${etapa}
+       ORDER BY "lastMessageAt" DESC NULLS LAST
+       LIMIT ${limit} OFFSET ${offset}
+    `)) as unknown as ContactoEnEtapa[];
+
+    const totalRows = (await db.execute(sql`
+      WITH ${this.cteDeEtapas(operatorId)}
+      SELECT count(*)::int AS total FROM etapas WHERE etapa = ${etapa}
+    `)) as unknown as Array<{ total: number }>;
+
     return { items, total: totalRows[0]?.total ?? 0 };
   }
 

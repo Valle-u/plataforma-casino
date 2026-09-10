@@ -31,7 +31,10 @@ import {
   type RequestWithTenantUser,
 } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
-import { ChatCrmService } from './chat-crm.service';
+import {
+  ChatCrmService,
+  type EtapaDelCircuito,
+} from './chat-crm.service';
 import { ChatService } from './chat.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
@@ -39,6 +42,15 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { CrmAccessGuard, type RequestWithCrmInbox } from './crm-access.guard';
 
 type Operator = { id: string; username: string };
+
+/** Las cinco etapas que el backend sabe calcular. Ver `cteDeEtapas`. */
+const ETAPAS_VALIDAS = [
+  'lead',
+  'cuenta',
+  'deposito',
+  'jugando',
+  'reactivacion',
+] as const satisfies readonly EtapaDelCircuito[];
 
 @Controller('tenant/chat')
 @UseGuards(TenantJwtGuard, CrmAccessGuard)
@@ -171,6 +183,47 @@ export class ChatCrmController {
       this.db(req),
       this.owner(req),
       { search, limit, offset: (pagina - 1) * limit },
+    );
+    return { items, total, page: pagina, pageSize: limit };
+  }
+
+  // ── Circuitos ─────────────────────────────────────────────────────────────
+
+  /**
+   * Cuánta gente hay en cada etapa (sección **Circuitos**).
+   *
+   * Mismo alcance que Contactos: sólo la bandeja de quien pregunta. Un conteo
+   * global sería un número agregado de redes ajenas, que es exactamente lo que
+   * **R6** no permite ni siquiera al admin.
+   */
+  @Get('circuitos')
+  async circuitos(@Req() req: RequestWithTenantUser) {
+    return this.crm.etapasDeLaBandeja(this.db(req), this.owner(req));
+  }
+
+  /**
+   * Quiénes están en una etapa. Sin esto, Circuitos sería un cartel con números.
+   *
+   * La etapa llega del cliente y se valida contra la lista cerrada **antes** de
+   * tocar la consulta: es el único parámetro de acá que entra a un `WHERE` sin
+   * ser un UUID.
+   */
+  @Get('circuitos/:etapa')
+  async contactosDeEtapa(
+    @Req() req: RequestWithTenantUser,
+    @Param('etapa') etapa: string,
+    @Query('page') page?: string,
+  ) {
+    if (!(ETAPAS_VALIDAS as readonly string[]).includes(etapa)) {
+      throw new BadRequestException('Etapa desconocida.');
+    }
+    const limit = 50;
+    const pagina = Math.max(1, Math.min(Number(page) || 1, 10_000));
+    const { items, total } = await this.crm.contactosDeLaEtapa(
+      this.db(req),
+      this.owner(req),
+      etapa as EtapaDelCircuito,
+      { limit, offset: (pagina - 1) * limit },
     );
     return { items, total, page: pagina, pageSize: limit };
   }

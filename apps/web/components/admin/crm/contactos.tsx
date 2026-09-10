@@ -18,9 +18,12 @@
  *
  * ## Lo que el diseño pide y no está
  *
- * La columna **Etapa** (el circuito del lead). `crm_timeline_events` está
- * creada y vacía: no hay etapas que mostrar. La columna no se dibuja vacía —
- * una columna con guiones en todas las filas es peor que una columna menos.
+ * La columna **Etapa**. Ya existe —se calcula al mirar, ver `cteDeEtapas`— pero
+ * vive en **Circuitos**, no acá: esta consulta agrupa por contacto y sumarle la
+ * etapa significa meterle dos subconsultas por fila a una tabla que además se
+ * busca con `LIKE`. Circuitos contesta la misma pregunta al derecho: en vez de
+ * buscar a alguien para ver en qué etapa está, se entra por la etapa y salen
+ * todos los que están ahí.
  */
 
 'use client';

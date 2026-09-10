@@ -8,6 +8,7 @@
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client';
 import type { ContactContext, CrmNote, CrmTag, CrmTemplate } from './types';
+import type { EtapaDelCircuito } from '@/lib/crm/etapas';
 
 export const getContactContext = (contactId: string) =>
   apiGet<ContactContext>(`/tenant/chat/contacts/${contactId}/context`);
@@ -254,3 +255,47 @@ export const vincularBotDeTelegram = (token: string) =>
 
 export const desvincularCanalDeTelegram = (channelId: string) =>
   apiDelete<void>(`/tenant/chat/channels/telegram/${channelId}`);
+
+// ── Circuitos ────────────────────────────────────────────────────────────────
+//
+// La etapa **se calcula al mirar**: sale de si el contacto tiene cuenta, si
+// depositó y cuándo jugó por última vez. No hay ninguna columna `etapa` que
+// alguien tenga que mantener, y por eso no se puede desincronizar.
+//
+// Las etapas son **excluyentes**: los cinco números suman el total de contactos
+// de la bandeja. Es una distribución —dónde está cada uno hoy—, no un embudo
+// acumulado ni una historia de por dónde pasó.
+
+/** Cuántos hay en cada etapa. Siempre las cinco claves, aunque estén en cero. */
+export const contarEtapas = () =>
+  apiGet<Record<EtapaDelCircuito, number>>(`/tenant/chat/circuitos`);
+
+/**
+ * Quiénes están en una etapa, para poder abrirlos.
+ *
+ * Trae menos que `listarContactos` a propósito: sin etiquetas y sin sin-leer.
+ * Acá la pregunta es "a quién le escribo", y ninguna de las dos la cambia.
+ */
+export const contactosDeLaEtapa = (etapa: EtapaDelCircuito, page = 1) =>
+  apiGet<PaginaDeEtapa>(
+    `/tenant/chat/circuitos/${etapa}${page > 1 ? `?page=${page}` : ''}`,
+  );
+
+export interface ContactoEnEtapa {
+  id: string;
+  displayName: string | null;
+  userId: string | null;
+  phone: string | null;
+  username: string | null;
+  userDisplayName: string | null;
+  lastMessageAt: string | null;
+  /** La conversación más reciente: la que abre el botón "Abrir". */
+  conversationId: string;
+}
+
+export interface PaginaDeEtapa {
+  items: ContactoEnEtapa[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

@@ -59,7 +59,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
     items: [
       { href: '/support', label: 'Bandeja', icono: 'messages-square', lista: true },
       { href: '/support/contactos', label: 'Contactos', icono: 'contact', lista: true },
-      { href: '/support/circuitos', label: 'Circuitos', icono: 'git-branch', lista: false },
+      { href: '/support/circuitos', label: 'Circuitos', icono: 'git-branch', lista: true },
     ],
   },
   {

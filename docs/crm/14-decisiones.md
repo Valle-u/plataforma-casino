@@ -959,3 +959,58 @@ antes de que la urgencia lo apure:
    se movió esa plata.
 4. Es trabajo sobre `packages/db/wallet/*`, marcado en `CLAUDE.md` como **plata
    real**: errores ahí son pérdidas.
+
+---
+
+### D22 · La etapa del circuito se calcula al mirar, no se guarda
+
+**Decidido el 2026-09-10**, al construir la sección **Circuitos**.
+
+El diseño la dibujaba como un kanban: seis columnas y tarjetas que el operador
+arrastra. Había dos formas de sostener eso, y se eligió la segunda:
+
+1. **Una columna `etapa`** en `crm_contacts`, avanzada por eventos desde los
+   flujos de alta y de depósito.
+2. **Derivarla en la consulta**, de hechos que ya existen.
+
+**Se derivan.** Las tres señales ya están en la base: `crm_contacts.user_id`
+dice si tiene cuenta, un `deposits` en `approved` dice si depositó, y
+`game_sessions.started_at` dice cuándo jugó por última vez.
+
+**Por qué.** Una columna hay que mantenerla: tocar los flujos de depósito y de
+alta para que emitan, hacer backfill de todo lo viejo, y a partir de ahí convivir
+con que la etapa mienta sin que nadie lo note. Un depósito cargado por la caja
+del panel un domingo a la madrugada no pasa por el CRM: con columna, ese jugador
+se queda en "cuenta creada" para siempre. **Derivada no se puede
+desincronizar**, porque no hay dos copias del hecho.
+
+**Lo que se paga, y es real: no hay historia.** Se ve dónde está cada uno hoy,
+no cuándo pasó de una etapa a otra ni cuánto tardó. Eso deja afuera "tiempo
+hasta el primer depósito" y cualquier medición de conversión — que es
+justamente lo que **Métricas de atención** va a necesitar. El día que haga falta
+medir tramos, la respuesta no es agregar la columna: es registrar las
+transiciones (`crm_timeline_events` ya existe para eso) **sin dejar de derivar
+la etapa actual**.
+
+**Consecuencia sobre el diseño: no hay tarjetas para arrastrar.** Mover una a
+mano sería mentirle a la próxima consulta, que la devuelve a donde estaba. La
+pantalla lo dice de frente en vez de ofrecer un gesto que no puede cumplir.
+
+**Los dos números que se fijaron acá:**
+
+- **14 días sin abrir un juego** separan "Jugando" de "Reactivación". Corto como
+  para llegar a tiempo, largo como para no marcar a quien se tomó un fin de
+  semana.
+- **Jugando le gana a Depositó.** El `CASE` se evalúa en orden y las etapas son
+  excluyentes: el que está jugando está jugando, aunque haya depositado ayer.
+
+**"Alta pedida" no se construyó.** El diseño la pedía entre Lead y Cuenta
+creada. **Nada en el sistema registra que alguien pidió el alta y todavía no la
+tiene** — no hay señal, ni cerca. Se omitió y se dice en la pantalla, como se
+hizo con la columna Etapa de Contactos, los seis grupos de Configuración y la
+pestaña de plantillas de WhatsApp. Va a entrar el día que el pedido deje una
+marca.
+
+**Una fila en `game_sessions` es abrir un juego, no apostar.** Alguien que entró,
+miró y cerró cuenta como jugando. Es la señal más cercana que hay: contar rondas
+dejaría afuera al que está jugando ahora mismo y todavía no apostó.
