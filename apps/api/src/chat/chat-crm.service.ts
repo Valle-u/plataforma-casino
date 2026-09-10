@@ -947,6 +947,22 @@ export class ChatCrmService {
     return inserted[0]!;
   }
 
+  /** Edita el título, el cuerpo o el atajo de una plantilla. */
+  async editarTemplate(
+    db: TenantDb,
+    templateId: string,
+    cambios: { title?: string; body?: string; shortcut?: string | null },
+  ): Promise<CrmTemplate> {
+    const actualizado = await db
+      .update(crmTemplates)
+      .set(cambios)
+      .where(eq(crmTemplates.id, templateId))
+      .returning();
+    const t = actualizado[0];
+    if (!t) throw new NotFoundException('Plantilla no encontrada.');
+    return t;
+  }
+
   async deleteTemplate(db: TenantDb, templateId: string): Promise<void> {
     await db.delete(crmTemplates).where(eq(crmTemplates.id, templateId));
   }

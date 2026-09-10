@@ -521,7 +521,50 @@ export class ChatCrmController {
     return this.crm.createTemplate(this.db(req), title, text, shortcut);
   }
 
+  /**
+   * Editar una plantilla.
+   *
+   * Pide `tenant.settings.edit` por lo mismo que las etiquetas: el catálogo es
+   * de **todo el tenant**, así que lo que edita uno lo ven todos.
+   */
+  @Patch('templates/:templateId')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('tenant.settings.edit')
+  async editTemplate(
+    @Req() req: RequestWithTenantUser,
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Body() body: { title?: unknown; body?: unknown; shortcut?: unknown },
+  ) {
+    const cambios: { title?: string; body?: string; shortcut?: string | null } = {};
+    if (typeof body?.title === 'string') {
+      const title = body.title.trim();
+      if (!title) throw new BadRequestException('La plantilla necesita un título.');
+      cambios.title = title;
+    }
+    if (typeof body?.body === 'string') {
+      const texto = body.body.trim();
+      if (!texto) throw new BadRequestException('La plantilla necesita un cuerpo.');
+      cambios.body = texto;
+    }
+    if (typeof body?.shortcut === 'string' || body?.shortcut === null) {
+      cambios.shortcut = body.shortcut?.trim() || null;
+    }
+    if (Object.keys(cambios).length === 0) {
+      throw new BadRequestException('No hay nada que cambiar.');
+    }
+    return this.crm.editarTemplate(this.db(req), templateId, cambios);
+  }
+
+  /**
+   * Borrar una plantilla.
+   *
+   * ⚠️ **Antes esto no pedía ningún permiso**: cualquier operador con acceso al
+   * CRM podía borrar una plantilla que usaba todo el casino. Es el mismo hueco
+   * que tenían las etiquetas, y se cierra igual — con `tenant.settings.edit`.
+   */
   @Delete('templates/:templateId')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('tenant.settings.edit')
   async deleteTemplate(
     @Req() req: RequestWithTenantUser,
     @Param('templateId', ParseUUIDPipe) templateId: string,

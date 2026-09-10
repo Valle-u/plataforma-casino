@@ -72,7 +72,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
   {
     titulo: 'Automatización',
     items: [
-      { href: '/support/respuestas', label: 'Respuestas rápidas', icono: 'zap', lista: false },
+      { href: '/support/respuestas', label: 'Respuestas rápidas', icono: 'zap', lista: true },
     ],
   },
   {

@@ -207,6 +207,23 @@ export const createTemplate = (
   shortcut?: string | null,
 ) => apiPost<CrmTemplate>(`/tenant/chat/templates`, { title, body, shortcut });
 
+/**
+ * Editar una plantilla. Pide `tenant.settings.edit`.
+ *
+ * El catálogo es de **todo el tenant**: lo que edita uno lo ven todos.
+ */
+export const editarPlantilla = (
+  id: string,
+  cambios: { title?: string; body?: string; shortcut?: string | null },
+) => apiPatch<CrmTemplate>(`/tenant/chat/templates/${id}`, cambios);
+
+/**
+ * Borrar una plantilla.
+ *
+ * ⚠️ Ahora pide `tenant.settings.edit`. **Antes no pedía nada**: cualquier
+ * operador con acceso al CRM podía borrar una plantilla que usaba todo el
+ * casino.
+ */
 export const deleteTemplate = (id: string) =>
   apiDelete<{ ok: boolean }>(`/tenant/chat/templates/${id}`);
 

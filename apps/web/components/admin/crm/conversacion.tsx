@@ -12,9 +12,11 @@
  * normal — o sea, **se lo manda al jugador**. Un adorno con esa consecuencia no
  * se pone.
  *
- * Lo mismo con los atajos `/deposito /alias /retiro /horarios`: hay plantillas
- * en el backend, pero el disparo por barra es otra pieza. Va con los atajos de
- * teclado, en la tanda que viene.
+ * **Las respuestas rápidas sí están**, con el botón del rayo. Lo que no está es
+ * la fila de atajos tipeables (`/deposito`, `/alias`) del diseño: disparar la
+ * plantilla escribiendo la barra adentro del mensaje pelea con el atajo `/`
+ * global —que lleva el foco al compositor— y hay que resolver esa convivencia
+ * antes, no después.
  *
  * ## El scroll
  *
@@ -25,7 +27,15 @@
 
 'use client';
 
-import { ArrowLeft, Paperclip, PanelRightClose, PanelRightOpen, SendHorizontal, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  Paperclip,
+  PanelRightClose,
+  PanelRightOpen,
+  SendHorizontal,
+  TriangleAlert,
+  Zap,
+} from 'lucide-react';
 import type { ChatMessage } from '@/lib/chat/types';
 import type { useBandeja } from '@/lib/chat/use-bandeja';
 import { nombreDelContacto } from '@/lib/chat/use-bandeja';
@@ -34,6 +44,9 @@ import { cn } from '@/lib/cn';
 import { MessageAttachments } from '@/components/chat/message-attachments';
 import { AttachmentChips } from '@/components/chat/attachment-chips';
 import { CHAT_ATTACHMENT_ACCEPT } from '@/lib/chat/upload';
+import { listTemplates } from '@/lib/chat/crm-api';
+import { useEffect, useState } from 'react';
+import type { CrmTemplate } from '@/lib/chat/types';
 
 export function Conversacion({
   bandeja,
@@ -64,6 +77,8 @@ export function Conversacion({
     removePending,
     reply,
   } = bandeja;
+
+  const [plantillasAbiertas, setPlantillasAbiertas] = useState(false);
 
   if (!selected) return <div className="h-full" />;
 
@@ -157,6 +172,19 @@ export function Conversacion({
           </div>
         )}
 
+        {plantillasAbiertas && (
+          <Plantillas
+            onElegir={(cuerpo) => {
+              // Se agrega al borrador en vez de pisarlo: casi siempre la
+              // plantilla es parte de la respuesta, no toda la respuesta.
+              onDraftChange(draft.trim() ? `${draft.trimEnd()}\n${cuerpo}` : cuerpo);
+              setPlantillasAbiertas(false);
+              setTimeout(() => textareaRef.current?.focus(), 0);
+            }}
+            onCerrar={() => setPlantillasAbiertas(false)}
+          />
+        )}
+
         <AttachmentChips
           attachments={pending}
           uploading={uploading}
@@ -180,6 +208,21 @@ export function Conversacion({
             className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]"
           >
             <Paperclip size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPlantillasAbiertas((v) => !v)}
+            aria-label="Respuestas rápidas"
+            title="Respuestas rápidas"
+            className={cn(
+              'flex size-[38px] shrink-0 items-center justify-center rounded-[11px] transition-colors hover:bg-[var(--color-bg-subtle)]',
+              plantillasAbiertas
+                ? 'text-[var(--color-accent-text)]'
+                : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
+            )}
+          >
+            <Zap size={16} />
           </button>
 
           <textarea
@@ -293,4 +336,78 @@ function fecha(iso: string): string {
   ayer.setDate(hoy.getDate() - 1);
   if (d.toDateString() === ayer.toDateString()) return 'Ayer';
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+/**
+ * El panel de respuestas rápidas del compositor.
+ *
+ * Se piden al abrirlo y no al montar la conversación: la mayoría de las
+ * respuestas se escriben a mano, así que traer el catálogo en cada conversación
+ * sería una consulta que casi nunca se usa.
+ */
+function Plantillas({
+  onElegir,
+  onCerrar,
+}: {
+  onElegir: (cuerpo: string) => void;
+  onCerrar: () => void;
+}): React.ReactElement {
+  const [items, setItems] = useState<CrmTemplate[]>([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    let vivo = true;
+    listTemplates()
+      .then((t) => vivo && setItems(t))
+      .catch(() => vivo && setItems([]))
+      .finally(() => vivo && setCargando(false));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  return (
+    <div className="mb-2 max-h-[220px] overflow-y-auto rounded-[12px] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-1.5">
+      {cargando ? (
+        <p className="px-2 py-2 text-[12px] text-[var(--color-fg-subtle)]">
+          Cargando…
+        </p>
+      ) : items.length === 0 ? (
+        <p className="px-2 py-2 text-[12px] leading-snug text-[var(--color-fg-muted)]">
+          Todavía no hay respuestas rápidas. Se crean en{' '}
+          <b>Respuestas rápidas</b>, en el menú.
+        </p>
+      ) : (
+        items.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onElegir(t.body)}
+            className="flex w-full flex-col gap-0.5 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-subtle)]"
+          >
+            <span className="flex items-center gap-1.5">
+              {t.shortcut && (
+                <span className="font-mono text-[11px] text-[var(--color-accent-text)]">
+                  {t.shortcut}
+                </span>
+              )}
+              <span className="text-[12.5px] font-semibold text-[var(--color-fg)]">
+                {t.title}
+              </span>
+            </span>
+            <span className="line-clamp-2 text-[11.5px] leading-snug text-[var(--color-fg-muted)]">
+              {t.body}
+            </span>
+          </button>
+        ))
+      )}
+      <button
+        type="button"
+        onClick={onCerrar}
+        className="mt-1 w-full rounded-[9px] px-2 py-1 text-[11.5px] text-[var(--color-fg-subtle)] hover:bg-[var(--color-bg-subtle)]"
+      >
+        Cerrar
+      </button>
+    </div>
+  );
 }
