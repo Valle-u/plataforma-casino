@@ -251,6 +251,12 @@ promotion_audit
 
 ## B6. Ruleta diaria (`daily_wheel`)
 
+> ⚠️ **Superado por `docs/27-ruleta-diaria.md`** (acordado con el dueño el
+> 2026-09-10). Ese documento manda: define 1 giro por día sin acumular, premio
+> **como bono con rollover** y no como plata retirable, tope diario, y la ruleta
+> **sólo para la red central** (por **E8**). Las tiradas gratis quedan fuera de
+> alcance. Lo de abajo es el diseño original y queda como contexto.
+
 - Configurable: segmentos del wheel (premio + probabilidad).
 - 1 spin/día/usuario por default; configurable (extra spin como recompensa de misión, etc.).
 - Premios típicos: fichas, free spins, "intentá otra vez", bono pequeño.
