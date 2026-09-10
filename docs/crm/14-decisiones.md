@@ -445,6 +445,45 @@ central, el staff central va a poder abrir la ficha de un jugador de otra red �
 con el código actual va a ver su saldo y sus movimientos. Eso es **R6**.
 
 Arreglarlo es requisito para el primer canal externo, no algo para después.
+
+### 🟡 "Misma red" no es lo mismo que "mi sub-red"
+
+**Detectado el 2026-09-10**, al construir la UI del vínculo (3.3). **El dueño
+decidió commitear la UI igual y tratar esto por separado**, porque el camino
+elegible que agrega el botón no es el origen del hueco.
+
+`redDelJugador` (`chat-crm.service.ts`) responde **una sola** pregunta: ¿el
+jugador y el que pregunta cuelgan de la misma rama independiente? Si los dos son
+de la red central/dependiente, devuelve `same: true` **sin mirar de quién cuelga
+cada uno**. Es exactamente lo que **R6** pide, y para R6 está bien.
+
+**Lo que no cubre es P1** —permiso *y scope*—, y adentro de una misma red el
+scope no se mira:
+
+```
+Un lead le escribe al canal del cajero Pérez.
+Pérez lo vincula al jugador `juan`, que cuelga del cajero Gómez.
+La ficha le muestra a Pérez el saldo de Juan y sus últimos 5 depósitos y retiros.
+```
+
+Por **R2** un operador ve su sub-red, y Juan no es de la sub-red de Pérez.
+
+**Lo que lo acota:** el contacto tiene que estar en la bandeja del que pregunta,
+o sea que alguien tuvo que escribirle de verdad. No es un buscador libre del
+padrón.
+
+**Lo que NO lo acota, y es el punto:** el botón manual no lo introdujo. El
+vínculo automático de **D4** ya hace lo mismo cuando el teléfono matchea, y
+`getContext` ya muestra la plata de cualquier contacto vinculado de la misma
+rama. El botón lo vuelve **elegible en vez de accidental** — un salto real, pero
+no el origen.
+
+**Por eso no se arregló de una:** `redDelJugador` también alimenta el cartel de
+red de **D3** y el filtro de R6. Acotarlo de raíz cambia cómo se comporta el
+staff central con jugadores de otras redes, y acotarlo sólo en el vínculo manual
+tapa la mitad y deja el camino automático abierto. **La pregunta de fondo es si
+"misma red" alcanza como scope para mostrar plata en el CRM**, y eso es una
+decisión numerada, no un parche.
 ---
 
 ## Bloque 4 — Los canales externos de verdad: archivos, altas, bajas y retención
@@ -1014,3 +1053,112 @@ marca.
 **Una fila en `game_sessions` es abrir un juego, no apostar.** Alguien que entró,
 miró y cerró cuenta como jugando. Es la señal más cercana que hay: contar rondas
 dejaría afuera al que está jugando ahora mismo y todavía no apostó.
+
+---
+---
+
+## Bloque 8 — Cómo entra WhatsApp
+
+**Decidido el 2026-09-10**, al abrir la etapa 3 y antes de escribir una línea del
+webhook.
+
+---
+
+### D23 · Una App de Meta nuestra, un WABA por socio
+
+**Meta configura UNA sola URL de callback por App.** Todos los mensajes de todos
+los socios caen en el mismo endpoint, y hay que resolver a qué casino pertenece
+cada uno **por el contenido del payload** (`phone_number_id`), no por la URL.
+
+Eso choca de frente con cómo está hecho Telegram, donde el discriminador viaja
+en la ruta (`/webhook/:tenantSlug/:channelId`) y cada bot registra la suya. No es
+un detalle de implementación: es la diferencia entre saber de quién es un mensaje
+antes de leerlo y tener que leerlo para saberlo.
+
+**Lo decidido:** el casino crea **una App de Meta**, y **cada socio conecta su
+propio WABA** (su cuenta de negocio verificada) a esa App.
+
+**Por qué esto NO revierte D13.** Lo que D13 protege es que **una denuncia
+contra el número de un socio no caiga sobre la cuenta de todos**, y eso vive en
+el **WABA / Business Manager** — que sigue siendo de cada socio, con su propia
+verificación, sus propios papeles y su propio costo. La App es el conector
+técnico, no la identidad comercial. El socio sigue siendo el dueño de su número
+y **se lo lleva si se va** (D14).
+
+**Se descartó:**
+
+- *Que cada socio cree su propia App de Meta y configure su webhook.* Cero punto
+  único de falla y ninguna tabla nueva en la DB de control. Se descartó porque
+  le pide a un cajero que sea desarrollador: crear una App, sacar el App Secret,
+  configurar una URL de callback y suscribir campos de webhook. Por **D13** el
+  alta de un canal ya es un flujo del socio, y sumarle esto lo vuelve
+  inalcanzable para el operador chico — que es justo a quien **D13** deja sin
+  WhatsApp si el trámite se complica.
+
+---
+
+#### ⚠️ Lo que se está aceptando a cambio, dicho de frente
+
+**Nuestra App pasa a ser un punto único de falla para todos los canales de
+WhatsApp.** Si Meta la restringe, la suspende o la marca por política, **se
+quedan sin WhatsApp todos los socios a la vez**, incluido el número central.
+
+Esto **no estaba contemplado en D13** y por eso es una decisión propia y no una
+nota al pie: D13 razonó sobre el riesgo de *la cuenta de negocio* y lo repartió
+entre los socios; el riesgo de *la App* es nuevo, es nuestro, y es indivisible.
+
+**La mitigación no es técnica, es de conducta:** la App queda atada al
+comportamiento agregado de todos los números. O sea que las defensas de **D21**
+—el ritmo de envío por minuto, el semáforo de riesgo de bloqueo, que "pidieron no
+recibir" no se pueda desmarcar— dejan de proteger sólo el número del socio que
+difunde y pasan a proteger **el canal de todos**. Eso sube su prioridad: ya no
+son el cuidado de un activo ajeno, son el cuidado del propio.
+
+**Si algún día molesta**, la salida está abierta y no obliga a rehacer nada: se
+agrega una segunda ruta con el tenant en la URL —la forma de Telegram— para el
+socio que traiga su App propia. La resolución por `phone_number_id` es el caso
+general; la ruta por URL sería un caso particular más fácil, no un rediseño.
+
+---
+
+#### Las dos consecuencias que caen sobre el código
+
+**1. Hace falta una tabla de mapeo en `platform_control`.**
+
+Para abrir la base de un tenant hay que saber **cuál es**, y con un webhook
+único ese dato sólo está en el payload. O sea que el mapeo
+`phone_number_id → tenant` **no puede vivir en la base del tenant**: sería
+necesitar la respuesta para poder hacer la pregunta.
+
+Va en la DB de control, que es la **única excepción que P4 permite** a "nunca una
+conexión global a la DB de un tenant". No es una excepción nueva: es exactamente
+para lo que la DB de control existe (el registro de tenants). Pero es una tabla
+en un área marcada como sensible, y se escribe sabiendo eso.
+
+⚠️ **El mapeo es la superficie de aislamiento entre casinos.** Un
+`phone_number_id` apuntado al tenant equivocado manda la conversación de un
+jugador a la bandeja de otro casino. No es un bug de ruteo: es **P4** roto, del
+lado peor.
+
+**2. El secreto de la firma es uno solo, y es nuestro.**
+
+Meta firma cada webhook con `X-Hub-Signature-256`, HMAC-SHA256 con el **App
+Secret** — que es de la App, o sea uno solo para todos los socios. Es otra
+diferencia con Telegram, donde el secreto de webhook es **por canal** y vive en
+`crm_channels.webhook_secret` (por eso esa columna existe y no está cifrada: se
+compara en cada request).
+
+Como es nuestro y es uno, va **en el entorno**, no en la base. **D20 no le
+aplica**: D20 cifra los secretos de canal porque *son de los socios* y salen del
+VPS en el backup todas las mañanas. El App Secret no es de nadie más que
+nuestro, y un secreto de entorno no viaja en el dump.
+
+Lo que **sí** sigue bajo D20 es el **token de acceso de cada WABA**, que es del
+socio y se guarda cifrado en `crm_channels.config` igual que el token del bot de
+Telegram.
+
+---
+
+**Leyes que aplican:** P4 (multi-tenant: la tabla de mapeo es la excepción de la
+DB de control, y errarle cruza casinos). **No** toca E8 ni P3: el CRM no mueve
+fichas.

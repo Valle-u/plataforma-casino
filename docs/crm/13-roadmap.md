@@ -198,19 +198,47 @@ lo normal, no la excepción. La pantalla tiene que estar diseñada para eso.
 
 ## Etapa 3 — WhatsApp
 
-| | Qué |
-|---|---|
-| 3.1 | Acompañar al socio en el alta ante Meta: explicar el trámite y mostrar en qué paso está |
-| 3.2 | Webhook (igual que 2.2, con la firma de Meta) |
-| 3.3 | Vínculo automático por teléfono, con las **tres defensas** de D4 |
-| 3.4 | **El aviso de la ventana de 24 h, antes de escribir** |
-| 3.5 | Decidir qué se hace con audios y videos |
+| | Qué | |
+|---|---|---|
+| 3.1 | Acompañar al socio en el alta ante Meta: explicar el trámite y mostrar en qué paso está | ⬜ **Diferido a propósito** |
+| 3.2 | Webhook (igual que 2.2, con la firma de Meta) | 🟡 Arquitectura decidida (**D23**), sin escribir |
+| 3.3 | Vínculo por teléfono, con las **tres defensas** de D4 | ✅ **Hecho** (`a8256a3` + la UI) |
+| 3.4 | **El aviso de la ventana de 24 h, antes de escribir** | ⬜ Sin empezar |
+| 3.5 | Qué se hace con audios y videos | ✅ Decidido, sin implementar |
 
 **El 3.1 es la mitad del trabajo y no es código.** Por **D13** el socio hace su
-propia verificación, y un socio trabado en el trámite es un socio sin canal.
+propia verificación, y un socio trabado en el trámite es un socio sin canal. Se
+difiere hasta tener un socio real haciéndolo: el trámite de Meta cambia seguido
+y escribirlo de memoria produce una guía que no coincide con lo que el socio ve
+en pantalla.
 
 **El 3.4 es chico y fácil de olvidar.** Sin eso, el operador escribe tres
 párrafos y recibe un error.
+
+### 3.3 — El backend estaba y no lo llamaba nadie
+
+El vínculo por teléfono se cerró en dos tandas. La primera (`a8256a3`) dejó las
+tres defensas de D4 del lado del servidor: `telefono.ts` con las dos formas
+canónicas —una para mostrar, otra para comparar—, la migración `0116`, el freno
+del alta arreglado (comparaba el string crudo, así que **no frenaba nada**), y
+`vincular`/`desvincular` con constancia en `crm_timeline_events`.
+
+**Y no lo llamaba nadie.** Es el mismo patrón que ya había pasado con cerrar,
+avisar y dar de alta: el roadmap los daba por hechos porque la API estaba. La
+segunda tanda son los botones en la ficha (`vincular-jugador.tsx` + la sección
+*Vínculo*), verificados contra la API de verdad — vincular, ver aparecer el
+saldo, deshacer, y los dos eventos en la línea de tiempo con su actor.
+
+**Vincular a mano no es un accesorio del automático: en Telegram es el único
+camino.** Ahí el teléfono no llega nunca, así que **todo contacto nace como
+lead** y D4 no se ejecuta. En WhatsApp la segunda defensa —si matchea con más de
+uno, no vincular ninguno— produce exactamente el caso en que alguien tiene que
+mirar y elegir; por eso el buscador arranca cargado con el teléfono del contacto.
+
+**3.5 (audio) sigue pendiente**: hay que sumar el MIME a
+`CHAT_ATTACHMENT_MIMES` en `chat.types.ts`, que hoy sólo acepta imágenes y PDF.
+No alcanza con agregar el string: el validador de adjuntos **redibuja** las
+imágenes y revisa los PDF, y el audio necesita que se defina por dónde pasa.
 
 ---
 

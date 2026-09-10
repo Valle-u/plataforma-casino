@@ -23,11 +23,15 @@ Dos agentes editando el mismo árbol se pisan.
 
 ## Dónde quedó parada la etapa 3
 
+> **Actualizado el 2026-09-10 (segunda sesión).** Se tomó la decisión de
+> arquitectura del webhook (**D23**) y se cerró el 3.3 con su UI. Lo que sigue
+> abajo describe el estado de hoy.
+
 | | Qué | Estado |
 |---|---|---|
 | 3.1 | Acompañar al socio en el trámite de Meta | ⬜ **Diferido a propósito** (ver abajo) |
-| 3.2 | Webhook con la firma de Meta | ⬜ Sin empezar |
-| 3.3 | Vínculo por teléfono con las tres defensas de **D4** | 🟡 **Backend hecho, falta la UI** |
+| 3.2 | Webhook con la firma de Meta | 🟡 **Arquitectura decidida (D23)**, sin escribir |
+| 3.3 | Vínculo por teléfono con las tres defensas de **D4** | ✅ **Hecho**, backend y UI |
 | 3.4 | El aviso de la ventana de 24 h | ⬜ Sin empezar |
 | 3.5 | Qué se hace con audios y videos | ✅ **Decidido**, sin implementar |
 
@@ -46,8 +50,13 @@ Dos agentes editando el mismo árbol se pisan.
   Queda constancia en `crm_timeline_events`.
 - **18 tests e2e** en `crm-vinculo-telefono.e2e.ts` con las tres defensas y R6.
 
-**Falta**: los botones en la ficha (`components/admin/crm/ficha.tsx`) para
-vincular y deshacer. El backend está y no lo llama nadie.
+**Ya no falta la UI.** Los botones están: la sección *Vínculo* en
+`components/admin/crm/ficha.tsx` y el buscador en
+`components/admin/crm/vincular-jugador.tsx`. Verificado contra la API de verdad
+—vincular, ver aparecer el saldo, deshacer— y con los dos eventos (`link` y
+`unlink`, cada uno con su `actorId`) en `crm_timeline_events`. El buscador
+arranca cargado con el teléfono del contacto, que es lo que sirve cuando la
+segunda defensa dejó dos candidatos.
 
 ---
 
@@ -70,7 +79,19 @@ vincular y deshacer. El backend está y no lo llama nadie.
 
 ---
 
-## ⚠️ La decisión de arquitectura que hay que tomar antes del 3.2
+## ✅ La decisión de arquitectura del 3.2 — tomada, es **D23**
+
+**El dueño eligió A el 2026-09-10.** Una App de Meta nuestra + N WABAs (uno por
+socio). Quedó escrita en `14-decisiones.md` como **D23**, con el punto único de
+falla dicho de frente y las dos consecuencias que caen sobre el código: la tabla
+de mapeo `phone_number_id → tenant` en `platform_control`, y que el secreto de
+la firma es **uno solo y nuestro** (va al entorno, no a la base — D20 no le
+aplica, pero sí al token de cada WABA).
+
+Lo que sigue abajo es el razonamiento con el que se llegó ahí; se deja porque
+explica por qué B no era realista.
+
+---
 
 **Meta configura UNA sola URL de callback por App.** Eso choca de frente con
 cómo está hecho el webhook de Telegram, donde el discriminador viaja en la URL
