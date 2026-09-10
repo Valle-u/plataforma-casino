@@ -168,6 +168,35 @@ export function Bandeja(): React.ReactElement {
     };
   }, []);
 
+  // ── Llegar con una conversación ya elegida (`?conv=`) ────────────────────
+  //
+  // Es como Contactos manda a alguien a su conversación. Se hace una sola vez y
+  // **se saca el parámetro del URL** enseguida: si quedara puesto, recargar la
+  // página o volver con el botón de atrás re-abriría esa conversación aunque el
+  // operador ya se hubiera movido a otra.
+  //
+  // ⚠️ Espera al **socket**, no a que la lista tenga algo.
+  //
+  // La primera versión esperaba `conversations.length > 0`, y con eso una
+  // conversación **resuelta** no se abría nunca: no está en la lista de
+  // abiertas, así que el efecto se quedaba esperando para siempre — y en
+  // silencio, que es lo peor. Justamente desde Contactos se entra a
+  // conversaciones viejas.
+  //
+  // No hace falta que esté en la lista: `conversation:open` la autoriza por
+  // bandeja, no por lo que el cliente tenga cargado.
+  const yaAbrioLaDelUrl = useRef(false);
+  useEffect(() => {
+    if (yaAbrioLaDelUrl.current || bandeja.status !== 'connected') return;
+    const url = new URL(window.location.href);
+    const conv = url.searchParams.get('conv');
+    if (!conv) return;
+    yaAbrioLaDelUrl.current = true;
+    bandeja.selectConversation(conv);
+    url.searchParams.delete('conv');
+    window.history.replaceState({}, '', url.toString());
+  }, [bandeja]);
+
   // ── Atajos de teclado ────────────────────────────────────────────────────
   //
   // ⚠️ **Lo primero es no robarle las teclas a quien está escribiendo.** `e`

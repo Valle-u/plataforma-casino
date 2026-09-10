@@ -34,6 +34,46 @@ export const unassignContactTag = (contactId: string, tagId: string) =>
     `/tenant/chat/contacts/${contactId}/tags/${tagId}`,
   );
 
+/**
+ * Los contactos de la bandeja, paginados (sección **Contactos**).
+ *
+ * Trae exactamente los mismos que se pueden abrir: los que tienen alguna
+ * conversación asignada a esta bandeja. Una lista más ancha sería una pantalla
+ * que enumera gente a la que después el backend no te deja entrar.
+ */
+export const listarContactos = (params: { search?: string; page?: number }) => {
+  const qs = new URLSearchParams();
+  if (params.search?.trim()) qs.set('search', params.search.trim());
+  if (params.page && params.page > 1) qs.set('page', String(params.page));
+  const cola = qs.toString();
+  return apiGet<PaginaDeContactos>(
+    `/tenant/chat/contacts${cola ? `?${cola}` : ''}`,
+  );
+};
+
+export interface ContactoDeBandeja {
+  id: string;
+  displayName: string | null;
+  userId: string | null;
+  isLead: boolean;
+  phone: string | null;
+  username: string | null;
+  userDisplayName: string | null;
+  lastMessageAt: string | null;
+  sinLeer: number;
+  /** La conversación más reciente: la que abre el botón "Abrir". */
+  conversationId: string;
+  channelType: string;
+  tags: Array<{ id: string; label: string; color: string | null }>;
+}
+
+export interface PaginaDeContactos {
+  items: ContactoDeBandeja[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // ── Acciones sobre la conversación ─────────────────────────────────────────
 //
 // ⚠️ Estos tres endpoints existen desde la **etapa 1** (1.4, 1.5 y 1.6),

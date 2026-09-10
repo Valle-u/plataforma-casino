@@ -427,6 +427,58 @@ export class ChatService {
   }
 
   /**
+   * Una sola fila de la bandeja, por id de conversación.
+   *
+   * Existe para poder abrir una conversación que **no está en la lista
+   * cargada** — por ejemplo una resuelta, entrando desde Contactos. Sin esto la
+   * pantalla la marcaba como elegida y dibujaba la columna vacía, sin error.
+   *
+   * Filtra por bandeja igual que `listOperatorInbox`: no es una puerta de atrás
+   * para leer la conversación de otro.
+   */
+  async getInboxItem(
+    db: TenantDb,
+    conversationId: string,
+    operatorId: string,
+  ): Promise<OperatorInboxItem | null> {
+    const filas = await db
+      .select({
+        conversation: crmConversations,
+        channelType: crmChannels.type,
+        lastMessageBody: sql<string | null>`(
+          SELECT m.body
+            FROM crm_messages m
+           WHERE m.conversation_id = ${crmConversations.id}
+           ORDER BY m.created_at DESC
+           LIMIT 1
+        )`,
+        contact: {
+          id: crmContacts.id,
+          displayName: crmContacts.displayName,
+          userId: crmContacts.userId,
+          isLead: crmContacts.isLead,
+          phone: crmContacts.phone,
+          username: users.username,
+          userDisplayName: users.displayName,
+        },
+      })
+      .from(crmConversations)
+      .innerJoin(crmContacts, eq(crmContacts.id, crmConversations.contactId))
+      .innerJoin(crmChannels, eq(crmChannels.id, crmConversations.channelId))
+      .leftJoin(users, eq(users.id, crmContacts.userId))
+      .where(
+        and(
+          eq(crmConversations.id, conversationId),
+          eq(crmConversations.assignedOperatorId, operatorId),
+        ),
+      )
+      .limit(1);
+
+    const conEtiquetas = await this.conEtiquetas(db, filas);
+    return conEtiquetas[0] ?? null;
+  }
+
+  /**
    * Le pega las etiquetas a las filas de la bandeja.
    *
    * **Una consulta para todas**, no una por contacto: se piden las etiquetas de

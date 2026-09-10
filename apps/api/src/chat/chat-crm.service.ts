@@ -14,7 +14,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   crmContactTags,
   crmContacts,
@@ -77,6 +77,24 @@ export interface ContactContext {
   network: { same: boolean; label: string | null } | null;
   recentDeposits: MovementRow[];
   recentWithdrawals: MovementRow[];
+}
+
+/** Una fila de la seccion Contactos. */
+export interface ContactoDeBandeja {
+  id: string;
+  displayName: string | null;
+  userId: string | null;
+  isLead: boolean;
+  phone: string | null;
+  username: string | null;
+  userDisplayName: string | null;
+  lastMessageAt: string | null;
+  /** Sin leer sumando TODAS sus conversaciones en esta bandeja. */
+  sinLeer: number;
+  /** La conversacion mas reciente: es la que abre el boton "Abrir". */
+  conversationId: string;
+  channelType: string;
+  tags: Array<{ id: string; label: string; color: string | null }>;
 }
 
 interface MovementRow {
@@ -235,6 +253,114 @@ export class ChatCrmService {
    * ninguna columna para eso. Mientras no exista, una contraseña temporal es
    * temporal sólo por convención.
    */
+  /**
+   * Los contactos de una bandeja, paginados (sección **Contactos**).
+   *
+   * ## Qué cuenta como "de esta bandeja"
+   *
+   * Los que tienen **al menos una conversación asignada acá**. Es exactamente
+   * el mismo universo que deja pasar `assertAccess`, y eso no es casualidad:
+   * si esta lista mostrara un contacto más, sería una pantalla que enumera
+   * gente que después no se puede abrir — o peor, una filtración.
+   *
+   * Por **D6** un mismo jugador tiene **una ficha por bandeja**, así que acá no
+   * hace falta ningún filtro extra por red: las fichas de otras bandejas
+   * simplemente no tienen conversaciones asignadas a ésta.
+   *
+   * ## Una fila por contacto, no por conversación
+   *
+   * Un contacto puede tener varias conversaciones —una por canal—. Se agrupa y
+   * se toma la **más reciente** para saber cuál abrir y de qué canal mostrarlo.
+   * Sin agrupar, la misma persona aparecería dos veces y el paginado contaría
+   * mal.
+   */
+  async listInboxContacts(
+    db: TenantDb,
+    operatorId: string,
+    opciones: { search?: string; limit?: number; offset?: number } = {},
+  ): Promise<{ items: ContactoDeBandeja[]; total: number }> {
+    const limit = Math.min(opciones.limit ?? 50, 100);
+    const offset = Math.max(opciones.offset ?? 0, 0);
+    const q = opciones.search?.trim().toLowerCase();
+    // El patrón se arma acá y se pasa como parámetro: interpolarlo adentro del
+    // `LIKE` sería concatenar entrada del usuario en la consulta.
+    const patron = q ? `%${q}%` : null;
+
+    const filtro = sql`
+      conv.assigned_operator_id = ${operatorId}
+      AND (
+        ${patron}::text IS NULL
+        OR lower(coalesce(u.display_name, '')) LIKE ${patron}
+        OR lower(coalesce(u.username, '')) LIKE ${patron}
+        OR lower(coalesce(c.display_name, '')) LIKE ${patron}
+        OR lower(coalesce(c.phone, '')) LIKE ${patron}
+      )
+    `;
+
+    const filas = (await db.execute(sql`
+      SELECT c.id,
+             c.display_name           AS "displayName",
+             c.user_id                AS "userId",
+             c.is_lead                AS "isLead",
+             c.phone,
+             u.username,
+             u.display_name           AS "userDisplayName",
+             max(conv.last_message_at) AS "lastMessageAt",
+             sum(conv.unread_for_operator)::int AS "sinLeer",
+             (array_agg(conv.id ORDER BY conv.last_message_at DESC NULLS LAST))[1] AS "conversationId",
+             (array_agg(ch.type ORDER BY conv.last_message_at DESC NULLS LAST))[1] AS "channelType"
+        FROM crm_contacts c
+        JOIN crm_conversations conv ON conv.contact_id = c.id
+        JOIN crm_channels ch ON ch.id = conv.channel_id
+        LEFT JOIN users u ON u.id = c.user_id
+       WHERE ${filtro}
+       GROUP BY c.id, u.username, u.display_name
+       ORDER BY max(conv.last_message_at) DESC NULLS LAST
+       LIMIT ${limit} OFFSET ${offset}
+    `)) as unknown as ContactoDeBandeja[];
+
+    // El total va aparte y cuenta CONTACTOS, no filas de la unión: con el
+    // `DISTINCT` afuera, un contacto con tres canales contaría tres veces y el
+    // paginado mostraría páginas vacías al final.
+    const totalRows = (await db.execute(sql`
+      SELECT count(DISTINCT c.id)::int AS total
+        FROM crm_contacts c
+        JOIN crm_conversations conv ON conv.contact_id = c.id
+        LEFT JOIN users u ON u.id = c.user_id
+       WHERE ${filtro}
+    `)) as unknown as Array<{ total: number }>;
+
+    const items = await this.etiquetasDeContactos(db, filas);
+    return { items, total: totalRows[0]?.total ?? 0 };
+  }
+
+  /** Le pega las etiquetas a una lista de contactos, en una sola consulta. */
+  private async etiquetasDeContactos(
+    db: TenantDb,
+    filas: ContactoDeBandeja[],
+  ): Promise<ContactoDeBandeja[]> {
+    if (filas.length === 0) return [];
+    const ids = filas.map((f) => f.id);
+    const asignadas = await db
+      .select({
+        contactId: crmContactTags.contactId,
+        id: crmTags.id,
+        label: crmTags.label,
+        color: crmTags.color,
+      })
+      .from(crmContactTags)
+      .innerJoin(crmTags, eq(crmTags.id, crmContactTags.tagId))
+      .where(inArray(crmContactTags.contactId, ids));
+
+    const porContacto = new Map<string, ContactoDeBandeja['tags']>();
+    for (const t of asignadas) {
+      const lista = porContacto.get(t.contactId) ?? [];
+      lista.push({ id: t.id, label: t.label, color: t.color });
+      porContacto.set(t.contactId, lista);
+    }
+    return filas.map((f) => ({ ...f, tags: porContacto.get(f.id) ?? [] }));
+  }
+
   /**
    * ¿Ya hay un jugador con este teléfono? (**el freno del alta**)
    *

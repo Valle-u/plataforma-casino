@@ -18,6 +18,7 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  Query,
   ParseUUIDPipe,
   Post,
   Req,
@@ -148,18 +149,33 @@ export class ChatCrmController {
     return this.crm.notifyDirectOperator(db, { contact, inboxOwnerId });
   }
 
+  /**
+   * Los contactos de esta bandeja, paginados (sección **Contactos**).
+   *
+   * Devuelve exactamente el mismo universo que deja pasar `assertAccess`: los
+   * que tienen alguna conversación asignada acá. Una lista más ancha sería una
+   * pantalla que enumera gente que después no se puede abrir.
+   */
+  @Get('contacts')
+  async listContacts(
+    @Req() req: RequestWithTenantUser,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+  ) {
+    const limit = 50;
+    // La página llega del cliente: se acota y se cae a 1 ante cualquier cosa
+    // rara, en vez de mandarle a Postgres un OFFSET negativo o gigante.
+    const pagina = Math.max(1, Math.min(Number(page) || 1, 10_000));
+    const { items, total } = await this.crm.listInboxContacts(
+      this.db(req),
+      this.owner(req),
+      { search, limit, offset: (pagina - 1) * limit },
+    );
+    return { items, total, page: pagina, pageSize: limit };
+  }
+
   // ── Alta de jugador desde el chat (D9) ────────────────────────────────────
 
-  /**
-   * Crea un jugador a partir de un lead que escribió.
-   *
-   * **No recibe de quién cuelga**: sale de la bandeja por la que esa persona
-   * escribió (**D9**). El campo es fijo por diseño — con un desplegable, un
-   * alta podría terminar colgada de quien convenga y no de quien atendió, y eso
-   * es plata.
-   *
-   * Usa `users.create`, el mismo permiso que el alta del panel.
-   */
   /**
    * Jugadores que ya tienen el teléfono de este contacto (**el freno del alta**).
    *
@@ -187,6 +203,16 @@ export class ChatCrmController {
     });
   }
 
+  /**
+   * Crea un jugador a partir de un lead que escribió.
+   *
+   * **No recibe de quién cuelga**: sale de la bandeja por la que esa persona
+   * escribió (**D9**). El campo es fijo por diseño — con un desplegable, un
+   * alta podría terminar colgada de quien convenga y no de quien atendió, y eso
+   * es plata.
+   *
+   * Usa `users.create`, el mismo permiso que el alta del panel.
+   */
   @Post('contacts/:contactId/create-player')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('users.create')

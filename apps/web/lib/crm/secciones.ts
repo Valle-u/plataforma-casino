@@ -58,7 +58,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
     titulo: 'Entrada',
     items: [
       { href: '/support', label: 'Bandeja', icono: 'messages-square', lista: true },
-      { href: '/support/contactos', label: 'Contactos', icono: 'contact', lista: false },
+      { href: '/support/contactos', label: 'Contactos', icono: 'contact', lista: true },
       { href: '/support/circuitos', label: 'Circuitos', icono: 'git-branch', lista: false },
     ],
   },
@@ -98,7 +98,7 @@ export const GRUPOS_DEL_CRM: GrupoDelCrm[] = [
  */
 export const TABBAR_MOBILE: SeccionDelCrm[] = [
   { href: '/support', label: 'Bandeja', icono: 'messages-square', lista: true },
-  { href: '/support/contactos', label: 'Contactos', icono: 'contact', lista: false },
+  { href: '/support/contactos', label: 'Contactos', icono: 'contact', lista: true },
   { href: '/support/metricas', label: 'Métricas', icono: 'bar-chart-3', lista: false },
   { href: '/support/canales', label: 'Canales', icono: 'plug', lista: true },
 ];

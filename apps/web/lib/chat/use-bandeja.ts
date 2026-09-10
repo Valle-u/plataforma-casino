@@ -50,6 +50,14 @@ interface ListAck {
 interface OpenAck {
   ok: boolean;
   messages?: ChatMessage[];
+  /**
+   * La fila de la bandeja de ESTA conversacion.
+   *
+   * Llega aparte de la lista para poder abrir algo que no esta cargado —una
+   * conversacion resuelta a la que se entra desde Contactos, por ejemplo—. Sin
+   * esto la pantalla la marcaba como elegida y dibujaba la columna vacia.
+   */
+  item?: InboxItem | null;
   error?: string;
 }
 interface ReplyAck {
@@ -82,6 +90,14 @@ export function useBandeja() {
   const [uploading, setUploading] = useState(false);
   /** Por qué no se pudo mandar lo último que intentó. */
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+  /**
+   * La fila de la conversacion abierta, tal como la mando el servidor.
+   *
+   * Es la fuente de verdad para la cabecera y la ficha: la lista puede no
+   * tenerla —una resuelta, un filtro distinto— y ahi la pantalla quedaba en
+   * blanco sin decir nada.
+   */
+  const [itemAbierto, setItemAbierto] = useState<InboxItem | null>(null);
 
   // Los refs espejan el estado para poder leerlo adentro de los handlers del
   // socket, que se registran una vez y capturarían el valor viejo.
@@ -191,6 +207,8 @@ export function useBandeja() {
       setErrorEnvio(null);
       socket.emit('conversation:open', { conversationId: id }, (ack: OpenAck) => {
         if (!ack?.ok) return;
+        // El item que vino del servidor manda: puede no estar en la lista.
+        if (ack.item) setItemAbierto(ack.item);
         setMessages(
           (ack.messages ?? [])
             .slice()
@@ -347,8 +365,11 @@ export function useBandeja() {
     );
   }, [draft, pending, socket, selectedId, sending, uploading, addMessage, emitTyping]);
 
+  // La lista primero —tiene los contadores al dia— y si no esta, el item que
+  // devolvio el servidor al abrir.
   const selected =
-    conversations.find((c) => c.conversation.id === selectedId) ?? null;
+    conversations.find((c) => c.conversation.id === selectedId) ??
+    (itemAbierto?.conversation.id === selectedId ? itemAbierto : null);
 
   return {
     // Estado

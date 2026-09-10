@@ -279,6 +279,8 @@ export class ChatGateway
   ): Promise<{
     ok: boolean;
     conversation?: unknown;
+    /** La fila de la bandeja de esta conversación. Ver abajo. */
+    item?: unknown;
     messages?: unknown;
     error?: string;
   }> {
@@ -303,7 +305,18 @@ export class ChatGateway
     this.server
       .to(this.convRoom(data.tenantId, conv.id))
       .emit('conversation:read', { conversationId: conv.id, by: 'operator' });
-    return { ok: true, conversation: conv, messages };
+
+    // ── El item, para poder abrir algo que NO está en la lista cargada ──────
+    //
+    // La bandeja del CRM dibuja la cabecera —nombre, canal, handle— a partir de
+    // la fila de la lista. Entrando desde Contactos a una conversación
+    // **resuelta**, esa fila no está: la lista trae las abiertas. El resultado
+    // era una columna en blanco con la conversación "elegida", sin ningún error.
+    //
+    // Devolverlo acá lo resuelve para todos los casos —cualquier filtro, no sólo
+    // el de resueltas— y no cuesta una consulta extra: se pide por id.
+    const item = await this.chat.getInboxItem(data.db, conv.id, data.inboxOwnerId);
+    return { ok: true, conversation: conv, item, messages };
   }
 
   /**
