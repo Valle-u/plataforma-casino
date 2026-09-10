@@ -43,6 +43,13 @@
       "when": 1789300500000,
       "tag": "0005_gregmorn_callback_token",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789300500001,
+      "tag": "0006_crm_whatsapp_numeros",
+      "breakpoints": true
     }
   ]
 }

@@ -24,11 +24,17 @@ import { TelegramDescargaService } from './telegram/telegram-descarga.service';
 import { TelegramInboundService } from './telegram/telegram-inbound.service';
 import { TelegramOutboundService } from './telegram/telegram-outbound.service';
 import { TelegramWebhookController } from './telegram/telegram-webhook.controller';
+import { WhatsappWebhookController } from './whatsapp/whatsapp-webhook.controller';
 import { CrmAccessGuard } from './crm-access.guard';
 
 @Module({
   imports: [UserHierarchyModule, TenantUsersModule],
-  controllers: [ChatController, ChatCrmController, TelegramWebhookController],
+  controllers: [
+    ChatController,
+    ChatCrmController,
+    TelegramWebhookController,
+    WhatsappWebhookController,
+  ],
   providers: [
     ChatGateway,
     ChatService,

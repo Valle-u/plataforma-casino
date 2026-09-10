@@ -13,3 +13,4 @@ export * from './tenants';
 export * from './tenant-domains';
 export * from './platform-users';
 export * from './platform-user-sessions';
+export * from './whatsapp-numbers';

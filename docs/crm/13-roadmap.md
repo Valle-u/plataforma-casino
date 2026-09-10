@@ -238,7 +238,7 @@ lo normal, no la excepción. La pantalla tiene que estar diseñada para eso.
 | | Qué | |
 |---|---|---|
 | 3.1 | Acompañar al socio en el alta ante Meta: explicar el trámite y mostrar en qué paso está | ⬜ **Diferido a propósito** |
-| 3.2 | Webhook (igual que 2.2, con la firma de Meta) | 🟡 Arquitectura decidida (**D23**), sin escribir |
+| 3.2 | Webhook (igual que 2.2, con la firma de Meta) | 🟡 **La puerta hecha**; falta procesar |
 | 3.3 | Vínculo por teléfono, con las **tres defensas** de D4 | ✅ **Hecho** (`a8256a3` + la UI) |
 | 3.4 | **El aviso de la ventana de 24 h, antes de escribir** | ✅ **Hecho** |
 | 3.5 | Qué se hace con audios y videos | ✅ **Hecho** |
@@ -251,6 +251,61 @@ en pantalla.
 
 **El 3.4 era chico y fácil de olvidar.** Sin eso, el operador escribe tres
 párrafos y recibe un error.
+
+### 3.2 — La puerta, no el procesamiento
+
+Igual que en Telegram el webhook (**2.2**) vino antes que el ruteo (**2.3**),
+acá se construyó **la puerta**: llega una entrega de Meta, se verifica, se
+resuelve de quién es y se guarda el crudo. Convertir un `change` en contacto +
+conversación + mensaje es la tanda que sigue. Los crudos quedan con
+`processed_at` en `NULL`, que es el estado que el diseño ya define para eso.
+
+**La tabla de D23 existe**: `whatsapp_numbers` en `platform_control`, con
+`phone_number_id` **único a nivel global**. Un número apuntado al casino
+equivocado manda la conversación de un jugador a la bandeja de otro; con el
+unique, eso falla al escribir en vez de fallar al enrutar.
+
+**La firma va contra los bytes crudos, y esa es toda la historia.**
+`JSON.stringify` de lo que parseó Nest no devuelve los mismos bytes que mandó
+Meta: cambia el escapado de unicode, los espacios, la notación de los números.
+El modo de falla es el peor que hay — **no falla siempre**: falla cuando el
+mensaje trae un acento o un emoji, o sea cuando escribe una persona real. Hay un
+test que manda `Martín` firmado como lo firma Meta, y se verificó
+**rompiendo el controlador a propósito** para confirmar que es el único que
+falla.
+
+**Una mejora sobre Telegram, que sale gratis del diseño de D23.** Allá el
+secreto es por canal, así que hay que resolver tenant y canal **antes** de poder
+verificar: un request falso ya costó dos consultas. Acá el App Secret es uno
+solo y nuestro, así que **la firma se verifica antes de tocar la base**.
+
+#### ⚠️ Una entrega puede traer mensajes de dos casinos
+
+Es la diferencia de forma más importante con Telegram, y no es cosmética.
+Telegram manda **un update por request**; Meta manda un sobre con `entry[]`, y
+cada entrada con `changes[]`. Nada impide que en la misma entrega vengan
+mensajes de dos números — que por D23 pueden ser de **socios distintos**.
+
+`crm_raw_events` vive en la base **del tenant**. Guardar el sobre entero en una
+sola base metería el payload de un casino adentro de la base de otro —nombres,
+teléfonos, el texto de lo que escribieron—. Eso es **P4** roto, y no como un
+ruteo mal hecho: como una **filtración guardada en reposo** que nadie ve.
+
+Por eso la entrega se parte y cada trozo se guarda **recortado a su número**: una
+`entry`, un `change`. Hay un test que manda una entrega con un número nuestro y
+uno ajeno y comprueba que lo guardado **no contiene** ni el número ni el texto
+del otro.
+
+#### Lo que falta para prenderlo
+
+1. `WHATSAPP_APP_SECRET` y `WHATSAPP_VERIFY_TOKEN` en el entorno (ver
+   `apps/api/.env.example`). **Sin el App Secret el webhook rechaza todo**, a
+   propósito: no verificar no es lo mismo que aceptar.
+2. La pantalla para vincular un número (equivalente de `/support/canales`), que
+   es la que escribe en `whatsapp_numbers`. Hoy la fila se carga a mano.
+3. El procesamiento del `change`.
+4. Y lo que no depende de nosotros: que Meta verifique la cuenta del socio
+   (**D13**) y que la App salga del trámite.
 
 ### 3.4 — La ventana, y lo que no se podía separar de ella
 
