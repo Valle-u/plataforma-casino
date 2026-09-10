@@ -1156,28 +1156,23 @@ body[data-density='compact'] .admin-nav-link {
 }
 
 /* ────────────────────────────────────────────────────────────────
- * El host del CRM (`crm.miamihub.vip`)
+ * El host del CRM (`crm.miamihub.vip`) — ya no se recorta por CSS
  *
- * Es el mismo build que el panel, servido por otro dominio y recortado a
- * Soporte. El middleware ya redirige cualquier otra ruta; esto saca del menú
- * lo que ahí adentro no existe, para que el operador no vea links que rebotan.
+ * Acá vivían dos reglas que escondían del menú del panel todo lo que no fuera
+ * Soporte. Se fueron el 2026-09-09, al darle al CRM **su propio shell**
+ * (`components/admin/crm/crm-shell.tsx`).
  *
- * Se hace por CSS y no en el componente a propósito: la marca `data-crm-only`
- * viaja en el PRIMER HTML (la pone `app/layout.tsx` leyendo el header del
- * middleware), así que el menú nunca se pinta completo. Resolverlo en el
- * cliente con `window.location` mostraría todo y lo recortaría después — el
- * mismo parpadeo que costó arreglar en la interfaz del jugador.
+ * Esconder servía mientras el CRM era una sola pantalla prestada del panel. Con
+ * diez secciones propias, agrupadas y con otra estructura —alto fijo, tres
+ * columnas que scrollean por separado— ya no alcanzaba con tachar links: hay
+ * que mostrar otro menú.
  *
- * ⚠️ Esto es COSMÉTICO. Lo que impide llegar a otra pantalla es el redirect del
- * middleware, y lo que impide leer datos que no corresponden son los permisos
- * del backend. Si alguien borra estas reglas, el CRM sigue siendo seguro: sólo
- * queda feo.
+ * Lo que se conserva de aquella solución es la parte que importaba: **la
+ * respuesta viaja desde el servidor**. La marca `data-crm-only` sigue en el
+ * `<html>` del primer HTML, y ahora además baja por contexto
+ * (`lib/crm/host-context.tsx`) para que el layout elija el shell sin parpadear.
+ *
+ * ⚠️ Nada de esto era ni es una defensa. Lo que impide llegar a otra pantalla
+ * es el redirect del middleware, y lo que impide leer datos que no corresponden
+ * son los permisos del backend.
  * ──────────────────────────────────────────────────────────────── */
-[data-crm-only] .admin-nav-link:not([href='/support']) {
-  display: none;
-}
-
-/* Los encabezados de sección quedarían con todo vacío abajo. */
-[data-crm-only] [aria-controls^='sidebar-section-'] {
-  display: none;
-}

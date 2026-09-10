@@ -20,6 +20,7 @@ import { AdminLoadingSkeleton } from '@/components/admin/admin-loading-skeleton'
 import { Header } from '@/components/admin/header';
 import { RouteProgress } from '@/components/admin/route-progress';
 import { Sidebar } from '@/components/admin/sidebar';
+import { CrmShell } from '@/components/admin/crm/crm-shell';
 import { adminAccentVars } from '@/lib/admin-accent';
 import {
   cacheAdminAppearance,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/admin-appearance';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
+import { useEsHostDeCrm } from '@/lib/crm/host-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { applyPanelFavicon } from '@/lib/tenant-favicon';
 
@@ -37,6 +39,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const tenantInfo = useTenantInfo();
   const isImpersonating = !!user?.impersonatedBy;
+  const esCrm = useEsHostDeCrm();
 
   // Favicon FIJO del panel: la marca del producto (Retícula), NO el favicon
   // del tenant. La pestaña del panel se distingue siempre de la del casino y
@@ -111,6 +114,25 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <AdminLoadingSkeleton />
       </div>
     );
+  }
+
+  // ── El host del CRM usa OTRO shell ───────────────────────────────────────
+  //
+  // No es el panel maquillado: el panel scrollea con el body y crece tanto como
+  // haga falta, y el CRM necesita alto fijo porque su pantalla principal son
+  // tres columnas que scrollean por separado.
+  //
+  // Hasta acá el CRM reusaba el menú del panel y escondía todos los links menos
+  // Soporte con CSS. Eso alcanzaba con una sola pantalla; con diez secciones
+  // propias ya no — hay que mostrar otro menú, no recortar éste.
+  //
+  // El dato viene del servidor (ver `lib/crm/host-context.tsx`), así que este
+  // primer render ya sabe cuál de los dos va: el shell no parpadea.
+  //
+  // Los guards de arriba corren igual — el CRM no es una puerta con menos
+  // llave, es la misma sesión del panel con otra interfaz.
+  if (esCrm) {
+    return <CrmShell>{children}</CrmShell>;
   }
 
   return (

@@ -23,6 +23,7 @@ import { QueryProvider } from '@/lib/query-client';
 import { getServerUser } from '@/lib/server-api';
 import { cssDeLaPaletaDelTenant } from '@/lib/server-tenant-theme';
 import { HOST_CRM } from '@/lib/crm-host';
+import { HostDelCrmProvider } from '@/lib/crm/host-context';
 import './globals.css';
 
 const outfit = Outfit({
@@ -140,10 +141,15 @@ export default async function RootLayout({
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider initialUser={initialUser}>
-              <DynamicTitleUpdater />
-              <RegisterServiceWorker />
-              <ImpersonateBanner />
-              {children}
+              {/* El mismo dato que marca el <html>, pero legible desde los
+                  componentes de cliente sin mirar `window.location` — que en el
+                  servidor no existe y haría parpadear el shell entero. */}
+              <HostDelCrmProvider esCrm={soloCrm}>
+                <DynamicTitleUpdater />
+                <RegisterServiceWorker />
+                <ImpersonateBanner />
+                {children}
+              </HostDelCrmProvider>
             </AuthProvider>
           </QueryProvider>
         </ErrorBoundary>
