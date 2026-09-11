@@ -20,9 +20,15 @@
  *
  * ## Lo que todavía no está
  *
- * **Circuito, tiempos del tramo e historial** los pide el diseño y no existen:
- * `crm_timeline_events` está creada y vacía, y medir por tramos es un modelo
- * que hay que definir antes de dibujarlo (**4.3** y **4.4** del roadmap).
+ * **El historial ya está** (**4.3**): `crm_timeline_events` se venía llenando
+ * desde el vínculo por teléfono y **no la leía nadie**. La sección *Historial*
+ * es la pantalla que faltaba.
+ *
+ * **La etapa del circuito y los tiempos del tramo** siguen fuera de la ficha.
+ * No es que no existan —la etapa se deriva en *Circuitos* (**D22**) y los
+ * tramos se miden desde la migración `0115`— es que traerlos acá son dos
+ * consultas más por contacto abierto, y las dos pantallas donde viven ya los
+ * muestran. Se dice en la sección en vez de dejar el hueco mudo.
  *
  * **La caja** —cargar, retirar, bono, corrección— quedó **diferida** el
  * 2026-09-09, no descartada. Ver el bloque 7 de `docs/crm/14-decisiones.md`.
@@ -62,6 +68,7 @@ import { cn } from '@/lib/cn';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { AltaDeJugador } from './alta-de-jugador';
 import { VincularJugador } from './vincular-jugador';
+import { LineaDeTiempo } from './linea-de-tiempo';
 
 export function Ficha({
   item,
@@ -135,7 +142,7 @@ export function Ficha({
             onCambio={recargar}
           />
           <CajaDiferida />
-          <MedicionPendiente />
+          <Historial contactId={contactId} />
           <Identificadores
             contactId={contactId}
             conversationId={item.conversation.id}
@@ -574,14 +581,22 @@ function CajaDiferida(): React.ReactElement {
   );
 }
 
-/** Circuito, tramos e historial: pedidos por el diseño, sin datos todavía. */
-function MedicionPendiente(): React.ReactElement {
+/**
+ * El historial del contacto (**4.3**), y lo que sigue sin estar.
+ *
+ * Hasta acá esta sección decía que el circuito, los tramos y el historial "no se
+ * miden". De los tres, **el historial ya existe**: `crm_timeline_events` se
+ * viene llenando y nadie la leía. Los otros dos siguen afuera de la ficha, y se
+ * dice — una sección que falta a propósito no se parece a una que se olvidaron.
+ */
+function Historial({ contactId }: { contactId: string }): React.ReactElement {
   return (
-    <Seccion titulo="Circuito y tiempos">
-      <span className="text-[11.5px] leading-snug text-[var(--color-fg-muted)]">
-        La etapa del circuito, los tiempos del tramo y el historial todavía no se
-        miden.
-      </span>
+    <Seccion titulo="Historial">
+      <LineaDeTiempo contactId={contactId} />
+      <p className="mt-1 text-[10.5px] leading-snug text-[var(--color-fg-subtle)]">
+        La etapa del circuito se ve en <b>Circuitos</b>; los tiempos de atención,
+        en <b>Métricas</b>. Todavía no se muestran acá.
+      </p>
     </Seccion>
   );
 }

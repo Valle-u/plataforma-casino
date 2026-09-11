@@ -18,6 +18,7 @@ import { ChatService } from './chat.service';
 import { ChatCrmService } from './chat-crm.service';
 import { CrmNetworkService } from './crm-network.service';
 import { CrmMetricasService } from './crm-metricas.service';
+import { CrmTimelineService } from './crm-timeline.service';
 import { TelegramApiService } from './telegram/telegram-api.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
 import { TelegramDescargaService } from './telegram/telegram-descarga.service';
@@ -43,6 +44,7 @@ import { CrmAccessGuard } from './crm-access.guard';
     ChatCrmService,
     CrmNetworkService,
     CrmMetricasService,
+    CrmTimelineService,
     CrmAccessGuard,
     TelegramApiService,
     TelegramChannelsService,

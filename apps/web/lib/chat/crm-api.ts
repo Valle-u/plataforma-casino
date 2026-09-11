@@ -264,6 +264,32 @@ export const desvincularContacto = (contactId: string) =>
     `/tenant/chat/contacts/${contactId}/link`,
   );
 
+// ── La línea de tiempo del contacto (4.3) ───────────────────────────────────
+
+/**
+ * Lo que pasó **alrededor** de la conversación: vínculos, altas, cambios de
+ * estado y avisos.
+ *
+ * **No son los mensajes.** Ésos ya están en el hilo, y repetirlos acá no
+ * agregaría nada. Lo que se anota es lo que, si no se registra cuando pasa,
+ * **no se puede reconstruir después**: el vínculo es una columna que se pisa, el
+ * estado de la conversación es mutable y sin historial, y el aviso de **D8**
+ * sale para otra bandeja sin dejar nada en ésta.
+ */
+export const timelineDelContacto = (contactId: string) =>
+  apiGet<EventoDeLaLinea[]>(`/tenant/chat/contacts/${contactId}/timeline`);
+
+export interface EventoDeLaLinea {
+  id: string;
+  /** `link` | `unlink` | `alta` | `estado` | `aviso`. */
+  type: string;
+  summary: string;
+  /** ISO. */
+  occurredAt: string;
+  /** `null` si el usuario que lo hizo ya no está. El evento se muestra igual. */
+  actor: { id: string; username: string } | null;
+}
+
 // ── Plantillas (respuestas rápidas por tenant) ──────────────────────────────
 
 export const listTemplates = () =>

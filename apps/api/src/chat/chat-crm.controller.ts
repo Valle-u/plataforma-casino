@@ -36,7 +36,21 @@ import {
   type EtapaDelCircuito,
 } from './chat-crm.service';
 import { ChatService } from './chat.service';
+import { CrmTimelineService } from './crm-timeline.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
+
+/**
+ * Cómo se lee cada cambio de estado en la línea de tiempo.
+ *
+ * Se guarda el texto ya armado —y no sólo el código— porque la línea es un
+ * registro histórico: si mañana se renombra un estado, lo que pasó en marzo
+ * tiene que seguir diciendo lo que decía en marzo.
+ */
+const TEXTO_DEL_ESTADO: Record<'open' | 'pending' | 'resolved', string> = {
+  resolved: 'Conversación resuelta',
+  pending: 'Puesta en espera',
+  open: 'Conversación reabierta',
+};
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { CrmAccessGuard, type RequestWithCrmInbox } from './crm-access.guard';
@@ -68,6 +82,7 @@ export class ChatCrmController {
     private readonly chat: ChatService,
     private readonly telegramChannels: TelegramChannelsService,
     private readonly metricasDeAtencion: CrmMetricasService,
+    private readonly timeline: CrmTimelineService,
   ) {}
 
   private db(req: RequestWithTenantUser) {
@@ -145,7 +160,40 @@ export class ChatCrmController {
     // responde 404 en los dos casos a propósito: un 403 le confirmaría a
     // alguien que esa conversación existe en otra bandeja.
     if (!conv) throw new NotFoundException('Conversación no encontrada.');
+
+    // `crm_conversations.status` es una columna mutable **sin historial**:
+    // mirando los mensajes no hay forma de saber cuándo se resolvió ni quién.
+    // Se anota acá y no en `ChatService` porque éste es el único endpoint que
+    // lo escribe, y ese servicio es el núcleo del livechat, compartido con el
+    // widget del jugador.
+    await this.timeline.anotar(this.db(req), {
+      contactId: conv.contactId,
+      type: 'estado',
+      summary: TEXTO_DEL_ESTADO[status],
+      metadata: { actorId: req.tenantUser?.id ?? '', status },
+    });
+
     return { id: conv.id, status: conv.status };
+  }
+
+  /**
+   * La línea de tiempo del contacto (**4.3**).
+   *
+   * Lo que pasó **alrededor** de la conversación: vínculos, altas, cambios de
+   * estado y avisos. No los mensajes — ésos ya están en el hilo.
+   *
+   * Mismo alcance que las notas: `assertAccess` y nada más. Por **D6** un
+   * contacto es de una bandeja, así que la línea hereda el aislamiento sin
+   * necesitar reglas propias.
+   */
+  @Get('contacts/:contactId/timeline')
+  async timelineDelContacto(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+  ) {
+    const db = this.db(req);
+    await this.crm.assertAccess(db, contactId, this.owner(req));
+    return this.timeline.listar(db, contactId);
   }
 
   // ── Derivar = avisar (D8) ─────────────────────────────────────────────────
@@ -165,7 +213,11 @@ export class ChatCrmController {
     const db = this.db(req);
     const inboxOwnerId = this.owner(req);
     const contact = await this.crm.assertAccess(db, contactId, inboxOwnerId);
-    return this.crm.notifyDirectOperator(db, { contact, inboxOwnerId });
+    return this.crm.notifyDirectOperator(db, {
+      contact,
+      inboxOwnerId,
+      actorId: req.tenantUser?.id,
+    });
   }
 
   /**

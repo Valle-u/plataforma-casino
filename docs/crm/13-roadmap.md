@@ -425,12 +425,64 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 |---|---|---|
 | 4.1 | Retención de adjuntos a 6 meses (**D15**) | ✅ **Hecho**, apagado por default (ver abajo) |
 | 4.2 | Cierre de red auditado (**D14**) | 🔴 **Delicado**: habilita una excepción a R6. Sólo el admin, auditado. |
-| 4.3 | Llenar `crm_timeline_events` | La tabla está lista y vacía |
+| 4.3 | Llenar `crm_timeline_events` **y mostrarla** | ✅ **Hecho** |
 | 4.4 | Métricas por tramos | ✅ **Hecho** (migración `0115`). Sin backfill: mide desde que se instaló |
 | 4.5 | Aviso al operador por Telegram | La mejora descartada en **D16**, si el hueco molesta |
 | 4.6 | Varios agentes en la misma bandeja | Se ofreció excluirlo y no se marcó |
 | 4.7 | Búsqueda global de mensajes | Ídem. Por **D6** hay que acotarla por bandeja. |
 | 4.8 | Campañas y mensajes masivos | ✅ **Adentro por D21** (D19 revertida) |
+
+### 4.3 — El historial: qué se anota, y qué no
+
+`crm_timeline_events` existía desde que se creó el CRM. Hasta acá **sólo la
+escribían el vínculo y el desvínculo**, y **no la leía nadie**: los eventos se
+guardaban y se veían consultando la base a mano.
+
+**No es un registro de lo que se habló.** Los mensajes ya están en el hilo, y
+duplicarlos no agregaría nada. Lo que se anota es lo que, si no se registra
+cuando pasa, **no se puede reconstruir después**:
+
+| Evento | Por qué se pierde si no se anota |
+|---|---|
+| `link` / `unlink` | El vínculo es una columna que se pisa: después del cambio no queda rastro de que hubo otro antes, ni de quién lo hizo. |
+| `alta` | El jugador queda creado, pero **nada dice que salió de esta conversación** — y por **D9** de dónde salió define de quién cuelga, o sea las comisiones. |
+| `estado` | `crm_conversations.status` es mutable y sin historial. Mirando los mensajes no hay forma de saber cuándo se resolvió ni quién. |
+| `aviso` | El aviso de **D8** sale para **otra** bandeja y no deja nada en ésta. Sin esto, *"¿ya le avisamos al cajero?"* no tiene respuesta — y es la pregunta natural cuando el mismo jugador vuelve a escribir. |
+
+**El aislamiento sale gratis de D6.** Los eventos cuelgan del contacto, y un
+contacto es de una bandeja: no existe un contacto compartido del que se pueda
+leer la actividad de otra red. Y lo que se anota del aviso es **que se avisó**,
+no qué se habló: la línea de tiempo no es una puerta de atrás a D8.
+
+**Escribir no puede voltear la operación.** `anotar()` no tira nunca: dejar de
+vincular un contacto porque falló el insert de la auditoría sería cambiar algo
+que el operador pidió por un registro que nadie estaba mirando.
+
+**Qué sigue sin estar en la ficha, y se dice ahí:** la etapa del circuito y los
+tiempos del tramo. No es que no existan —la etapa se deriva en *Circuitos*
+(**D22**) y los tramos se miden desde la `0115`— es que traerlos serían dos
+consultas más por contacto abierto, y las dos pantallas donde viven ya los
+muestran.
+
+> ### ⚠️ Nota sobre cómo correr los tests
+>
+> **Los dos patrones andan por separado y fallan mezclados.**
+>
+> ```
+> npx jest --runInBand crm-        → 187 en verde, 15 suites
+> npx jest --runInBand <unitarias> → 154 en verde, 10 suites
+> npx jest --runInBand crm- <unitarias> → falla, y fallan cosas distintas cada vez
+> ```
+>
+> El síntoma es `no existe la base de datos «tenant_jest_test»`: el
+> `globalTeardown` la dropea, y mezclar patrones deja suites e2e corriendo
+> contra una base que ya no está. Las fallas se mueven entre corridas, que es la
+> firma de un problema de estado compartido y no de una aserción.
+>
+> **No es de este cambio**, y se verificó en serio: con los cambios guardados en
+> un `git stash` —o sea, árbol limpio— el comando mezclado **falla igual**.
+> Queda anotado como deuda de la infraestructura de tests; mientras tanto,
+> correrlos **por separado**.
 
 ### 4.1 — Borrar los adjuntos vencidos, y por qué va apagado
 

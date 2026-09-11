@@ -22,7 +22,6 @@ import {
   crmNotes,
   crmTags,
   crmTemplates,
-  crmTimelineEvents,
   deposits,
   roles,
   userRoles,
@@ -41,6 +40,7 @@ import { CrmNetworkService } from './crm-network.service';
 import { textoDelAviso } from './aviso-derivacion';
 import { generarPassword } from './password-temporal';
 import { TenantUsersService } from '../tenant-users/tenant-users.service';
+import { CrmTimelineService } from './crm-timeline.service';
 import { variantesDeTelefono } from './telefono';
 
 export interface ContactContext {
@@ -149,6 +149,7 @@ export class ChatCrmService {
     private readonly chat: ChatService,
     private readonly net: CrmNetworkService,
     private readonly tenantUsers: TenantUsersService,
+    private readonly timeline: CrmTimelineService,
   ) {}
 
   /**
@@ -182,6 +183,8 @@ export class ChatCrmService {
       contact: CrmContact;
       /** La bandeja desde la que se avisa (`crmInboxOwnerId`). */
       inboxOwnerId: string;
+      /** Quién apretó. Para la línea de tiempo; cae a la bandeja si no viene. */
+      actorId?: string;
     },
   ): Promise<{ operatorId: string; conversationId: string }> {
     const { contact, inboxOwnerId } = params;
@@ -253,6 +256,22 @@ export class ChatCrmService {
     // `postMessage` no toca contadores para los `system`, y sin badge el aviso
     // no lo ve nadie — que es justo lo que viene a evitar.
     await this.chat.bumpUnreadForOperator(db, conv.id);
+
+    // El aviso sale para OTRA bandeja y no deja nada en ésta (**D8**: no se
+    // copia contenido). Sin esta anotación, "¿ya le avisamos al cajero?" no
+    // tiene respuesta desde acá — y es la pregunta natural cuando el mismo
+    // jugador vuelve a escribir.
+    await this.timeline.anotar(db, {
+      contactId: contact.id,
+      type: 'aviso',
+      summary: 'Se le avisó a su operador',
+      metadata: {
+        // El actor es la persona que apretó, no la bandeja: en la central el
+        // dueño es el admin principal y quien atiende suele ser un empleado.
+        actorId: params.actorId ?? inboxOwnerId,
+        operatorId: bandejaDestino,
+      },
+    });
 
     return { operatorId: bandejaDestino, conversationId: conv.id };
   }
@@ -723,7 +742,7 @@ export class ChatCrmService {
         .returning()
     )[0]!;
 
-    await this.anotarEnLaLinea(db, {
+    await this.timeline.anotar(db, {
       contactId: contact.id,
       type: 'link',
       summary: `Vinculado a ${jugador.username}`,
@@ -766,7 +785,7 @@ export class ChatCrmService {
         .returning()
     )[0]!;
 
-    await this.anotarEnLaLinea(db, {
+    await this.timeline.anotar(db, {
       contactId: contact.id,
       type: 'unlink',
       summary: 'Vínculo deshecho',
@@ -774,34 +793,6 @@ export class ChatCrmService {
     });
 
     return actualizado;
-  }
-
-  /**
-   * Deja constancia en la línea de tiempo del contacto.
-   *
-   * ⚠️ **`crm_timeline_events` todavía no tiene pantalla** (roadmap 4.3): esto
-   * se guarda y hoy sólo se lee consultando la base. Se escribe igual, porque
-   * un registro que empieza el día que se construye la pantalla no sirve para
-   * el caso en que hace falta — que es siempre uno anterior.
-   *
-   * No tira nunca: dejar de vincular porque falló la anotación sería cambiar
-   * una operación que el operador pidió por una auditoría que nadie mira
-   * todavía.
-   */
-  private async anotarEnLaLinea(
-    db: TenantDb,
-    evento: {
-      contactId: string;
-      type: string;
-      summary: string;
-      metadata: Record<string, string>;
-    },
-  ): Promise<void> {
-    try {
-      await db.insert(crmTimelineEvents).values(evento);
-    } catch {
-      // Silencio a propósito: ver el docblock.
-    }
   }
 
   /** Filtra una lista de jugadores dejando sólo los de la red del que pregunta. */
@@ -885,6 +876,20 @@ export class ChatCrmService {
         .where(eq(crmContacts.id, contact.id));
 
       return nuevo;
+    });
+
+    // Fuera de la transacción: una anotación que falla no puede deshacer un
+    // alta que ya se hizo, y `anotar()` no tira por diseño.
+    //
+    // El jugador queda creado igual, pero **nada dice que salió de esta
+    // conversación** — y por **D9** de dónde salió es lo que define de quién
+    // cuelga, o sea las comisiones. Sin esto, reconstruirlo después pide cruzar
+    // `users.created_at` con los mensajes a ojo.
+    await this.timeline.anotar(db, {
+      contactId: contact.id,
+      type: 'alta',
+      summary: `Alta de jugador: ${creado.username}`,
+      metadata: { actorId, userId: creado.id },
     });
 
     return {

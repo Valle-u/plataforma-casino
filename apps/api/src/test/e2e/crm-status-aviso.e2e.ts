@@ -298,6 +298,43 @@ describe('CRM · estados y aviso de derivación', () => {
       expect(ficha.user_id).toBe(jugador.id);
     });
 
+    /**
+     * El aviso queda anotado **en la ficha de acá** (roadmap **4.3**).
+     *
+     * Es la consecuencia incómoda de D6 + D8: el aviso sale para otra bandeja y
+     * crea una ficha allá, así que **de este lado no quedaba ningún rastro** de
+     * haberlo mandado. Cuando el mismo jugador vuelve a escribir, "¿ya le
+     * avisamos al cajero?" no tenía respuesta.
+     *
+     * ⚠️ Lo que se anota es **que se avisó**, no qué se habló: la línea de
+     * tiempo no es una puerta de atrás a D8.
+     */
+    it('queda anotado en la línea de tiempo de esta bandeja (4.3)', async () => {
+      const { contactId } = await conversacionEnBandeja(
+        jugador.id, adminId, null,
+      );
+
+      await pedir(
+        `/tenant/chat/contacts/${contactId}/notify-operator`,
+        adminToken,
+      ).send({});
+
+      const eventos = (await ctx.tenantDb.execute(
+        sql`SELECT type, summary, metadata FROM crm_timeline_events
+             WHERE contact_id = ${contactId}`,
+      )) as unknown as Array<{
+        type: string;
+        summary: string;
+        metadata: { actorId?: string; operatorId?: string };
+      }>;
+
+      const aviso = eventos.find((e) => e.type === 'aviso');
+      expect(aviso).toBeDefined();
+      expect(aviso!.summary).toBe('Se le avisó a su operador');
+      // A quién se le avisó queda en los ids, para poder cruzarlo después.
+      expect(aviso!.metadata.operatorId).toBe(litoral.id);
+    });
+
     it('el aviso prende el badge del que lo recibe', async () => {
       const { contactId } = await conversacionEnBandeja(
         jugador.id, adminId, null,
