@@ -24,8 +24,10 @@ let ctx: TestApp;
 let adminToken = '';
 let ruletaId = '';
 
-/** Jugador de la red central: cuelga del admin, que es lo que da por default. */
-let jugadorCentral: TestUser;
+/**
+ * Jugador de la red central: cuelga del admin, que es lo que da por default.
+ * Sólo se guarda el token — de éste no hace falta consultar nada por SQL.
+ */
 let tokenCentral = '';
 
 /** Socio independiente y un jugador colgado de él. */
@@ -116,7 +118,7 @@ describe('ruleta diaria · quién puede girar', () => {
     ruletaId = res.body.id as string;
 
     // Red central.
-    ({ u: jugadorCentral, token: tokenCentral } = await crearJugador('central'));
+    ({ token: tokenCentral } = await crearJugador('central'));
 
     // Red independiente: socio con el flag + un jugador colgado de él.
     socioIndependiente = await createTestUser(ctx.request, adminToken, {
