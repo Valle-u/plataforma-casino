@@ -1266,7 +1266,7 @@ mover fichas.
 
 ### D25 · El aviso sale del panel: Telegram al operador
 
-**Decidido el 2026-09-11.** **Revierte la parte de D16 que dejaba el aviso
+**Decidido el 2026-09-10.** **Revierte la parte de D16 que dejaba el aviso
 encerrado en el panel.**
 
 D16 decidió que un mensaje nuevo se ve como badge y **no sale de ahí**, y dejó

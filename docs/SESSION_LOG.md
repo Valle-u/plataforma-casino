@@ -17820,3 +17820,104 @@ en `apps/api/.env.example`.
 > conversación avisa una vez cada 15 min — un aviso por mensaje se silencia, y
 > ahí el aviso deja de existir. 13 tests, verificados rompiendo el silencio y el
 > vencimiento del código.
+
+---
+
+### 📌 Cierre de la sesión — [2026-09-11 00:23 AR]
+
+> Los bloques `>` de arriba son las actualizaciones que se fueron agregando
+> durante la sesión, en orden. Esto lo consolida.
+
+**Duración total**: ~10 h (14:30 → 00:23 AR). **20 commits**, todos en `staging`
+y pusheados. `main` no se tocó.
+
+#### Los commits, completos
+
+Los primeros nueve ya estaban listados arriba en *Commits creados*. Los que
+siguen son los de la segunda mitad de la sesión:
+
+- `5e4ba93` — `docs: bitacora de la sesion del CRM (etapa 3 + 4.1 y 4.3)`
+- `4792fb5` — `docs(crm): el 2.6 tambien corrio con gente de verdad`
+- `bfc4d8b` — `fix(storage): el default de localhost fallaba en silencio`
+- `9f6a439` — `docs: los tests mezclados ya andan, era TEST_TENANT_SUFFIX`
+- `3673a4c` — `fix(storage): el audio no sonaba porque se servia sin tipo ni rangos`
+- `d029cdb` — `docs: la nota de voz suena — 3.5 y 2.4 cerrados`
+- `1a499f6` — `docs: el 2.8 tambien corrio — la etapa 2 quedo verificada entera`
+- `3d011c5` — `feat(crm): 3.2 · de un change de Meta a una conversacion`
+- `980ead1` — `feat(crm): 4.2 · cerrar una red, con sus limites puestos (D14 + D24)`
+- `0a37e18` — `feat(crm): 4.5 · avisarle al operador por Telegram (D25)`
+
+Hay un vigésimo, `aef6587` (*"staging no compilaba por una variable sin usar"*),
+que saca una variable muerta que dejó la `3d011c5` en
+`crm-whatsapp-inbound.e2e.ts`. **No sé de cuál de las dos sesiones salió** —
+las dos firman igual—, pero toca un archivo del CRM, así que queda anotado acá.
+
+#### Lo que quedó hecho
+
+| | | |
+|---|---|---|
+| **3.2** | Webhook de WhatsApp: la puerta **y** el procesamiento | ✅ |
+| **3.3** | Vínculo por teléfono (faltaba la UI) | ✅ |
+| **3.4** | Ventana de 24 h | ✅ |
+| **3.5** | Audio sí, video no | ✅ |
+| **4.1** | Retención de adjuntos (D15) | ✅ apagado por default |
+| **4.2** | Cierre de red auditado (D14 + **D24**) | ✅ backend, sin pantalla |
+| **4.3** | Línea de tiempo del contacto | ✅ |
+| **4.5** | Aviso al operador por Telegram (**D25**) | ✅ |
+
+**Decisiones nuevas**: **D23** (una App de Meta + un WABA por socio), **D24**
+(el cierre de red es deliberado e irreversible), **D25** (el aviso sale del
+panel — revierte esa parte de D16).
+
+#### 🏆 La etapa 2 quedó verificada ENTERA con un bot real
+
+Era el riesgo abierto más grande del proyecto. El dueño probó, en orden:
+vincular · recibir · responder · **una segunda persona distinta** (cierra el
+**2.6**, el bug que la suite no podía ver) · una nota de voz (**2.4** + **3.5**)
+· mandar un PDF y una imagen desde el panel (**2.8**).
+
+Queda sin ejercitar **una sola cosa**: los caminos de `delivery_error` (bot
+bloqueado, `Unauthorized`). Sólo aparecen provocándolos.
+
+#### 🔴 Cuatro bugs que ninguna suite iba a encontrar — y tres no eran del CRM
+
+1. **`guessMime` no conocía audio** → el `.ogg` salía sin `Content-Type` y sin
+   `Content-Length`, y el reproductor no arrancaba. Iba a aparecer igual el día
+   que WhatsApp entrara en producción, donde las notas de voz son la mitad.
+2. **`STORAGE_PUBLIC_BASE_URL` nunca cargada** → todos los adjuntos apuntaban a
+   `localhost`. Afectaba a las imágenes igual.
+3. **Las migraciones de control se salteaban solas** → falta el snapshot de la
+   `0005` y su `when` está fechado en el futuro. Con `MIGRATE_ON_BOOT=1` habría
+   pasado igual en producción, con el deploy en verde. **El journal de tenant
+   tiene el mismo problema.**
+4. **`storage.delete()` no informaba si borró** → para retención eso deja
+   archivos huérfanos invisibles.
+
+#### Lo que le falta al dueño
+
+1. **`TELEGRAM_ALERT_WEBHOOK_SECRET`** + `setWebhook` en el bot de alertas, para
+   que ande el 4.5. Documentado en `.env.example`.
+2. **`CHANNEL_SECRET_KEY` en producción**, distinta a la de staging.
+3. **La decisión de scope P1** (ver "Deuda técnica" en `14-decisiones.md`):
+   dentro de una misma red, un cajero puede ver la plata de un jugador de otro
+   cajero. Sigue abierta.
+
+#### Estado al cerrar
+
+- **De la etapa 3 no queda nada que se pueda hacer sin Meta.** Falta responder y
+  bajar adjuntos: las dos necesitan el token del WABA.
+- **De la etapa 4** quedan **4.6** y **4.7**, que el roadmap recomienda dejar
+  hasta que alguien las pida, y **4.8** (campañas), que depende de WhatsApp.
+- **Próximo paso lógico**: no hay uno urgente. Lo que más valor tiene es
+  **decidir el scope P1** y que Meta salga del trámite.
+
+#### Para el próximo agente
+
+- **Las migraciones de tenant se escriben a mano.** Los snapshots se cortan en la
+  `0031` y las migraciones van por la `0120`: `drizzle-kit generate` ahí
+  regeneraría 86 migraciones. Seguir el precedente de la `0062`.
+- **Al agregar una migración, mirar el `when` del journal**: los dos journals
+  tienen entradas fechadas en el futuro, y una migración con `when` menor **se
+  saltea en silencio**.
+- **Nada de lo construido para WhatsApp vio un payload real de Meta.** Está
+  probado con firmas fabricadas, que es el máximo posible sin la cuenta.
