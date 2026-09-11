@@ -475,25 +475,20 @@ tiempos del tramo. No es que no existan —la etapa se deriva en *Circuitos*
 consultas más por contacto abierto, y las dos pantallas donde viven ya los
 muestran.
 
-> ### ⚠️ Nota sobre cómo correr los tests
+> ### Nota sobre cómo correr los tests — ✅ resuelto el mismo día
 >
-> **Los dos patrones andan por separado y fallan mezclados.**
+> Durante esta tanda, **mezclar el patrón `crm-` con el de las suites unitarias
+> en un mismo comando hacía fallar cosas al azar**. El síntoma era `no existe la
+> base de datos «tenant_jest_test»`: el `globalTeardown` la dropea, y la mezcla
+> dejaba suites e2e corriendo contra una base que ya no estaba. Se verificó con
+> `git stash` que no venía de estos cambios.
 >
-> ```
-> npx jest --runInBand crm-        → 187 en verde, 15 suites
-> npx jest --runInBand <unitarias> → 154 en verde, 10 suites
-> npx jest --runInBand crm- <unitarias> → falla, y fallan cosas distintas cada vez
-> ```
+> **Lo arregló la sesión de plataforma** con `TEST_TENANT_SUFFIX` (commit
+> `3bbb9db`, *"cada sesión con su propio tenant de test"*). Comprobado después de
+> rebasar: el comando mezclado pasa **268 en verde, 20 suites**.
 >
-> El síntoma es `no existe la base de datos «tenant_jest_test»`: el
-> `globalTeardown` la dropea, y mezclar patrones deja suites e2e corriendo
-> contra una base que ya no está. Las fallas se mueven entre corridas, que es la
-> firma de un problema de estado compartido y no de una aserción.
->
-> **No es de este cambio**, y se verificó en serio: con los cambios guardados en
-> un `git stash` —o sea, árbol limpio— el comando mezclado **falla igual**.
-> Queda anotado como deuda de la infraestructura de tests; mientras tanto,
-> correrlos **por separado**.
+> Se deja escrito porque el síntoma es confuso y puede volver si dos corridas
+> comparten el mismo sufijo.
 
 ### 4.1 — Borrar los adjuntos vencidos, y por qué va apagado
 

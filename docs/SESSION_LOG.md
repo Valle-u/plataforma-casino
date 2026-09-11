@@ -17702,10 +17702,7 @@ cuando el roadmap dice "hecho".
   de **otro** cajero y ver su saldo y movimientos. No lo introduce el botón del
   3.3 —el vínculo automático de D4 ya lo permitía— pero lo vuelve elegible en vez
   de accidental. **El dueño decidió tratarlo aparte.**
-- **Los tests del CRM y los unitarios no se pueden correr en el mismo comando.**
-  `--runInBand crm-` pasa entero (187, 15 suites) y los unitarios también (154,
-  10). Mezclados fallan al azar: el `globalTeardown` dropea `tenant_jest_test`.
-  Verificado con `git stash` que **en árbol limpio falla igual**.
+- ~~**Los tests del CRM y los unitarios no se pueden correr en el mismo comando.**~~ ✅ **Lo arregló la sesión de plataforma el mismo día** con `TEST_TENANT_SUFFIX` (`3bbb9db`, *"cada sesión con su propio tenant de test"*). Comprobado tras rebasar: el comando mezclado pasa **268 en verde, 20 suites**.
 
 ### Commits creados
 
