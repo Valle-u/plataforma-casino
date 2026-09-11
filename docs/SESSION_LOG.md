@@ -17783,3 +17783,11 @@ en `apps/api/.env.example`.
 > Telegram, validado por bytes, guardado, servido y reproducido) **y el 2.4**
 > (recibir adjuntos con un bot real). De Telegram sólo falta el **2.8**: mandar
 > un archivo *desde* el panel.
+>
+> **✅ Y el 2.8 también: la etapa 2 quedó verificada ENTERA.** Se mandó un PDF y
+> una imagen desde el panel y llegaron al Telegram de la persona. Con eso, todo
+> lo construido para Telegram corrió contra la API de verdad al menos una vez —
+> vincular, webhook, ruteo, recibir texto y adjuntos, responder, mandar
+> archivos, e idempotencia con dos remitentes. **Única excepción honesta**: los
+> caminos de `delivery_error` (bot bloqueado, Unauthorized), que sólo se ven
+> provocándolos.

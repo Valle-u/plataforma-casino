@@ -423,8 +423,32 @@ Lo 1 y lo 2 están arreglados (`storage-servir-archivos.e2e.ts`, 16 tests) y el
 driver ahora **avisa al arrancar** si la variable falta. Lo 3 es a propósito y
 sigue igual: ver la nota del deploy, abajo.
 
-> **Lo que sigue sin probarse con un bot real:** el **2.8**, mandar un archivo
-> *desde* el panel. Es contestar con el clip.
+#### ✅ Y el 2.8 también: la etapa 2 quedó verificada entera
+
+El mismo día se mandó desde el panel un **PDF** (`Comprobante_Supervielle…`,
+99,9 KB) y una **imagen** (40,1 KB), y los dos llegaron al Telegram de la
+persona.
+
+**La imagen llegó como archivo, no como foto inline, y eso es correcto.** El
+envío usa siempre `sendDocument` y nunca `sendPhoto`: `sendPhoto` recomprime del
+lado de Telegram, y en un **comprobante** eso puede dejar ilegible un CBU o un
+monto. Se pierde estética y se gana que el número se lea. Conviene tenerlo
+escrito acá porque **parece un bug y no lo es** — el criterio está en 2.8.
+
+**Con esto, todo lo que se construyó para Telegram corrió contra la API de verdad
+al menos una vez**: vincular el bot, el webhook con su firma, el ruteo por dueño
+de canal, recibir texto y adjuntos, responder, mandar archivos, y la
+idempotencia por chat con dos remitentes distintos.
+
+> **La única excepción honesta**: los **caminos de error de entrega**
+> (`delivery_error`, migración `0114`) — *bot bloqueado por el usuario*,
+> *Unauthorized*. Sólo aparecen cuando Telegram rechaza, y para verlos hay que
+> provocarlo: bloquear el bot desde el cliente y responder desde el panel.
+
+> ⚠️ **Los adjuntos viejos muestran `0:00 / 0:00` y no es un bug**: sus archivos
+> se los llevaron los redeploys. La URL se regenera en cada lectura, así que el
+> mensaje queda apuntando bien a un archivo que ya no existe. En staging eso va
+> a pasar siempre — ver la nota del disco efímero.
 
 ### 3.3 — El backend estaba y no lo llamaba nadie
 
