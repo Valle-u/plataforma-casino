@@ -12,6 +12,7 @@
  */
 
 import Link from 'next/link';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   ArrowDownToLine,
@@ -23,12 +24,19 @@ import {
   LogIn,
   UserPlus,
   UserRound,
-  type LucideIcon,
 } from 'lucide-react';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { WheelIcon } from '@/components/player/wheel/wheel-icon';
 import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useGameFacets, type GameCategory } from '@/lib/hooks/use-games';
+import {
+  CASINO_TIMEZONE_DEFAULT,
+  dayAnchorInZone,
+  useActivePromotions,
+  useMyWheelRewards,
+  type WheelConfig,
+} from '@/lib/hooks/use-player-promotions';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { cn } from '@/lib/cn';
 
@@ -54,13 +62,23 @@ const CATEGORY_LABEL: Record<GameCategory, string> = {
 };
 const CATEGORY_ORDER: GameCategory[] = ['slots', 'live', 'crash', 'table', 'mini'];
 
+interface NavIconProps {
+  size?: number | string;
+  className?: string;
+  style?: CSSProperties;
+}
+
+/** Firma estructural de los íconos del nav: acepta lucide y los propios. */
+type NavIcon = (props: NavIconProps) => ReactNode;
+
 interface IconItem {
   kind: 'icon';
   label: string;
   href: string;
-  icon: LucideIcon;
+  icon: NavIcon;
   exact?: boolean;
   count?: number;
+  badge?: string;
 }
 interface DotItem {
   kind: 'dot';
@@ -68,6 +86,7 @@ interface DotItem {
   href: string;
   color: string;
   count: number;
+  badge?: string;
 }
 type NavItem = IconItem | DotItem;
 
@@ -104,15 +123,42 @@ export function PlayerSidebar() {
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
 
+  // ¿Hay rueda activa para ESTE jugador? (el backend ya filtra por
+  // elegibilidad — rol, red, autoexclusión, cuenta activa — docs/27 §3.)
+  const wheelQ = useActivePromotions('daily_wheel', { enabled: !!user });
+  const wheel = wheelQ.data?.data?.[0] ?? null;
+  const wheelRewards = useMyWheelRewards(wheel?.id ?? null, { limit: 5 });
+  const spinsLeft = useMemo(() => {
+    if (!user || !wheel) return null;
+    const cfg = wheel.config as Partial<WheelConfig> | undefined;
+    const tz = cfg?.timezone || CASINO_TIMEZONE_DEFAULT;
+    const anchor = dayAnchorInZone(new Date(), tz);
+    const spun = (wheelRewards.data?.data ?? []).some(
+      (r) => r.metadata?.dayAnchor === anchor,
+    );
+    return spun ? null : '1';
+  }, [user, wheel, wheelRewards.data]);
+
   const total = facets.data?.total ?? 0;
   const countByCat = new Map<GameCategory, number>();
   for (const c of facets.data?.categories ?? []) {
     if (c.count > 0) countByCat.set(c.category, c.count);
   }
 
-  // Grupo JUGAR: Casino + Todos los juegos + categorías con juegos.
+  // Grupo JUGAR: Casino + (Ruleta si hay rueda activa) + Todos los juegos + categorías.
   const playItems: NavItem[] = [
     { kind: 'icon', label: 'Casino', href: '/play', icon: Home, exact: true },
+    ...(wheel
+      ? [
+          {
+            kind: 'icon',
+            label: 'Ruleta',
+            href: '/play/wheel',
+            icon: WheelIcon,
+            badge: spinsLeft ?? undefined,
+          } as IconItem,
+        ]
+      : []),
     {
       kind: 'icon',
       label: 'Todos los juegos',
@@ -291,6 +337,17 @@ function NavGroup({
                 />
               )}
               <span className="flex-1 truncate">{item.label}</span>
+              {item.badge != null && (
+                <span
+                  className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none text-[var(--color-accent-fg)]"
+                  style={{
+                    background: 'var(--gradient-accent)',
+                    boxShadow: '0 0 10px color-mix(in srgb, var(--color-accent) 40%, transparent)',
+                  }}
+                >
+                  {item.badge}
+                </span>
+              )}
               {item.count != null && (
                 <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-[var(--color-fg-subtle)]">
                   {item.count.toLocaleString('es-AR')}

@@ -9,7 +9,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import {
   Bell,
   CreditCard,
@@ -22,15 +22,26 @@ import {
   X,
 } from 'lucide-react';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { WheelIcon } from '@/components/player/wheel/wheel-icon';
 import { useAuth } from '@/lib/auth-context';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
+import { useActivePromotions } from '@/lib/hooks/use-player-promotions';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { cn } from '@/lib/cn';
+
+interface NavIconProps {
+  size?: number | string;
+  className?: string;
+  style?: CSSProperties;
+}
+
+/** Firma estructural de los íconos del nav (lucide + propios). */
+type NavIcon = (props: NavIconProps) => ReactNode;
 
 interface NavItem {
   label: string;
   href: string;
-  icon: typeof Home;
+  icon: NavIcon;
   color: string;
   badge?: string;
   exact?: boolean;
@@ -51,23 +62,34 @@ const PUBLIC_GROUPS: NavGroup[] = [
   },
 ];
 
-const ALL_GROUPS: NavGroup[] = [
-  ...PUBLIC_GROUPS,
-  {
-    label: 'Mi dinero',
-    items: [
-      { label: 'Depósitos', href: '/play/deposits', icon: CreditCard, color: 'var(--color-accent)' },
-      { label: 'Retiros', href: '/play/withdrawals', icon: Landmark, color: 'var(--color-accent)' },
-    ],
-  },
-  {
-    label: 'Cuenta',
-    items: [
-      { label: 'Mi cuenta', href: '/play/account', icon: UserRound, color: 'var(--color-accent)' },
-      { label: 'Notificaciones', href: '/play/notifications', icon: Bell, color: 'var(--color-accent)', badge: 'unread' },
-    ],
-  },
-];
+function buildGroups(showWheel: boolean): NavGroup[] {
+  return [
+    {
+      label: 'Principal',
+      items: [
+        { label: 'Casino', href: '/play', icon: Home, color: 'var(--color-accent)', exact: true },
+        ...(showWheel
+          ? [{ label: 'Ruleta', href: '/play/wheel', icon: WheelIcon, color: 'var(--color-accent)' }]
+          : []),
+        { label: 'Juegos', href: '/play/lobby', icon: Gamepad2, color: 'var(--color-accent)' },
+      ],
+    },
+    {
+      label: 'Mi dinero',
+      items: [
+        { label: 'Depósitos', href: '/play/deposits', icon: CreditCard, color: 'var(--color-accent)' },
+        { label: 'Retiros', href: '/play/withdrawals', icon: Landmark, color: 'var(--color-accent)' },
+      ],
+    },
+    {
+      label: 'Cuenta',
+      items: [
+        { label: 'Mi cuenta', href: '/play/account', icon: UserRound, color: 'var(--color-accent)' },
+        { label: 'Notificaciones', href: '/play/notifications', icon: Bell, color: 'var(--color-accent)', badge: 'unread' },
+      ],
+    },
+  ];
+}
 
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.exact) return pathname === item.href;
@@ -88,7 +110,10 @@ export function PlayerMobileSidebar({ open, onClose }: PlayerMobileSidebarProps)
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
 
-  const groups = user ? ALL_GROUPS : PUBLIC_GROUPS;
+  const wheelQ = useActivePromotions('daily_wheel', { enabled: !!user });
+  const wheel = wheelQ.data?.data?.[0] ?? null;
+
+  const groups = user ? buildGroups(!!wheel) : PUBLIC_GROUPS;
   const unreadCount = unread.data?.count ?? 0;
 
   // Close on route change

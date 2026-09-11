@@ -17921,3 +17921,38 @@ bloqueado, `Unauthorized`). Sólo aparecen provocándolos.
   saltea en silencio**.
 - **Nada de lo construido para WhatsApp vio un payload real de Meta.** Está
   probado con firmas fabricadas, que es el máximo posible sin la cuenta.
+
+---
+
+## 2026-09-11 18:50 AR — opencode (big-pickle)
+
+**Duración**: ~2h en esta ronda (continúa la avanzada del frontend de la ruleta).
+**Usuario**: Uriel.
+
+### Qué hicimos
+Frontend del jugador de la ruleta diaria, terminado según `docs/27` y con la estética del handoff local que pasó el dueño (**"Frontend, y usa el handoff que te pase"**).
+
+- **Manda `docs/27` sobre el handoff**: se tomó solo estética (rueda neón de 12 gajos, hub, anillo), el ítem de menú y la pantalla. NO se tomaron 3 tiradas/día, cashback, giros gratis, bono x2 ni jackpot del handoff (§15.5 queda proyecto aparte en nav mobile/propuestas).
+- **Sin backend nuevo**: consume los endpoints de la etapa 5 (`commitment`, `spin` con `verificacion`, `my-rewards` con `deliveredAt`/`deliveryError`).
+- Archivos creados: `apps/web/lib/wheel/fairness.ts` (verificación WebCrypto: SHA-256 del serverSeed + HMAC RNG → gajo), `apps/web/lib/wheel/rotation.ts` (rAF idle/land con destino por centro de gajo), `apps/web/lib/wheel/day-anchor.ts` (`nextAnchorAt`/`remainingUntilNextAnchor`, DST-safe), `apps/web/components/player/wheel/wheel-svg.tsx` (geometría del handoff) y `wheel-icon.tsx`.
+- `apps/web/app/play/wheel/page.tsx` rehecha: HoyCard (girar/preparando sobre), countdown "volvé mañana", VerificacionCard sobre cerrado/abierto, términos, historial con **Entregado / Falló acreditación / Pendiente** (usando `deliveredAt`/`deliveryError` reales), modal de premio con confetti y checks.
+- `use-player-promotions.ts`: tipos extendidos, `useWheelCommitment`, `dayAnchorInZone`, `CASINO_TIMEZONE_DEFAULT`, y `enabled` en `useActivePromotions` (para no fetchear como guest).
+- Sidebar desktop ítem **Ruleta** (con badge "1" si quedan giros, oculto si no hay rueda elegible — el backend ya filtra); drawer mobile: Ruleta en grupo Principal. `DailyWheelCard` en el lobby ahora hace `return null` sin rueda y ancla el día en la zona del casino.
+- Correcciones del día: errores de `noUncheckedIndexedAccess`, hook order en `DailyWheelCard`, y 2 `no-misused-promises` en la página (`void promos.refetch()`, `onSpin={() => void handleSpin()}`).
+
+### Decisiones tomadas
+- **El `commitment.dayAnchor` es la fuente de verdad del día**; `dayAnchorInZone` (timezone de la config, default `America/Argentina/Buenos_Aires`) es solo fallback.
+- Verificación client-side es **espejo exacto de `WheelFairnessService`** para que el sobre abierto coincida 1:1 con lo que muestra el backend.
+- Los **fenómenos del build local en Windows** (EPERM symlink en el paso de tracing `standalone`) son del token del shell, no del código: el `next build` compila y genera las 65 páginas y hasta el type-check pasa; el deploy real se hace en Linux vía Dokploy, donde el tracing funciona (standalone previo del 23/08 lo confirma).
+
+### Commits creados
+- (pendiente el push en esta entrada; ver siguiente sesión si no quedó el hash)
+
+### Estado al cerrar
+- **Fase actual**: ruleta — frontend del jugador terminado y validado (type-check ✅, lint ✅ sin errores, build compila y genera todo; solo falla el tracing standalone por el entorno Windows).
+- **Próximo paso lógico**: commit + push a `origin/staging` (marca el todo #8), probar en `staging.miamihub.vip` con una rueda activa configurada, y luego merge a `main` si todo OK.
+
+### Notas para próximo agente
+- Para probar el flujo completo necesita un tenant con una promo `daily_wheel` activa con ficha de prueba con giros.
+- Handoff local (`docs/design_handoff_ruleta_diaria/`) NO está versionado.
+- No imprimir secretos. Si se corre la suite del API: `TEST_TENANT_SUFFIX` propio.

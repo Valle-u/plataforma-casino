@@ -54,6 +54,10 @@ export interface WheelSegment {
 
 export interface WheelConfig {
   segments: WheelSegment[];
+  /** Zona del casino para el día del giro (etapa 2). Default en wheel-config.ts. */
+  timezone?: string;
+  /** Tope de fichas total otorgado por día (etapa 2). */
+  dailyCapChips?: number | null;
 }
 
 export interface PlayerPromotion {
@@ -73,7 +77,10 @@ interface ActiveResponse {
   data: PlayerPromotion[];
 }
 
-export function useActivePromotions(type?: PromotionKind) {
+export function useActivePromotions(
+  type?: PromotionKind,
+  opts: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ['active-promotions', { type }],
     queryFn: () => {
@@ -81,6 +88,7 @@ export function useActivePromotions(type?: PromotionKind) {
       return apiGet<ActiveResponse>(`/tenant/promotions/active${q}`);
     },
     staleTime: 60_000,
+    ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
   });
 }
 
@@ -88,12 +96,23 @@ export function useActivePromotions(type?: PromotionKind) {
 // Daily wheel: spin + rewards
 // ──────────────────────────────────────────────────────────────────────
 
+/** Datos del sobre abierto que devuelve el spin (docs/27 §8). */
+export interface SpinVerificacion {
+  serverSeed: string | null;
+  serverSeedHash: string | null;
+  clientSeed: string | null;
+  rng: number | null;
+  configHash: string | null;
+}
+
 export interface SpinResponse {
   rewardId: string;
   segmentId: string;
   segmentLabel: string | null;
   prize: WheelPrize;
   grantedAt: string;
+  /** Presente desde la etapa 5: la semilla revelada y su huella. */
+  verificacion?: SpinVerificacion;
 }
 
 export function useSpinWheel(promotionId: string | null) {
@@ -124,6 +143,10 @@ export interface WheelReward {
   segmentId: string | null;
   prize: WheelPrize;
   metadata: Record<string, unknown> & { dayAnchor?: string };
+  /** Estado de entrega (etapa 5): `deliveredAt` + `deliveryError` (ambos null = pendiente). */
+  deliveredAt: string | null;
+  deliveryError: string | null;
+  configHash: string | null;
   grantedAt: string;
   createdAt: string;
 }
@@ -156,6 +179,10 @@ export function useMyWheelRewards(
 /**
  * Helper UTC: devuelve 'YYYY-MM-DD' del día actual. Matchea el dayAnchor
  * que el backend usa para idempotencia (mismo formato).
+ *
+ * ⚠️ Legado: la ruleta usa `dayAnchorInZone` (la etapa 2 calcula el día en
+ * la timezone de la config, no en UTC). Este helper queda para el streak,
+ * que sí sigue en UTC.
  */
 export function todayUtcAnchor(): string {
   const d = new Date();
@@ -163,6 +190,64 @@ export function todayUtcAnchor(): string {
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Día en la zona del casino (ruleta, etapa 2)
+// ──────────────────────────────────────────────────────────────────────
+
+/** Espejo de `ZONA_POR_DEFECTO` en apps/api/src/promotions/wheel-config.ts. */
+export const CASINO_TIMEZONE_DEFAULT = 'America/Argentina/Buenos_Aires';
+
+const ZONE_FMT_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+function anchorFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = ZONE_FMT_CACHE.get(timeZone);
+  if (!fmt) {
+    // 'en-CA' → 'YYYY-MM-DD'; el backend usa el mismo truco (daily-wheel.service.ts).
+    fmt = new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone,
+    });
+    ZONE_FMT_CACHE.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
+/**
+ * 'YYYY-MM-DD' del día actual en la zona del casino. El backend deriva el
+ * dayAnchor de el giro con la timezone de la config del wheel; si el front
+ * usara UTC, entre las 21:00 y la medianoche UTC mostraría el día corrido.
+ */
+export function dayAnchorInZone(date = new Date(), timeZone?: string | null): string {
+  return anchorFormatter(timeZone || CASINO_TIMEZONE_DEFAULT).format(date);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Daily wheel: el sobre cerrado (verificación, docs/27 §8)
+// ──────────────────────────────────────────────────────────────────────
+
+/** Lo que el backend publica ANTES del giro. Nunca la semilla. */
+export interface WheelCommitment {
+  serverSeedHash: string;
+  clientSeed: string;
+  dayAnchor: string;
+}
+
+export function useWheelCommitment(promotionId: string | null) {
+  return useQuery({
+    queryKey: ['my-wheel-commitment', promotionId],
+    queryFn: () => {
+      if (!promotionId) throw new Error('promotionId requerido');
+      return apiGet<WheelCommitment>(
+        `/tenant/promotions/${promotionId}/commitment`,
+      );
+    },
+    enabled: !!promotionId,
+    staleTime: 60_000,
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────

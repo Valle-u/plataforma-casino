@@ -24,10 +24,13 @@ import {
   type StandingsView,
 } from '@/lib/hooks/use-leagues';
 import {
+  CASINO_TIMEZONE_DEFAULT,
+  dayAnchorInZone,
   todayUtcAnchor,
   useActivePromotions,
   useMyStreak,
   useMyWheelRewards,
+  type WheelConfig,
 } from '@/lib/hooks/use-player-promotions';
 
 /* ------------------------------------------------------------------ */
@@ -486,11 +489,19 @@ function BonusesCard() {
 /* ------------------------------------------------------------------ */
 
 function DailyWheelCard() {
-  // Datos REALES: ¿hay ruleta activa? ¿ya giró hoy?
+  // Datos REALES: ¿hay rueda activa PARA ESTE JUGADOR? El backend ya filtra
+  // por elegibilidad (docs/27 §3). Sin rueda válida la card NO se muestra
+  // (docs/27 §7) — vacía la lista significa "no podés girar", no "no giraste".
   const wheels = useActivePromotions('daily_wheel');
   const wheel = wheels.data?.data?.[0] ?? null;
   const rewards = useMyWheelRewards(wheel?.id ?? null, { limit: 5 });
-  const today = todayUtcAnchor();
+
+  if (!wheel) return null;
+
+  const config = wheel.config as Partial<WheelConfig>;
+  const timezone = config?.timezone || CASINO_TIMEZONE_DEFAULT;
+  const today = dayAnchorInZone(new Date(), timezone);
+
   const spunToday = (rewards.data?.data ?? []).some((r) => {
     const a = typeof r.metadata?.dayAnchor === 'string' ? r.metadata.dayAnchor : null;
     return a === today;
