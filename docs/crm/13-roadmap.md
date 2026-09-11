@@ -249,7 +249,7 @@ lo normal, no la excepción. La pantalla tiene que estar diseñada para eso.
 | | Qué | |
 |---|---|---|
 | 3.1 | Acompañar al socio en el alta ante Meta: explicar el trámite y mostrar en qué paso está | ⬜ **Diferido a propósito** |
-| 3.2 | Webhook (igual que 2.2, con la firma de Meta) | 🟡 **La puerta hecha**; falta procesar |
+| 3.2 | Webhook (igual que 2.2, con la firma de Meta) | ✅ **Hecho**: la puerta y el procesamiento |
 | 3.3 | Vínculo por teléfono, con las **tres defensas** de D4 | ✅ **Hecho** (`a8256a3` + la UI) |
 | 3.4 | **El aviso de la ventana de 24 h, antes de escribir** | ✅ **Hecho** |
 | 3.5 | Qué se hace con audios y videos | ✅ **Hecho** |
@@ -307,6 +307,48 @@ Por eso la entrega se parte y cada trozo se guarda **recortado a su número**: u
 uno ajeno y comprueba que lo guardado **no contiene** ni el número ni el texto
 del otro.
 
+#### El procesamiento: de un `change` a una conversación
+
+**Acá WhatsApp deja de parecerse a Telegram.** Allá el teléfono no llega casi
+nunca, así que **D4 no se ejecuta y todo contacto nace como lead**. Acá el `from`
+viene siempre, así que **D4 corre de lleno** — el sistema busca ese número entre
+los jugadores y lo vincula **solo, sin preguntar**. Es la diferencia que hace que
+el operador atienda con el contexto puesto desde el primer mensaje.
+
+Las tres defensas que D4 exige, y dónde está cada una:
+
+| | Defensa | Dónde |
+|---|---|---|
+| 1 | **Normalizar antes de comparar** | `telefono.ts`. `0341 15 555-1234` y `5493415551234` son el mismo número y en E.164 estricto **no matchean** |
+| 2 | **Más de un jugador → no vincular ninguno** | El `length !== 1`. `users.phone` no es único: un teléfono compartido uniría a dos personas en una ficha, y el operador vería el nombre equivocado **sin ninguna señal** |
+| 3 | **Se puede deshacer** | Ya existía (3.3) |
+
+**D4 se intenta una sola vez, al crear el contacto.** Reintentarlo en cada
+mensaje pisaría un desvínculo hecho a mano: el operador que apretó *"no es esta
+persona"* lo vería volver solo en el mensaje siguiente — justo lo que la tercera
+defensa viene a permitir. Hay un test que lo fija.
+
+**El alcance del vínculo es la red del dueño del canal**, no el padrón entero.
+Un número de WhatsApp del cajero Pérez no puede vincular a un jugador de otra
+red: sería abrirle la billetera de alguien que no es suyo.
+
+**La idempotencia es más simple que en Telegram.** El `wamid` es **único
+global**, no un contador por chat como el `message_id` — o sea que el bug 2.6 no
+tiene equivalente acá. Igual lleva el prefijo del canal, y lo que lo impide de
+verdad es el índice único de la `0113`.
+
+**Lo que llega y no es texto se nombra, no se traga**: *"mandó una nota de voz,
+y por ahora no se puede ver acá"*. Bajar un adjunto de WhatsApp necesita el token
+del WABA contra la API de Meta, que **no existe hasta que la cuenta salga del
+trámite**. El día que exista, ese aviso se reemplaza por la descarga — es el
+mismo rodeo que Telegram usó hasta el 3.5, y por la misma razón.
+
+**Verificado por HTTP con firmas fabricadas** (`crm-whatsapp-inbound.e2e.ts`, 10
+tests + 25 del módulo puro): D2, D6 —el mismo número en dos canales son dos
+fichas—, D11 —dos mensajes, un hilo—, el reintento con el mismo `wamid`, y las
+dos primeras defensas de D4. Se probó **rompiendo cada defensa a propósito**:
+sacar el `length !== 1` tira exactamente el test de los dos jugadores.
+
 #### Lo que falta para prenderlo
 
 1. `WHATSAPP_APP_SECRET` y `WHATSAPP_VERIFY_TOKEN` en el entorno (ver
@@ -314,8 +356,12 @@ del otro.
    propósito: no verificar no es lo mismo que aceptar.
 2. La pantalla para vincular un número (equivalente de `/support/canales`), que
    es la que escribe en `whatsapp_numbers`. Hoy la fila se carga a mano.
-3. El procesamiento del `change`.
-4. Y lo que no depende de nosotros: que Meta verifique la cuenta del socio
+3. ~~El procesamiento del `change`.~~ ✅ hecho.
+4. **Responder**, que es lo que falta para que el canal sirva de verdad: hoy
+   entra y no sale. Necesita el token del WABA, o sea la cuenta de Meta. Ahí es
+   donde deja de aplicar el bloqueo del compositor que puso el **3.4**.
+5. **Bajar los adjuntos**, por la misma razón: hoy se nombran.
+6. Y lo que no depende de nosotros: que Meta verifique la cuenta del socio
    (**D13**) y que la App salga del trámite.
 
 ### 3.4 — La ventana, y lo que no se podía separar de ella

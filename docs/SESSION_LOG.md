@@ -17791,3 +17791,13 @@ en `apps/api/.env.example`.
 > archivos, e idempotencia con dos remitentes. **Única excepción honesta**: los
 > caminos de `delivery_error` (bot bloqueado, Unauthorized), que sólo se ven
 > provocándolos.
+>
+> **Y se cerró el 3.2 entero**: el procesamiento del `change` de Meta. Es donde
+> WhatsApp deja de parecerse a Telegram — **acá llega el teléfono, así que D4
+> corre de lleno** con sus tres defensas (normalizar antes de comparar; más de
+> un jugador → no vincular ninguno; deshacer, que ya existía). D4 se intenta
+> **una sola vez, al crear el contacto**: reintentarlo en cada mensaje pisaría
+> un desvínculo hecho a mano. Verificado por HTTP con firmas fabricadas y
+> rompiendo cada defensa a propósito. **De la etapa 3 ya no queda nada que se
+> pueda hacer sin Meta**: falta responder y bajar adjuntos, y las dos cosas
+> necesitan el token del WABA.

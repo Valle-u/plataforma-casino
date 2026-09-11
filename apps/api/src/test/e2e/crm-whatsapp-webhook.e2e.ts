@@ -212,7 +212,17 @@ describe('CRM · webhook de WhatsApp (3.2)', () => {
   // ── Autenticidad ──────────────────────────────────────────────────────────
 
   describe('la firma', () => {
-    it('una entrega firmada se guarda como crudo, sin procesar', async () => {
+    /**
+     * Hasta que existió el procesamiento, este test fijaba que el crudo quedaba
+     * **sin procesar** — la puerta guardaba y nada más. Ahora `processed_at` se
+     * marca, y eso es lo que se comprueba: el cambio de comportamiento era el
+     * objetivo de esa tanda, no un efecto colateral.
+     *
+     * Lo que este archivo sigue probando es **la puerta**: firma, recorte por
+     * número y guardado. Que el mensaje termine en una bandeja está en
+     * `crm-whatsapp-inbound.e2e.ts`.
+     */
+    it('una entrega firmada se guarda como crudo y se procesa', async () => {
       const wamid = `wamid.OK-${SUITE}`;
       const res = await postWebhook(
         sobre([{ waba: 'waba-mio', cambios: [cambio(NUM_MIO, wamid)] }]),
@@ -223,8 +233,7 @@ describe('CRM · webhook de WhatsApp (3.2)', () => {
       const crudos = await crudosDe(wamid);
       expect(crudos).toHaveLength(1);
       expect(crudos[0]!.external_id).toBe(wamid);
-      // La puerta guarda; procesar es la tanda que sigue.
-      expect(crudos[0]!.processed_at).toBeNull();
+      expect(crudos[0]!.processed_at).not.toBeNull();
     });
 
     /**
