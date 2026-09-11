@@ -10943,3 +10943,52 @@ todavía no lo refleja".
 propósito, para que los comprobantes de prueba no se mezclen con los reales). La
 primera corrida real conviene hacerla **en simulacro**
 (`CHAT_RETENCION_SIMULACRO=1`), y después sobre un casino chico.
+
+---
+
+## 2026-09-10 — El `<audio>` no sonaba: el servidor de archivos no sabía servir media
+
+**Contexto**: cerrando el **3.5** (audio sí, video no), el dueño mandó una nota
+de voz al bot de Telegram desde staging. Llegó, se validó por bytes, se guardó
+bien. Y el reproductor mostraba `0:00 / 0:00` y no arrancaba.
+
+**Tres causas apiladas**, y sólo la tercera era un bug de código:
+
+1. **`STORAGE_PUBLIC_BASE_URL` nunca había estado seteada en staging**, así que
+   el driver de disco caía a su default `http://localhost:3000`. Fallaba dos
+   veces en silencio: la URL no existe para quien mira, y encima es `http`
+   adentro de una página `https` (contenido mixto, bloqueado sin decir nada).
+   **Afectaba a las imágenes igual** — nadie lo había visto porque hasta ese día
+   nunca había entrado un adjunto por un canal externo.
+2. **El disco de staging es efímero**: cada redeploy se lleva los archivos. Es a
+   propósito, pero confunde el diagnóstico porque un archivo que ayer estaba hoy
+   da 404.
+3. **`StorageController` no sabía servir media.** `guessMime` no conocía ningún
+   tipo de audio, así que el `.ogg` salía **sin `Content-Type`** — y para media
+   el navegador no adivina, a diferencia de un `<img>`. Y no había
+   **`Content-Length` ni soporte de `Range`**, que es exactamente lo que un
+   `<audio>` necesita para saber cuánto dura y para poder arrancar.
+
+**Por qué las imágenes nunca lo notaron**: estaban en la lista de MIMEs desde
+siempre, y un `<img>` se conforma con un 200 entero. Media no: pide un pedazo,
+espera un 206, y si no lo consigue se queda en `0:00`.
+
+**Lo decidido**: `StorageController` implementa `Range` de verdad — 206 con
+`Content-Range`, `Accept-Ranges: bytes`, rangos con sufijo (`bytes=-50` son los
+**últimos** 50 bytes, no los primeros), 416 cuando no se puede satisfacer, y
+`HEAD` sin cuerpo. Se agregaron los MIMEs de audio que el CRM acepta (`.ogg` y
+`.opus` → `audio/ogg`, `.mp3`, `.m4a`, `.amr`).
+
+**Esto no era del CRM y no se iba a quedar quieto.** El día que WhatsApp entre
+en producción, las notas de voz son la mitad del tráfico entrante.
+
+**Verificación**: 16 tests nuevos en `storage-servir-archivos.e2e.ts`,
+comprobados **rompiendo cada mitad a propósito** — sin el MIME, sin
+`Content-Length`, sin el 206. Y después, de punta a punta con el bot real: la
+nota de voz suena.
+
+**Lección de proceso, para el próximo agente**: mandé al dueño a reprobar dos
+veces antes de leer el código que sirve los archivos. El síntoma (`0:00 / 0:00`,
+sin barra de progreso) decía desde el principio que el problema era de
+**headers**, no de la URL ni del archivo. Cuando un adjunto "está bien guardado"
+pero no se reproduce, **mirar primero qué responde el endpoint que lo sirve**.
