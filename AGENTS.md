@@ -75,6 +75,29 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
 
 ---
 
+12. **Si hay otra sesión trabajando, corré los tests con tu propio tenant.**
+
+    ```bash
+    cd apps/api
+    TEST_TENANT_SUFFIX=loquesea REDIS_KEY_PREFIX='loquesea:' npx jest --runInBand <patrón>
+    ```
+
+    Sin el sufijo, **la suite entera es global**: la base `tenant_jest_test`, el
+    slug `jest` en `platform_control` y el dominio `jest.localhost`. Y
+    `globalTeardown` **dropea la base**. Dos corridas simultáneas se pisan.
+
+    **El modo de falla es el peligroso**: no dice "otra corrida te pisó", dice
+    que *tu* código está roto. El 2026-09-10 la misma suite dio 16, 28 y 35
+    fallas en tres corridas seguidas del mismo árbol — todas por esto. Costó
+    tres corridas y una comparación contra la rama base darse cuenta de que el
+    cambio que se estaba probando no tenía nada que ver. Con el sufijo: 39 de
+    39 y exit 0.
+
+    Sin la variable no cambia nada, así que CI y el uso de siempre siguen
+    igual. Los valores se arman en `apps/api/src/test/setup/test-tenant.ts`.
+
+---
+
 ## 3. Cómo navegar la documentación
 
 **Carpeta `/docs`** contiene toda la documentación de diseño. Numerada para indicar orden de lectura cuando entrás de cero.

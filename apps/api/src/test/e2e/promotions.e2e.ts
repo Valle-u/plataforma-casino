@@ -9,6 +9,7 @@
  */
 
 import postgres from 'postgres';
+import { sql } from 'drizzle-orm';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
@@ -354,15 +355,46 @@ describe('Promotions / daily_wheel (E2E)', () => {
       expect(spin.body).toMatchObject({ error: 'PROMOTION_SCHEDULE_CLOSED' });
     });
 
-    it('wheel config inválido (probabilidades no suman) → 409 WHEEL_CONFIG_INVALID', async () => {
-      const { id } = await createWheel({
-        config: {
-          segments: [
-            { id: 'a', probability: 0.3, prize: { kind: 'try_again' } },
-            { id: 'b', probability: 0.3, prize: { kind: 'try_again' } },
-          ], // suma = 0.6, fuera de tolerancia.
-        },
-      });
+    it('una config con probabilidades que no suman ya no se puede guardar', async () => {
+      // Desde el 2026-09-10 la config se valida **al guardar** y no sólo al
+      // girar (docs/27-ruleta-diaria.md). Antes esto se creaba sin chistar y
+      // explotaba en la cara del primer jugador que giraba.
+      const res = await ctx.request
+        .post('/tenant/promotions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `badcfg_${Date.now()}`,
+          name: 'Config rota',
+          type: 'daily_wheel',
+          status: 'active',
+          config: {
+            segments: [
+              { id: 'a', probability: 0.3, prize: { kind: 'try_again' } },
+              { id: 'b', probability: 0.3, prize: { kind: 'try_again' } },
+            ], // suma = 0.6, fuera de tolerancia.
+          },
+        });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: 'WHEEL_CONFIG_INVALID' });
+    });
+
+    it('una config rota que YA existía → el jugador recibe 409 al girar', async () => {
+      // El caso real que cubre el 409: una ruleta guardada antes de que
+      // existiera la validación. Se escribe por SQL justamente porque por la
+      // API ya no se puede — que es de lo que se trata el test de arriba.
+      const { id } = await createWheel();
+      await ctx.tenantDb.execute(
+        sql`UPDATE promotions
+               SET config = ${JSON.stringify({
+                 segments: [
+                   { id: 'a', probability: 0.3, prize: { kind: 'try_again' } },
+                   { id: 'b', probability: 0.3, prize: { kind: 'try_again' } },
+                 ],
+               })}::jsonb
+             WHERE id = ${id}`,
+      );
+
       const player = await createTestUser(ctx.request, adminToken, {
         suite: 'wheel-bad-config',
         label: 'p',

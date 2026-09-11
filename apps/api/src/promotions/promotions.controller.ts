@@ -246,6 +246,23 @@ export class PromotionsController {
           error: 'PROMOTION_ACTOR_ROLE',
         });
       }
+      // Config de rueda inválida: es 400 y no 409. Acá el que se equivocó es
+      // quien está guardando, y el mensaje va entero — es el admin el que
+      // tiene que poder arreglarlo. (El 409 de `mapError` es el del jugador
+      // que se topa con una config rota al girar: ahí el mensaje se esconde
+      // porque no es su problema ni lo puede resolver.)
+      if (err instanceof WheelConfigInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'WHEEL_CONFIG_INVALID',
+        });
+      }
+      if (err instanceof WheelFreeSpinsNotSupportedError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'WHEEL_FREE_SPINS_NOT_SUPPORTED',
+        });
+      }
       throw err;
     }
     await this.audit.record(db, {
@@ -287,6 +304,20 @@ export class PromotionsController {
         throw new ForbiddenException({
           message: err.message,
           error: 'PROMOTION_ACTOR_ROLE',
+        });
+      }
+      // Igual que en `create`: el que se equivocó es el admin y el mensaje va
+      // entero, para que pueda corregir la config.
+      if (err instanceof WheelConfigInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'WHEEL_CONFIG_INVALID',
+        });
+      }
+      if (err instanceof WheelFreeSpinsNotSupportedError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'WHEEL_FREE_SPINS_NOT_SUPPORTED',
         });
       }
       throw err;
