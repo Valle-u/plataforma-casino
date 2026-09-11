@@ -76,7 +76,48 @@ export class StorageController {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     const mime = guessMime(absPath);
     if (mime) res.setHeader('Content-Type', mime);
-    const stream = createReadStream(absPath);
+
+    const { size } = await fs.stat(absPath);
+
+    // ── Rangos: lo que hace que un audio se pueda reproducir ────────────────
+    //
+    // Un `<audio>` **no baja el archivo entero y lo reproduce**: pide rangos, y
+    // necesita saber el largo para calcular la duración. Sin `Content-Length` ni
+    // `Accept-Ranges`, el reproductor se dibuja, se queda en `0:00 / 0:00` y no
+    // arranca — sin ningún error, ni en la pantalla ni en la consola.
+    //
+    // Pasó exactamente eso el 2026-09-10 con la primera nota de voz que llegó
+    // por Telegram. Las imágenes nunca lo necesitaron: un `<img>` se conforma
+    // con un 200 y el cuerpo entero.
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    const rango = leerRango(req.headers.range, size);
+    if (rango === 'invalido') {
+      // Pedido fuera del archivo: lo que corresponde es 416 con el largo real,
+      // para que el cliente pueda corregir en vez de reintentar igual.
+      res.setHeader('Content-Range', `bytes */${size}`);
+      res.status(416).end();
+      return;
+    }
+
+    if (rango) {
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${rango.desde}-${rango.hasta}/${size}`);
+      res.setHeader('Content-Length', String(rango.hasta - rango.desde + 1));
+    } else {
+      res.setHeader('Content-Length', String(size));
+    }
+
+    // Un HEAD lleva los mismos headers y ningún cuerpo. El navegador lo usa
+    // para preguntar el largo antes de decidir cómo pedir el archivo.
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+
+    const stream = rango
+      ? createReadStream(absPath, { start: rango.desde, end: rango.hasta })
+      : createReadStream(absPath);
     stream.on('error', (err) => {
       this.logger.error(`Error sirviendo ${absPath}: ${err.message}`);
       if (!res.headersSent) res.status(500).end();
@@ -85,6 +126,53 @@ export class StorageController {
   }
 }
 
+/**
+ * El `Range` pedido, acotado al archivo.
+ *
+ * `null` = no pidió rango (se manda entero). `'invalido'` = pidió algo que no
+ * existe en este archivo, y eso es un 416, no un 200 con otra cosa: devolver
+ * bytes distintos a los pedidos rompe al cliente de la forma más difícil de
+ * depurar.
+ *
+ * Sólo se soporta **un** rango simple (`bytes=desde-hasta`). Los múltiples
+ * (`bytes=0-99,200-299`) existen en la especificación y ningún reproductor los
+ * usa; tratarlos como "sin rango" manda el archivo entero, que es correcto
+ * aunque no sea óptimo.
+ */
+function leerRango(
+  header: string | undefined,
+  size: number,
+): { desde: number; hasta: number } | null | 'invalido' {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return null;
+
+  const [, crudoDesde, crudoHasta] = m;
+  // `bytes=-500` son los ÚLTIMOS 500 bytes, no los primeros. Leerlo al revés
+  // devuelve el pedazo equivocado sin que nada falle.
+  if (!crudoDesde) {
+    const ultimos = Number(crudoHasta);
+    if (!ultimos) return 'invalido';
+    return { desde: Math.max(0, size - ultimos), hasta: size - 1 };
+  }
+
+  const desde = Number(crudoDesde);
+  const hasta = crudoHasta ? Number(crudoHasta) : size - 1;
+  if (desde >= size || desde > hasta) return 'invalido';
+  return { desde, hasta: Math.min(hasta, size - 1) };
+}
+
+/**
+ * El `Content-Type` por extensión.
+ *
+ * ⚠️ **Esta lista tiene que seguir a `CHAT_ATTACHMENT_MIMES`.** Cuando el 3.5
+ * sumó audio a los adjuntos, acá no se sumó nada: un `.ogg` devolvía `null`, el
+ * archivo salía **sin `Content-Type`**, y el `<audio>` no lo reproducía. Las
+ * imágenes no lo notaron porque ya estaban en la lista.
+ *
+ * Devolver `null` no es inofensivo: sin tipo, el navegador tiene que adivinar, y
+ * para media directamente no lo intenta.
+ */
 function guessMime(path: string): string | null {
   const lower = path.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';
@@ -93,5 +181,11 @@ function guessMime(path: string): string | null {
   if (lower.endsWith('.avif')) return 'image/avif';
   if (lower.endsWith('.gif')) return 'image/gif';
   if (lower.endsWith('.pdf')) return 'application/pdf';
+  // Audio (**3.5**). `.opus` va como ogg: es el contenedor que manda WhatsApp y
+  // Telegram, y es lo que el navegador sabe leer.
+  if (lower.endsWith('.ogg') || lower.endsWith('.opus')) return 'audio/ogg';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.m4a')) return 'audio/mp4';
+  if (lower.endsWith('.amr')) return 'audio/amr';
   return null;
 }

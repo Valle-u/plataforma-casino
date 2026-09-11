@@ -17766,3 +17766,13 @@ en `apps/api/.env.example`.
 > nadie lo había visto porque nunca había entrado un adjunto por un canal
 > externo. **Se arregla con una variable en Dokploy**, sin tocar código. El
 > driver ahora lo grita al arrancar en vez de fallar callado.
+>
+> **Y el audio seguía sin sonar por otra cosa, esta vez de verdad del servidor
+> de archivos.** Dos bugs en `StorageController`, los dos invisibles:
+> `guessMime` **no conocía audio** —un `.ogg` salía sin `Content-Type`, y para
+> media el navegador no adivina— y **no había `Content-Length` ni `Range`**, que
+> es lo que un `<audio>` necesita para saber la duración y reproducir. De ahí el
+> `0:00 / 0:00` que no arranca. Las imágenes nunca lo notaron: estaban en la
+> lista de MIMEs y un `<img>` se conforma con un 200 entero. Arreglado con 16
+> tests nuevos (`storage-servir-archivos.e2e.ts`), verificados rompiendo cada
+> mitad a propósito.
