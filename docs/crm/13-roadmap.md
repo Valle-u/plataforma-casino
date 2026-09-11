@@ -530,13 +530,52 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 | | Qué | Estado |
 |---|---|---|
 | 4.1 | Retención de adjuntos a 6 meses (**D15**) | ✅ **Hecho**, apagado por default (ver abajo) |
-| 4.2 | Cierre de red auditado (**D14**) | 🔴 **Delicado**: habilita una excepción a R6. Sólo el admin, auditado. |
+| 4.2 | Cierre de red auditado (**D14** + **D24**) | ✅ **Backend hecho**, sin pantalla a propósito |
 | 4.3 | Llenar `crm_timeline_events` **y mostrarla** | ✅ **Hecho** |
 | 4.4 | Métricas por tramos | ✅ **Hecho** (migración `0115`). Sin backfill: mide desde que se instaló |
 | 4.5 | Aviso al operador por Telegram | La mejora descartada en **D16**, si el hueco molesta |
 | 4.6 | Varios agentes en la misma bandeja | Se ofreció excluirlo y no se marcó |
 | 4.7 | Búsqueda global de mensajes | Ídem. Por **D6** hay que acotarla por bandeja. |
 | 4.8 | Campañas y mensajes masivos | ✅ **Adentro por D21** (D19 revertida) |
+
+### 4.2 — Cerrar una red: una excepción con sus límites puestos
+
+**Esto ejecuta la excepción a la LEY R6 que autorizó D14**, y **D24** fija cómo.
+Lo construido no es "una funcionalidad": es un mecanismo que, mal hecho, deja al
+staff central leyendo conversaciones privadas de terceros sin autorización.
+
+**El evento no existía.** D14 decía que cerrar una red tiene que ser *"un evento
+explícito y auditado, porque ese evento es lo único que separa lo permitido de lo
+prohibido"* — y el sistema no tenía ningún concepto de red cerrada. Ahora es una
+fila en `crm_network_closures`: quién, cuándo, por qué y cuántos contactos movió.
+
+| Límite | Cómo se sostiene |
+|---|---|
+| Sólo el admin | Permiso `crm.close_network`, **no delegable**. Un empleado puede *leer* lo que se abrió; no *abrirlo* |
+| Motivo obligatorio | Mínimo real. Dentro de un año es lo único que explica por qué se abrió |
+| **Irreversible** | `unique` sobre `socio_user_id`: cerrar dos veces es imposible, y con eso abrir-y-cerrar también |
+| La plata sigue oculta | `getContext` no devuelve la billetera. D14 autoriza el historial, no el saldo |
+| El disparador es deliberado | Acción dedicada, no un efecto de desactivar al socio |
+
+**Se mueven el socio y todos sus cajeros.** Los contactos cuelgan de cada
+operador, no del socio: dejar afuera a los cajeros dejaría sus conversaciones en
+bandejas que ya no atiende nadie.
+
+**Sin pantalla, a propósito.** Una acción irreversible que expone años de
+conversaciones no debería estar a un clic hasta que el dueño la vea funcionando.
+Hoy se invoca por la API.
+
+**Verificado con 16 tests que prueban sobre todo lo que sigue prohibido**: que
+**antes** de cerrar el staff central no ve nada de esa red, que un cajero no
+puede cerrar, que sin motivo no se cierra, que cerrar una red **no abre las
+demás**, y que la billetera sigue oculta después. Se probó **rompiendo los dos
+límites que sostienen la excepción**: sacar la irreversibilidad tira el test de
+cerrar dos veces; sacar el motivo tira cuatro.
+
+> ⚠️ **La consecuencia que nadie va a conciliar.** Por **D6**, el Juan de Litoral
+> y el Juan del casino son dos fichas. Al cerrar, la de Litoral pasa a central: el
+> staff va a ver **dos Juan con el mismo teléfono**. Es coherente con "como chats
+> normales", pero **no hay fusión de fichas** en el CRM.
 
 ### 4.3 — El historial: qué se anota, y qué no
 

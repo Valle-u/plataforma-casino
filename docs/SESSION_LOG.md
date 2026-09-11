@@ -17801,3 +17801,11 @@ en `apps/api/.env.example`.
 > rompiendo cada defensa a propósito. **De la etapa 3 ya no queda nada que se
 > pueda hacer sin Meta**: falta responder y bajar adjuntos, y las dos cosas
 > necesitan el token del WABA.
+>
+> **Y el 4.2, el más delicado del CRM**: cerrar una red ejecuta la excepción a la
+> LEY R6 que autorizó D14. El evento **no existía** —D14 decía que tenía que
+> existir y el sistema no tenía ningún concepto de red cerrada—. **D24** fija los
+> límites: acción dedicada (no un efecto de desactivar al socio), permiso propio
+> **no delegable**, motivo obligatorio, **irreversible**, y **la plata sigue
+> oculta** (lectura angosta: D14 autoriza el historial, no el saldo). Backend y
+> 16 tests; **sin pantalla a propósito**.

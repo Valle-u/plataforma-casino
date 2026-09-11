@@ -158,6 +158,10 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'users.view_admin_network', category: 'users', description: 'Ver la red del admin: Casa + socios dependientes + descendants. NO expone la sub-red de socios independientes (aislamiento del modelo). Delegable a empleados de confianza del admin.', auditRequired: false, isDelegatable: true },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
   { code: 'users.intervene_independent', category: 'users', description: 'Intervenir (impersonate) en una sub-red INDEPENDIENTE — el ÚNICO cruce permitido al aislamiento E8/P3. Solo admin, NO delegable, con motivo obligatorio + audit severity critical.', auditRequired: true, isDelegatable: false },
+  // Cerrar la red de un socio independiente (D14 + D24). Hermano del de arriba:
+  // aquel INTERVIENE una red que opera, este abre el historial de una que dejo
+  // de operar — y eso no se cierra despues. Irreversible por diseño.
+  { code: 'crm.close_network', category: 'crm', description: 'Cerrar la red de un socio independiente: sus contactos y conversaciones pasan a la bandeja central y el staff lee el historial completo (D14, excepción autorizada a R6). IRREVERSIBLE. Solo admin, NO delegable, con motivo obligatorio.', auditRequired: true, isDelegatable: false },
   { code: 'users.change_hierarchy', category: 'users', description: 'Asignar/cambiar parent de un user en la jerarquía', auditRequired: true, isDelegatable: false },
   { code: 'users.export', category: 'users', description: 'Exportar lista de usuarios a CSV', auditRequired: true, isDelegatable: true },
 

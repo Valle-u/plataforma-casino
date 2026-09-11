@@ -834,6 +834,20 @@
       "when": 1789475500000,
       "tag": "0117_ruleta_entrega_y_tope",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1789475500001,
+      "tag": "0118_crm_cierre_de_red",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1789475500002,
+      "tag": "0119_crm_close_network_perm",
+      "breakpoints": true
     }
   ]
 }

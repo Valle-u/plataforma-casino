@@ -37,6 +37,7 @@ import {
 } from './chat-crm.service';
 import { ChatService } from './chat.service';
 import { CrmTimelineService } from './crm-timeline.service';
+import { CierreDeRedService } from './cierre-de-red.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
 
 /**
@@ -83,6 +84,7 @@ export class ChatCrmController {
     private readonly telegramChannels: TelegramChannelsService,
     private readonly metricasDeAtencion: CrmMetricasService,
     private readonly timeline: CrmTimelineService,
+    private readonly cierreDeRed: CierreDeRedService,
   ) {}
 
   private db(req: RequestWithTenantUser) {
@@ -394,6 +396,61 @@ export class ChatCrmController {
       actorId,
     });
     return { id: actualizado.id, userId: actualizado.userId };
+  }
+
+  // ── Cerrar una red (D14 + D24) ────────────────────────────────────────────
+
+  /**
+   * ⚠️ **Ejecuta una excepción autorizada a la LEY R6, y no se puede deshacer.**
+   *
+   * Trae los contactos y conversaciones de la red de un socio a la bandeja
+   * central, con una etiqueta que marca de dónde vienen. A partir de ahí el
+   * staff —**incluidos los empleados**— lee el historial completo: todo lo que
+   * ese socio y sus cajeros hablaron con sus jugadores, durante todos los años
+   * que operó.
+   *
+   * **Sólo el admin** (`crm.close_network`, no delegable), y con **motivo
+   * obligatorio**: dentro de un año es lo único que va a explicar por qué el
+   * staff puede leer eso.
+   *
+   * El detalle de por qué es irreversible está en `CierreDeRedService`.
+   */
+  @Post('networks/:socioId/close')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('crm.close_network')
+  async cerrarRed(
+    @Req() req: RequestWithTenantUser,
+    @Param('socioId', ParseUUIDPipe) socioId: string,
+    @Body() body: { reason?: unknown },
+  ) {
+    const actorId = req.tenantUser?.id;
+    if (!actorId) throw new ForbiddenException('No tenés acceso al soporte.');
+
+    const motivo = typeof body?.reason === 'string' ? body.reason : '';
+    const headers = (req.headers ?? {}) as Record<string, string | undefined>;
+
+    return this.cierreDeRed.cerrar(this.db(req), {
+      socioId,
+      actorId,
+      motivo,
+      ip: headers['x-forwarded-for'] ?? null,
+      userAgent: headers['user-agent'] ?? null,
+    });
+  }
+
+  /**
+   * Las redes ya cerradas.
+   *
+   * Es la contracara de la acción: sin una forma de ver **qué se abrió y por
+   * qué**, la auditoría que justifica la excepción vive sólo en una tabla que
+   * nadie mira. Mismo permiso — el que puede cerrar puede ver lo cerrado.
+   */
+  @Get('networks/closed')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('crm.close_network')
+  async redesCerradas(@Req() req: RequestWithTenantUser) {
+    return this.cierreDeRed.listar(this.db(req));
   }
 
   // ── Alta de jugador desde el chat (D9) ────────────────────────────────────

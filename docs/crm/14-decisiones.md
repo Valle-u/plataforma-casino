@@ -1162,3 +1162,102 @@ Telegram.
 **Leyes que aplican:** P4 (multi-tenant: la tabla de mapeo es la excepción de la
 DB de control, y errarle cruza casinos). **No** toca E8 ni P3: el CRM no mueve
 fichas.
+
+---
+---
+
+## Bloque 9 — Los límites del cierre de una red
+
+**Decidido el 2026-09-10**, al construir el 4.2.
+
+---
+
+### D24 · El cierre de una red es deliberado y no se deshace
+
+**D14 autorizó la excepción** —cuando un socio deja de operar, sus conversaciones
+pasan al staff central— y dejó abierto **cómo se dispara**. Esto lo cierra.
+
+D14 ya había dicho de qué depende que la excepción sea legítima:
+
+> *Cerrar una red tiene que ser un evento explícito y auditado —quién la cerró y
+> cuándo—, **porque ese evento es lo único que separa lo permitido de lo
+> prohibido**.*
+
+Al construirlo apareció que **ese evento no existía**: el sistema no tiene ningún
+concepto de "red cerrada". Hay `users.status` (`inactive`, `suspended`), pero eso
+es por usuario y es un botón normal de operación.
+
+---
+
+#### 1 · El disparador es una acción dedicada, no un efecto
+
+Un mecanismo propio (`crm.close_network`), **sólo admin, no delegable**, con
+motivo obligatorio. Es lo que pide **R6**: *"puede intervenir en todo, pero por un
+mecanismo separado y auditado, **nunca por los botones normales de operación**"*.
+
+**Se descartó** reutilizar la desactivación del socio (`status = 'inactive'`).
+Era mucho más barato y no agregaba conceptos. Se descartó porque desactivar un
+usuario **es** un botón normal de operación: un admin desactivando a alguien por
+cualquier motivo —una sanción, un error, una baja temporal— abriría sin querer el
+historial de toda su red. La excepción dejaría de tener un disparador deliberado,
+que es justo lo que el punto 3 de D14 exige.
+
+---
+
+#### 2 · No se puede deshacer
+
+**Una red cerrada no se reabre.** El `unique` sobre `crm_network_closures
+.socio_user_id` hace que cerrar dos veces sea imposible, y con eso, abrir y
+cerrar también.
+
+**Por qué.** D14 lo anticipa: *"si el cierre se puede hacer y deshacer sin
+registro, la excepción se convierte en un interruptor para leer la red de
+cualquiera"*. Con reversa, un admin cierra la red cinco minutos, lee años de
+conversaciones privadas y reabre. Queda auditado — pero **una auditoría sólo
+sirve si alguien la lee**, y para cuando alguien la lea el daño ya está hecho.
+
+**Se descartó:**
+
+- *Reversible, también auditado.* Arregla el cierre por error sin tocar la base.
+  Se descartó por lo de arriba: la auditoría es una defensa pasiva contra un
+  abuso activo.
+- *Reversible, avisándole al socio.* No impide el abuso pero lo hace visible para
+  el único que tiene interés en notarlo. Es la opción intermedia y **queda como
+  candidata** si alguna vez hace falta poder deshacer.
+
+**Lo que cuesta:** un cierre por error se arregla **a mano en la base**. Es
+fricción a propósito, para algo que expone años de conversaciones privadas de
+terceros.
+
+---
+
+#### 3 · La plata sigue oculta
+
+D14 autoriza leer **el historial**, y su límite 2 insiste en que es *sólo
+visibilidad del CRM*. **No dice nada sobre ver el saldo.**
+
+Se toma la **lectura angosta**: después de cerrar, el staff lee las
+conversaciones pero `getContext` **sigue sin devolver la billetera** — esos
+jugadores siguen colgando de una rama independiente y **R6 sigue entero para la
+plata**. Hay un test que lo fija, justamente para que no se amplíe de rebote.
+
+Ampliarlo sería otra decisión, del dueño.
+
+---
+
+#### ⚠️ La consecuencia que nadie va a conciliar
+
+Por **D6**, el Juan de Litoral y el Juan del casino son **dos fichas distintas**.
+Al cerrar Litoral, la suya pasa a central — así que el staff va a ver **dos Juan
+con el mismo teléfono**: uno con el historial de Litoral y otro con el propio.
+
+D14 dice "como chats normales", así que es coherente. Pero es un efecto real y
+**nadie las une**: no hay fusión de fichas en el CRM, y agregarla pediría decidir
+qué pasa con las notas y las etiquetas de cada una.
+
+---
+
+**Leyes que aplican:** **R6** (es su excepción autorizada, con sus límites),
+**P2** (el permiso no es delegable: un empleado puede *leer* lo que se abrió, no
+*abrirlo*). **No** toca **E8** ni **P3**: cerrar una red no habilita a nadie a
+mover fichas.

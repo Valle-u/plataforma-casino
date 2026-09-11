@@ -85,3 +85,6 @@ export * from './referral-attributions';
 export * from './referral-codes';
 // CRM + Livechat (aditivo, detrás del flag CRM_ENABLED). Ver docs/22-crm-livechat.md.
 export * from './crm';
+// El cierre de una red independiente (D14 + D24). Es la frontera de una
+// excepción autorizada a la LEY R6, así que vive en su propio archivo.
+export * from './crm-network-closures';
