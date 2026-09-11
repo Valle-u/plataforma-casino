@@ -53,7 +53,7 @@ async function readPromotionRewardsFor(
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     const rows = await sql<Array<Record<string, unknown>>>`
-      SELECT id, prize, wallet_tx_id, bonus_id
+      SELECT id, prize, wallet_tx_id, bonus_id, delivered_at, delivery_error
       FROM promotion_rewards
       WHERE promotion_id = ${promotionId} AND user_id = ${userId}
     `;
@@ -205,25 +205,40 @@ describe('Promotions / prize kind=bonus (E2E)', () => {
       expect(rewards[0]!.wallet_tx_id).toBeNull();
     });
 
-    it('definition inactiva → fail-soft: reward creado, bonus_id=null', async () => {
+    // ⚠️ Estos dos describían el comportamiento viejo: el spin respondía 200 y
+    // el reward se creaba con `bonus_id=null`. O sea que el jugador veía el
+    // confetti y no recibía nada, y la única forma de enterarse era leer los
+    // logs del servidor.
+    //
+    // Desde el 2026-09-10 (docs/27-ruleta-diaria.md §9) **para la ruleta** el
+    // premio no entregado se le dice al jugador y queda marcado como fallido.
+    // El fail-soft del awarder sigue existiendo y `login_streak` lo conserva
+    // (ver el test de más abajo): lo que cambió es que ahora informa el motivo
+    // y cada quien decide, en vez de devolver `null` a secas.
+
+    it('definition inactiva → el jugador se entera y el premio queda fallido', async () => {
       const { id: promoId } = await createWheelWithBonus({
         definitionId: inactiveBonusDefId, // status='draft', no se puede otorgar
         amount: 100,
       });
 
       const { player, res } = await spinAsPlayer(promoId, 'wheel-bonus-inactive');
-      // El spin igual responde 200 — el premio se "registra" aunque no se entregue.
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('WHEEL_PRIZE_NOT_DELIVERED');
 
       const bonuses = await readUserBonusesFor(player.id);
       expect(bonuses).toHaveLength(0);
 
+      // El reward SÍ existe: el giro del día se consumió y queda registrado
+      // que hubo un premio. Lo que no dice es que se entregó.
       const rewards = await readPromotionRewardsFor(promoId, player.id);
       expect(rewards).toHaveLength(1);
       expect(rewards[0]!.bonus_id).toBeNull();
+      expect(rewards[0]!.delivered_at).toBeNull();
+      expect(rewards[0]!.delivery_error).not.toBeNull();
     });
 
-    it('definition inexistente → fail-soft', async () => {
+    it('definition inexistente → el jugador se entera y el premio queda fallido', async () => {
       const fakeDefId = '00000000-0000-7000-8000-000000000000';
       const { id: promoId } = await createWheelWithBonus({
         definitionId: fakeDefId,
@@ -231,12 +246,14 @@ describe('Promotions / prize kind=bonus (E2E)', () => {
       });
 
       const { player, res } = await spinAsPlayer(promoId, 'wheel-bonus-nodef');
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('WHEEL_PRIZE_NOT_DELIVERED');
 
       expect(await readUserBonusesFor(player.id)).toHaveLength(0);
       const rewards = await readPromotionRewardsFor(promoId, player.id);
       expect(rewards).toHaveLength(1);
       expect(rewards[0]!.bonus_id).toBeNull();
+      expect(rewards[0]!.delivered_at).toBeNull();
     });
 
     it('idempotencia: re-spin mismo día → mismo bonus, no doble grant', async () => {

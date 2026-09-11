@@ -52,6 +52,21 @@ export interface AwardResult {
   walletTxId: string | null;
   /** Id del user_bonus si el premio fue otorgar un bono. NULL en otros casos. */
   bonusId: string | null;
+  /**
+   * Por qué NO se entregó el premio, cuando el awarder decidió no romper.
+   * `undefined` si se entregó bien (o si no había nada que entregar).
+   *
+   * Existe porque el fail-soft del grant de bonos —que sigue siendo el
+   * comportamiento de `login_streak` y de las ligas— devolvía `bonusId: null`
+   * y nada más. Desde afuera, "no había bono que dar" y "el bono fallaba" se
+   * veían idénticos: los dos eran `null`.
+   *
+   * La ruleta usa esto para marcar el premio como fallido y avisarle al
+   * jugador (`docs/27-ruleta-diaria.md` §9). Los demás lo ignoran y siguen
+   * como antes — a propósito: cambiarles el comportamiento de rebote sería
+   * modificar dos features para arreglar una tercera.
+   */
+  deliveryError?: string;
 }
 
 /**
@@ -195,7 +210,11 @@ export class PromotionPrizeAwarder {
             `Premio kind=bonus falló — promo=${context.code} user=${userId} ` +
               `definitionId=${prize.definitionId}: ${err.message}`,
           );
-          return { walletTxId: null, bonusId: null };
+          // Se devuelve el motivo, no sólo `null`. Quien llama decide qué
+          // hacer: la ruleta marca el premio como fallido y se lo dice al
+          // jugador; `login_streak` y las ligas lo ignoran y siguen igual que
+          // siempre.
+          return { walletTxId: null, bonusId: null, deliveryError: err.message };
         }
         // Errores no esperados: re-tirar.
         throw err;

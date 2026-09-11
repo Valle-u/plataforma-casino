@@ -131,16 +131,63 @@ diferencia es lo que hace sostenible regalar todos los días.
 Esto respeta **R8**: el `bonus_balance` es exclusivo de jugadores, y como sólo
 giran jugadores (§3), no hay conflicto.
 
+### 5.1b ⚠️ El rollover NO se aplica, y eso cambia los números
+
+**Descubierto el 2026-09-10 al implementar la etapa 3.** El campo `wagering` de
+las planillas se guarda, se exporta a CSV y **nadie lo lee**: no hay motor que
+cuente apuestas contra el requisito. El comentario del propio esquema lo dice
+—*"sin wagering tracking todavía"*— y se verificó que ningún código lo consume.
+
+**Lo que sí se cumple**, y es la protección real:
+
+- El bono **hay que jugarlo**: las apuestas consumen primero el saldo real y
+  después el bono (decisión del dueño del 2026-09-03, implementada en
+  `placeBetWithBonus`, y los tres proveedores la usan).
+- El bono **no se retira directo**.
+- El bono **vence** si no se usa.
+
+**Lo que no**: "apostarlo N veces". El rollover efectivo es **x1** — el jugador
+apuesta el bono una vez y lo que gane ya es retirable.
+
+**Consecuencia sobre la plata, que es lo que importa.** El argumento de §5.1 era
+que con rollover el premio vuelve casi entero a la Casa y por eso el costo real
+sería una fracción del nominal. Con x1 y un RTP de ~95%, de cada 100 fichas de
+bono el jugador se queda con ~95 retirables: **el costo real es casi el nominal,
+aproximadamente el doble de lo que se asumió al armar la tabla de §5.4.**
+
+El dueño decidió (2026-09-10) **salir sin rollover** y ajustar los números, en
+vez de construir el motor. El motor queda como proyecto aparte: toca el camino
+de la plata y los callbacks de los tres proveedores.
+
+> **Al armar la tabla y el tope, contá el costo como el nominal.** Si algún día
+> se construye el motor de wagering, los números se pueden aflojar — no al
+> revés.
+
 ### 5.2 Rollover y vencimiento, configurables por premio
 
-Cada segmento define **su propio** rollover y **su propio** vencimiento. La
-migaja puede salir sin exigencia y el premio grande con la exigencia alta.
+Cada segmento define su propio rollover y su propio vencimiento. **Pero el
+rollover no se aplica todavía** (§5.1b): configurarlo hoy deja constancia de la
+intención y no cambia el comportamiento. El **vencimiento sí** se aplica.
 
-### 5.3 Planilla propia
+Viven en la planilla (`bonus_definitions`), no en el premio: el grant no acepta
+override. Por eso la ruleta usa **una planilla por nivel** —una por combinación
+de rollover y vencimiento— y cada gajo apunta a la suya. Se eligió así
+explícitamente para **no tocar una línea del otorgamiento de bonos**, que es
+área sensible y la usan todas las promociones, no sólo la ruleta.
 
-La ruleta usa una **`bonus_definition` dedicada**, no las de bienvenida o
-recarga. Así todo lo que sale de la ruleta se identifica solo en los reportes y
-no se mezcla con el resto del gasto en promociones.
+### 5.3 Planillas propias
+
+La ruleta usa **planillas dedicadas**, no las de bienvenida o recarga. Así todo
+lo que sale de la ruleta se identifica solo en los reportes y no se mezcla con
+el resto del gasto en promociones.
+
+**El premio en fichas retirables está prohibido por código**: una ruleta con un
+segmento `prize.kind='chips'` no se puede guardar. Una decisión que no se hace
+cumplir dura hasta el primer descuido.
+
+> Quién paga: el funder de la **planilla**. Para una planilla del admin eso se
+> redirige a la tesorería `__casa__` por **E3** (ver `docs/15` §0), no a la
+> wallet del admin.
 
 ### 5.4 Tabla propuesta
 
@@ -163,10 +210,18 @@ probabilidades mirando el costo esperado.
 | 10 | 500 FICHAS | bono 500 | x10 | 0,15 % |
 | 11 | SUERTE LA PRÓXIMA | nada | — | 6,5 % |
 
-**Costo nominal esperado: ≈ 24,6 fichas por giro.** El costo *real* es bastante
-menor, porque el rollover devuelve buena parte a la Casa. **Cuánto exactamente
-no se sabe todavía** y es lo primero que hay que medir en `staging` (§12) antes
-de prender esto en producción.
+**Costo nominal esperado: ≈ 24,6 fichas por giro.**
+
+⚠️ **Contá ese número como el costo real, no como el nominal.** La versión
+original de esta tabla suponía que el rollover devolvía buena parte a la Casa y
+que el costo real sería una fracción. **No es así: el rollover no se aplica**
+(§5.1b). Con un RTP de ~95%, el jugador se queda con ~95 de cada 100 fichas de
+bono. Si la tabla se dimensionó pensando en una fracción, está subestimada por
+un factor de dos.
+
+Lo que sigue sin saberse y **hay que medir en `staging`** (§12): cuánto del bono
+termina realmente perdido en el juego contra cuánto se retira. El RTP da una
+estimación; el dato real sale de mirarlo.
 
 **Gana algo el 88,5 % de los giros.** El 11,5 % restante son los dos gajos
 vacíos.
@@ -444,6 +499,11 @@ Nada de Telegram, WhatsApp ni notificaciones del navegador en esta versión.
 
 Se nombran para que nadie los dé por incluidos:
 
+0. **El motor de rollover** (§5.1b). Hoy `wagering` se guarda y nadie lo lee, así
+   que el rollover efectivo es x1 y el costo real del bono es casi el nominal.
+   Construirlo exige contar apuestas contra el requisito y no liberar las
+   ganancias hasta cumplirlo: toca el camino de la plata y los callbacks de los
+   tres proveedores. Es lo que más abarataría la ruleta.
 1. **Tiradas gratis.** El proveedor las soporta —`openGame` de Gregmorn acepta
    `freespinCount` y `freespinTotalBet`, y el cliente ya los sabe mandar— pero
    **nadie lo llama nunca** con esos parámetros. Falta el registro de tiradas

@@ -67,6 +67,7 @@ import {
   WheelConfigInvalidError,
   WheelFreeSpinsNotSupportedError,
   WheelIndependentNetworkError,
+  WheelPrizeNotDeliveredError,
   WheelSelfExcludedError,
 } from './promotions.errors';
 import {
@@ -576,6 +577,17 @@ export class PromotionsController {
       return new ConflictException({
         message: 'Promotion mal configurada — contactá al admin.',
         error: 'WHEEL_FREE_SPINS_NOT_SUPPORTED',
+      });
+    }
+    if (err instanceof WheelPrizeNotDeliveredError) {
+      // Se le dice al jugador que el premio quedó pendiente, no que ganó.
+      // Antes de esto la pantalla tiraba el confetti igual.
+      this.logger.error(`Premio no entregado: ${err.message}`);
+      return new ConflictException({
+        message:
+          'Ganaste, pero no pudimos acreditarte el premio. Ya quedó registrado ' +
+          'y lo vamos a resolver.',
+        error: 'WHEEL_PRIZE_NOT_DELIVERED',
       });
     }
     if (err instanceof FunderInsufficientBalanceError) {

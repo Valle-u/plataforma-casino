@@ -25,6 +25,9 @@ const SUITE = `ruleta-tope-${Date.now().toString(36)}`;
 let ctx: TestApp;
 let adminToken = '';
 
+/** La planilla de bono de la ruleta. La ruleta no entrega fichas retirables. */
+let planillaId = '';
+
 /** Una rueda de un solo premio de 100 fichas, más el gajo sin premio. */
 function configDeDosGajos(overrides: Record<string, unknown> = {}) {
   return {
@@ -33,7 +36,7 @@ function configDeDosGajos(overrides: Record<string, unknown> = {}) {
         id: 'premio',
         label: '100 fichas',
         probability: 0.99,
-        prize: { kind: 'chips', amount: 100 },
+        prize: { kind: 'bonus', definitionId: planillaId, amount: 100 },
       },
       {
         id: 'suerte',
@@ -91,6 +94,20 @@ describe('ruleta diaria · el día y el tope', () => {
       sql`SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}`,
     )) as unknown as Array<{ id: string }>;
     await fundWalletForTests(adminRow[0]!.id, '10000000');
+
+    const planilla = await ctx.request
+      .post('/tenant/bonus-definitions')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({
+        code: `${SUITE}_planilla`,
+        name: 'Planilla de la ruleta',
+        type: 'manual',
+        status: 'active',
+        expirationDays: 7,
+      });
+    expect(planilla.status).toBe(201);
+    planillaId = planilla.body.id as string;
   });
 
   afterAll(async () => {
@@ -138,6 +155,19 @@ describe('ruleta diaria · el día y el tope', () => {
       expect(alAnochecer.toISOString().slice(0, 10)).toBe('2026-03-16');
     });
 
+    it('una ruleta con premio en fichas retirables no se puede guardar', async () => {
+      // docs/27 §5.1: el premio va como bono, que hay que jugar. Con `chips`
+      // el jugador giraba, ganaba 200 y retiraba 200 sin apostar nada.
+      const res = await crearRuleta({
+        segments: [
+          { id: 'plata', probability: 1.0, prize: { kind: 'chips', amount: 200 } },
+        ],
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('WHEEL_CONFIG_INVALID');
+      expect(String(res.body.message)).toContain('bono');
+    });
+
     it('una zona horaria inventada no se puede guardar', async () => {
       const res = await crearRuleta(
         configDeDosGajos({ timezone: 'Marte/Olympus_Mons' }),
@@ -164,7 +194,7 @@ describe('ruleta diaria · el día y el tope', () => {
         const res = await girar(id!, token);
         expect(res.status).toBe(200);
         const prize = res.body.prize as { kind: string; amount?: number };
-        ganados.push(prize.kind === 'chips' ? Number(prize.amount) : 0);
+        ganados.push(prize.kind === 'bonus' ? Number(prize.amount) : 0);
       }
 
       // Dos premios de 100 y después nada.
@@ -186,14 +216,27 @@ describe('ruleta diaria · el día y el tope', () => {
       const { id } = await crearRuleta(
         configDeDosGajos({ dailyCapChips: 250 }),
       );
-      const tokens = await Promise.all(
-        [0, 1, 2, 3, 4, 5].map((i) => jugadorConToken(`race${i}`)),
-      );
+      // Los jugadores se crean EN SERIE. Crearlos en paralelo son doce pedidos
+      // simultáneos —alta y login de cada uno— y bajo carga eso corta alguna
+      // conexión. Es preparación, no lo que se prueba: lo único que tiene que
+      // ser simultáneo son los giros.
+      const tokens: string[] = [];
+      for (const i of [0, 1, 2, 3, 4, 5]) {
+        tokens.push(await jugadorConToken(`race${i}`));
+      }
 
-      const respuestas = await Promise.all(
+      // `allSettled` y no `all`: bajo carga, alguna de las seis conexiones
+      // simultáneas se corta a nivel de socket (ECONNRESET) y eso no dice nada
+      // del tope. Un pedido que ni llegó tampoco gastó.
+      //
+      // Lo que se afirma es el INVARIANTE en la base, no que los seis HTTP
+      // hayan respondido. Y tiene dientes igual: sin el `FOR UPDATE`, el total
+      // medido fue 500 contra un tope de 250.
+      const respuestas = await Promise.allSettled(
         tokens.map((t) => girar(id!, t)),
       );
-      for (const r of respuestas) expect(r.status).toBe(200);
+      const llegaron = respuestas.filter((r) => r.status === 'fulfilled').length;
+      expect(llegaron).toBeGreaterThanOrEqual(3);
 
       const filas = (await ctx.tenantDb.execute(sql`
         SELECT COALESCE(SUM((prize->>'amount')::numeric), 0)::float8 AS total
@@ -210,7 +253,7 @@ describe('ruleta diaria · el día y el tope', () => {
         const token = await jugadorConToken(`sintope${i}`);
         const res = await girar(id!, token);
         const prize = res.body.prize as { kind: string; amount?: number };
-        ganados.push(prize.kind === 'chips' ? Number(prize.amount) : 0);
+        ganados.push(prize.kind === 'bonus' ? Number(prize.amount) : 0);
       }
       // Con 99% de probabilidad por giro, que los tres den premio es lo
       // esperable; lo que se prueba es que NADA los frenó.
@@ -225,7 +268,7 @@ describe('ruleta diaria · el día y el tope', () => {
           {
             id: 'unico',
             probability: 1.0,
-            prize: { kind: 'chips', amount: 100 },
+            prize: { kind: 'bonus', definitionId: planillaId, amount: 100 },
           },
         ],
         dailyCapChips: 500,
@@ -253,47 +296,77 @@ describe('ruleta diaria · el día y el tope', () => {
       expect(res.status).toBe(200);
 
       const filas = (await ctx.tenantDb.execute(sql`
-        SELECT delivered_at, delivery_error, wallet_tx_id
+        SELECT delivered_at, delivery_error, bonus_id
           FROM promotion_rewards WHERE promotion_id = ${id}
       `)) as unknown as Array<{
         delivered_at: string | null;
         delivery_error: string | null;
-        wallet_tx_id: string | null;
+        bonus_id: string | null;
       }>;
       expect(filas[0]!.delivered_at).not.toBeNull();
       expect(filas[0]!.delivery_error).toBeNull();
-      // Premio en fichas: tiene que haber movido plata de verdad.
-      expect(filas[0]!.wallet_tx_id).not.toBeNull();
+      // El premio es un bono: tiene que existir el `user_bonus`, no un
+      // movimiento de saldo retirable.
+      expect(filas[0]!.bonus_id).not.toBeNull();
     });
 
-    it('si el funder no tiene saldo, el premio NO queda como entregado', async () => {
-      // El agujero viejo: la fila se escribía igual y nadie se enteraba de que
-      // el jugador no había cobrado.
-      const pelado = await createTestUser(ctx.request, adminToken, {
-        suite: SUITE,
-        label: 'pelado',
-        role: 'admin_tenant',
-      });
-      const { id } = await crearRuleta(configDeDosGajos());
-      // Se le cambia el funder por uno sin saldo.
-      await ctx.tenantDb.execute(
-        sql`UPDATE promotions SET funded_by_user_id = ${pelado.id} WHERE id = ${id}`,
-      );
+    it('un bono que no se pudo otorgar NO queda como entregado', async () => {
+      // El bug que introdujo la etapa 2: el grant de bonos tiene un fail-soft
+      // que no rompe y devuelve `bonusId: null`. Como no tiraba, el premio se
+      // marcaba ENTREGADO — justo lo que el estado de entrega vino a cerrar.
+      //
+      // Se usa una planilla en borrador, que es uno de los casos del fail-soft.
+      const planillaEnBorrador = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `ruleta_draft_${Date.now()}`,
+          name: 'Planilla en borrador',
+          type: 'manual',
+          status: 'draft',
+          expirationDays: 30,
+        });
+      expect(planillaEnBorrador.status).toBe(201);
 
-      const token = await jugadorConToken('sinsaldo');
+      const { id } = await crearRuleta({
+        segments: [
+          {
+            id: 'bono',
+            probability: 1.0,
+            prize: {
+              kind: 'bonus',
+              definitionId: planillaEnBorrador.body.id as string,
+              amount: 50,
+            },
+          },
+        ],
+      });
+
+      const token = await jugadorConToken('bonofallido');
       const res = await girar(id!, token);
-      expect(res.status).toBeGreaterThanOrEqual(400);
+      // Al jugador se le dice que quedó pendiente, no que ganó.
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('WHEEL_PRIZE_NOT_DELIVERED');
 
       const filas = (await ctx.tenantDb.execute(sql`
-        SELECT delivered_at, delivery_error
+        SELECT delivered_at, delivery_error, bonus_id
           FROM promotion_rewards WHERE promotion_id = ${id}
       `)) as unknown as Array<{
         delivered_at: string | null;
         delivery_error: string | null;
+        bonus_id: string | null;
       }>;
       expect(filas).toHaveLength(1);
       expect(filas[0]!.delivered_at).toBeNull();
-      expect(filas[0]!.delivery_error).toContain('saldo');
+      expect(filas[0]!.bonus_id).toBeNull();
+      expect(filas[0]!.delivery_error).not.toBeNull();
     });
+
+    // Se quito el test de "funder sin saldo": desde que el premio es bono, lo
+    // fondea el funder de la PLANILLA, y para una planilla del admin eso se
+    // redirige a la tesoreria (LEY E3). Dejar al admin sin saldo ya no produce
+    // una entrega fallida. El camino de falla lo cubre el test de arriba, con
+    // la planilla en borrador.
   });
 });

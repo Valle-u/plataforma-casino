@@ -47,6 +47,8 @@ describe('Promotions / daily_wheel (E2E)', () => {
   let adminToken: string;
   let adminUserId: string;
   let cajero1Token: string;
+  /** Planilla de bono de la ruleta: no entrega fichas retirables. */
+  let planillaId = '';
 
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
@@ -60,6 +62,22 @@ describe('Promotions / daily_wheel (E2E)', () => {
 
     // Fondeo para premios (por DB; el mint del admin se eliminó del producto).
     await fundWalletForTests(adminUserId, '1000000');
+
+    // La ruleta no entrega fichas retirables: el premio va como bono
+    // (docs/27-ruleta-diaria.md §5.1). Los tests necesitan una planilla.
+    const planilla = await ctx.request
+      .post('/tenant/bonus-definitions')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({
+        code: `wheel_tests_${Date.now()}`,
+        name: 'Planilla de la ruleta (tests)',
+        type: 'manual',
+        status: 'active',
+        expirationDays: 7,
+      });
+    expect(planilla.status).toBe(201);
+    planillaId = planilla.body.id as string;
 
     cajero1Token = await loginAsCajero1(ctx.request);
   });
@@ -91,7 +109,7 @@ describe('Promotions / daily_wheel (E2E)', () => {
               id: 'win',
               label: '100 chips',
               probability: 1.0,
-              prize: { kind: 'chips', amount: 100 },
+              prize: { kind: 'bonus', definitionId: planillaId, amount: 100 },
             },
           ],
         },
@@ -182,7 +200,10 @@ describe('Promotions / daily_wheel (E2E)', () => {
   // ──────────────────────────────────────────────────────────────────────
 
   describe('Spin: happy path', () => {
-    it('spin con 1 segmento chips 100% → credita user, debita funder', async () => {
+    it('spin con 1 segmento 100% → el premio va al saldo de BONO, no al retirable', async () => {
+      // Cambió respecto del test viejo, que verificaba un crédito al saldo
+      // retirable. Desde docs/27 §5.1 la ruleta entrega bono: el jugador tiene
+      // que jugarlo y sólo lo que gane pasa a ser retirable.
       const { id } = await createWheel();
 
       const player = await createTestUser(ctx.request, adminToken, {
@@ -197,7 +218,6 @@ describe('Promotions / daily_wheel (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', playerToken);
 
-      const adminBefore = await readWalletBalance(adminUserId);
       const playerBefore = await readWalletBalance(player.id);
 
       const spin = await ctx.request
@@ -207,14 +227,29 @@ describe('Promotions / daily_wheel (E2E)', () => {
       expect(spin.status).toBe(200);
       expect(spin.body).toMatchObject({
         segmentId: 'win',
-        prize: { kind: 'chips', amount: 100 },
+        prize: { kind: 'bonus', amount: 100 },
       });
 
-      const adminAfter = await readWalletBalance(adminUserId);
       const playerAfter = await readWalletBalance(player.id);
 
-      expect(Number(adminBefore) - Number(adminAfter)).toBe(100);
-      expect(Number(playerAfter) - Number(playerBefore)).toBe(100);
+      // El saldo RETIRABLE del jugador no se movió: eso es el punto del
+      // cambio. El premio existe, pero hay que jugarlo.
+      expect(Number(playerAfter)).toBe(Number(playerBefore));
+
+      // Quién paga no se verifica acá: el bono lo fondea el funder de la
+      // PLANILLA, y para una planilla del admin eso se redirige a la
+      // tesorería `__casa__` (LEY E3, docs/15 §0). Esa resolución tiene sus
+      // propios tests en la suite de bonos — repetirla acá sería probar dos
+      // veces lo mismo y atarse a un detalle que no es de la ruleta.
+
+      // El bono está, y en el saldo de bono.
+      const bono = (await ctx.tenantDb.execute(sql`
+        SELECT w.bonus_balance::float8 AS bonus,
+               (SELECT count(*)::int FROM user_bonuses WHERE user_id = ${player.id}) AS n
+          FROM wallets w WHERE w.user_id = ${player.id}
+      `)) as unknown as Array<{ bonus: number; n: number }>;
+      expect(bono[0]!.n).toBe(1);
+      expect(Number(bono[0]!.bonus)).toBe(100);
 
       expect(await countRewardsFor(id, player.id)).toBe(1);
     });

@@ -125,10 +125,26 @@ export function parseWheelConfig(raw: unknown): WheelSegment[] {
       throw new WheelFreeSpinsNotSupportedError(s.id);
     }
 
+    // La ruleta no reparte fichas retirables (docs/27 §5.1, decisión del
+    // dueño). El premio va como BONO: el jugador tiene que jugarlo —las
+    // apuestas consumen primero el saldo real y después el bono— y sólo lo que
+    // gane pasa a ser retirable. Con `chips` giraba, ganaba 200 y retiraba 200
+    // sin haber jugado nada.
+    //
+    // Se prohíbe acá, al guardar, y no se deja "recomendado": una decisión que
+    // no se hace cumplir dura hasta el primer descuido.
+    if (s.prize?.kind === 'chips') {
+      throw new WheelConfigInvalidError(
+        `segment '${s.id}': la ruleta no entrega fichas retirables. ` +
+          `El premio va como bono (prize.kind='bonus' con su planilla). ` +
+          `Ver docs/27-ruleta-diaria.md §5.1`,
+      );
+    }
+
     // El monto tiene que ser un número. No es cosmético: el tope diario suma
     // `(prize->>'amount')::numeric` en SQL, y un monto que no castea no falla
     // en ese segmento — hace fallar la suma entera, o sea el giro de todos.
-    if (s.prize?.kind === 'chips' || s.prize?.kind === 'bonus') {
+    if (s.prize?.kind === 'bonus') {
       const monto = Number(s.prize.amount);
       if (!Number.isFinite(monto) || monto <= 0) {
         throw new WheelConfigInvalidError(

@@ -139,6 +139,18 @@ export class WheelSelfExcludedError extends PromotionError {
  * la config y al entregar— porque un premio que no se puede pagar no tiene que
  * poder existir.
  */
+/**
+ * El giro salió, pero el premio no se pudo entregar.
+ *
+ * El reward queda con `delivery_error` y el jugador se entera: no se le
+ * muestra un premio que no tiene. Ver `docs/27-ruleta-diaria.md` §9.
+ */
+export class WheelPrizeNotDeliveredError extends PromotionError {
+  constructor(public readonly motivo: string) {
+    super(`El premio no se pudo entregar: ${motivo}`);
+  }
+}
+
 export class WheelFreeSpinsNotSupportedError extends PromotionError {
   constructor(public readonly segmentId?: string) {
     super(

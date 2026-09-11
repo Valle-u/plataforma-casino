@@ -23,6 +23,8 @@ const SUITE = `ruleta-eleg-${Date.now().toString(36)}`;
 let ctx: TestApp;
 let adminToken = '';
 let ruletaId = '';
+/** La planilla de bono de la ruleta: no entrega fichas retirables. */
+let planillaId = '';
 
 /**
  * Jugador de la red central: cuelga del admin, que es lo que da por default.
@@ -92,6 +94,20 @@ describe('ruleta diaria · quién puede girar', () => {
     )) as unknown as Array<{ id: string }>;
     await fundWalletForTests(adminRow[0]!.id, '1000000');
 
+    const planilla = await ctx.request
+      .post('/tenant/bonus-definitions')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({
+        code: `${SUITE}_planilla`,
+        name: 'Planilla de la ruleta',
+        type: 'manual',
+        status: 'active',
+        expirationDays: 7,
+      });
+    expect(planilla.status).toBe(201);
+    planillaId = planilla.body.id as string;
+
     // Una ruleta activa que siempre da el mismo premio: lo que se prueba acá
     // es quién puede girar, no qué sale.
     const res = await ctx.request
@@ -109,7 +125,8 @@ describe('ruleta diaria · quién puede girar', () => {
               id: 'unico',
               label: '10 fichas',
               probability: 1.0,
-              prize: { kind: 'chips', amount: 10 },
+              // La ruleta no entrega fichas retirables (docs/27 §5.1).
+              prize: { kind: 'bonus', definitionId: planillaId, amount: 10 },
             },
           ],
         },

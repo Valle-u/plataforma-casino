@@ -62,6 +62,7 @@ import {
   PromotionScheduleClosedError,
   PromotionTypeMismatchError,
   WheelConfigInvalidError,
+  WheelPrizeNotDeliveredError,
 } from './promotions.errors';
 
 export interface SpinResult {
@@ -259,16 +260,26 @@ export class DailyWheelService {
     // Si la entrega falla, la fila queda con `deliveryError` y el jugador se
     // entera. Antes se registraba el premio igual y no se enteraba nadie.
     try {
-      const { walletTxId, bonusId } = await this.prizeAwarder.award(db, {
-        context: {
-          id: promo.id,
-          code: promo.code,
-          fundedByUserId: promo.fundedByUserId,
-        },
-        userId: params.userId,
-        prize: winningSegment.prize,
-        idempotencyKeyBase: idempotencyKey,
-      });
+      const { walletTxId, bonusId, deliveryError } =
+        await this.prizeAwarder.award(db, {
+          context: {
+            id: promo.id,
+            code: promo.code,
+            fundedByUserId: promo.fundedByUserId,
+          },
+          userId: params.userId,
+          prize: winningSegment.prize,
+          idempotencyKeyBase: idempotencyKey,
+        });
+
+      // El awarder puede "no romper" y aun así no haber entregado nada: es el
+      // fail-soft del grant de bonos. Si lo tratáramos como éxito, marcaríamos
+      // entregado un premio que el jugador no tiene — exactamente el bug que
+      // el estado de entrega vino a cerrar.
+      if (deliveryError) {
+        throw new WheelPrizeNotDeliveredError(deliveryError);
+      }
+
       const entregado = await db
         .update(promotionRewards)
         .set({
