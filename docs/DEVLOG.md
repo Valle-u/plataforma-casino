@@ -10868,3 +10868,78 @@ un arreglo de CI.
    escondidos ahí. El árbol de tests, en cambio, compila limpio — se verificó
    con un tsconfig aparte que lo incluye, porque el autofix tocó helpers de test
    y `type-check` no los mira.
+
+---
+
+## 2026-09-10 — Dos migraciones de control que se salteaban solas
+
+**Contexto**: al generar la migración de la tabla `whatsapp_numbers` que exige
+**D23** (el mapeo `phone_number_id → tenant` del webhook de WhatsApp), aparecieron
+dos problemas dejados por la migración `0005`. Los dos son de plataforma, no del
+CRM, y los dos **fallan en silencio**.
+
+**1. No existe `meta/0005_snapshot.json`.** La `0005`
+(`gregmorn_callback_token`) se escribió a mano y se registró en el journal, pero
+nunca se generó su snapshot. O sea que el último estado que drizzle-kit conoce
+es el de la `0004`: al generar la `0006` volvió a emitir esa columna adentro.
+Correr eso contra una base que ya la tiene falla con *"column already exists"* y
+**traba las migraciones**. Se sacó a mano; el `0006_snapshot.json` sí la
+incluye, así que de acá en adelante las generaciones salen bien.
+
+**2. La `0005` se fechó en el futuro** (`when: 1789300500000`, ~2026-09-12).
+`drizzle-kit migrate` saltea toda entrada del journal con `when` **menor o igual**
+al último `created_at` aplicado. Consecuencia: **cualquier migración de control
+generada antes de esa fecha se saltea en silencio** — dice *"migrations applied
+successfully"* y no crea nada.
+
+**No es teórico: pasó.** La primera corrida de la `0006` reportó éxito y la
+tabla no existía. Con `MIGRATE_ON_BOOT=1` habría pasado igual en producción: el
+deploy en verde, la tabla ausente, y el webhook fallando sin que nada avisara. Se
+corrigió el `when` y se verificó **aplicando la migración de verdad** contra la
+base de control local.
+
+**Qué hacer la próxima vez**: al generar una migración de control, mirar el
+`_journal.json` y confirmar que el `when` nuevo sea mayor que todos los
+anteriores. Y si alguna vez se escribe una migración a mano, generar su snapshot.
+
+---
+
+## 2026-09-10 — `storage.delete()` decía haber borrado sin saberlo
+
+**Contexto**: al construir la retención de adjuntos del chat (**D15**, roadmap
+4.1) hubo que mirar de cerca el borrado en el bucket, que el roadmap ya marcaba
+como **nuevo y conviene verificar, no dar por hecho**.
+
+Lo que había era peor que eso: los **tres** drivers de storage devolvían `void`,
+y el de Cloudflare Worker —el que sirve producción— **se tragaba el fallo a
+propósito**, logueando un error y siguiendo. El `R2Driver` tiraba, el de disco
+tiraba, y el del Worker no: tres comportamientos distintos para el mismo
+contrato.
+
+**Para lo que existía, el diseño del Worker era correcto.** El único caller era
+la limpieza del comprobante de un depósito rechazado: lo que importaba ya había
+pasado, y hacer fallar la operación por un archivo habría cambiado un problema
+de housekeeping por uno de negocio. El comentario lo decía con todas las letras.
+
+**Para retención no alcanza.** Un proceso que marca en la base "este adjunto se
+borró" necesita saber si el archivo se borró. Si no, deja **archivos huérfanos
+invisibles**: la fila dice que está todo bien, la foto de DNI sigue en el bucket,
+y nadie la va a buscar nunca porque el registro no da motivo para buscarla.
+
+**Lo decidido**: `delete()` pasa a devolver **si el archivo ya no está**
+(`true`) o **si sigue ahí** (`false`), y **sigue sin tirar**. Los tres drivers
+convergen: un 404 o un `ENOENT` cuentan como `true` —el contrato pregunta "¿ya
+no está?", no "¿lo borraste vos?"— y un fallo real devuelve `false`.
+
+**No cambia el comportamiento de lo que ya existía**: el caller de depósitos ya
+envolvía la llamada en un `try` y ahora simplemente no entra al `catch`.
+
+**Se descartó** verificar con un `HEAD` después de borrar: un viaje más por
+archivo, y seguiría sin distinguir "no se pudo borrar" de "se borró y el bucket
+todavía no lo refleja".
+
+**Lo que sigue sin verificarse, y está anotado**: que el borrado ande contra
+**R2 de verdad**. En test y en staging el driver es `local` (staging lo usa a
+propósito, para que los comprobantes de prueba no se mezclen con los reales). La
+primera corrida real conviene hacerla **en simulacro**
+(`CHAT_RETENCION_SIMULACRO=1`), y después sobre un casino chico.

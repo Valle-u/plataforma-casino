@@ -17644,3 +17644,111 @@ Sigue pendiente del lado del dueño, sin cambios: `NEXT_PUBLIC_SENTRY_DSN` en el
 servicio **web** de Dokploy (build var, pide redeploy), `CHANNEL_SECRET_KEY` en
 producción distinta de la de staging, y **rotar** —no borrar— los secretos del
 Worker con nombre en forma de credencial.
+
+---
+
+## [2026-09-10 18:31 AR] — Claude Code (Opus 5) · sesión de CRM
+
+**Duración**: ~4h
+**Usuario**: Uriel
+**Alcance**: **sólo CRM**. En paralelo corrió otra sesión sobre la plataforma
+(CI/lint y el diseño de la ruleta); sus commits están intercalados en `staging`
+y **no son de esta sesión**.
+
+### Qué hicimos
+
+Se cerró **toda la etapa 3 menos el trámite de Meta**, y dos ítems de la 4.
+
+| | Qué | Estado al cerrar |
+|---|---|---|
+| 3.2 | Webhook de WhatsApp | 🟡 **la puerta hecha**, falta procesar el `change` |
+| 3.3 | Vínculo por teléfono | ✅ backend ya estaba; **faltaba la UI** |
+| 3.4 | Ventana de 24 h | ✅ |
+| 3.5 | Audio sí, video no | ✅ |
+| 4.1 | Retención de adjuntos (D15) | ✅ **apagado por default** |
+| 4.3 | Línea de tiempo del contacto | ✅ escrita y mostrada |
+
+**El riesgo más grande del proyecto se cerró**: Telegram **corrió con un bot
+real** y anduvo en las dos direcciones a la primera. Hasta hoy había diez tandas
+apiladas sobre un camino que nadie había ejecutado en vivo.
+
+**Patrón que se repitió tres veces**: backend hecho, probado, y **sin nadie que
+lo llame**. Pasó con el vínculo (3.3, 18 tests e2e y ningún botón) y ya había
+pasado con cerrar, avisar y dar de alta en la etapa 1. Vale la pena mirarlo
+cuando el roadmap dice "hecho".
+
+### Decisiones tomadas
+
+- **D23** (en `docs/crm/14-decisiones.md`): **una App de Meta nuestra + un WABA
+  por socio**. No revierte D13 —lo que D13 protege vive en el WABA, que sigue
+  siendo del socio— pero **nuestra App pasa a ser un punto único de falla para
+  todos los canales de WhatsApp**, y eso no estaba contemplado. Sube la prioridad
+  de las defensas de D21.
+- **`storage.delete()` informa si el archivo ya no está** (ver DEVLOG). Era
+  `void` en los tres drivers y el del Worker se tragaba el fallo.
+- **La retención va apagada por default**, al revés que los otros crons: los
+  demás borran logs, éste borra fotos de gente real.
+
+### 🔴 Lo que hay que mirar, y no es del CRM
+
+- **Dos bombas en las migraciones de control** (DEVLOG 2026-09-10): falta el
+  snapshot de la `0005` y su `when` está fechado en el futuro, así que
+  **cualquier migración de control generada antes del 12-09 se saltea en
+  silencio**. Pasó de verdad al generar la `0006`. Con `MIGRATE_ON_BOOT=1`
+  habría pasado igual en producción, con el deploy en verde.
+- **Deuda de P1 abierta, decisión del dueño pendiente** (anotada en
+  `14-decisiones.md`): `redDelJugador` compara la **rama independiente**, no el
+  scope. Dentro de una misma red, un cajero puede vincular un lead a un jugador
+  de **otro** cajero y ver su saldo y movimientos. No lo introduce el botón del
+  3.3 —el vínculo automático de D4 ya lo permitía— pero lo vuelve elegible en vez
+  de accidental. **El dueño decidió tratarlo aparte.**
+- **Los tests del CRM y los unitarios no se pueden correr en el mismo comando.**
+  `--runInBand crm-` pasa entero (187, 15 suites) y los unitarios también (154,
+  10). Mezclados fallan al azar: el `globalTeardown` dropea `tenant_jest_test`.
+  Verificado con `git stash` que **en árbol limpio falla igual**.
+
+### Commits creados
+
+- `ab9dc9a` — `feat(crm): los botones del vinculo, que el backend esperaba`
+- `5c5e93f` — `docs(crm): D23 · una App de Meta, un WABA por socio`
+- `bdc287c` — `feat(crm): saber si Telegram esta entregando de verdad`
+- `72f9341` — `docs(crm): Telegram corrio con un bot real, y anduvo`
+- `188f08e` — `feat(crm): 3.4 · la ventana de 24 h, dicha antes de escribir`
+- `0349140` — `feat(crm): 3.5 · audio si, video no`
+- `3ce8229` — `feat(crm): 3.2 · la puerta del webhook de WhatsApp`
+- `c062aac` — `feat(crm): 4.1 · borrar los adjuntos vencidos (D15)`
+- `3745b4f` — `feat(crm): 4.3 · el historial del contacto, escrito y mostrado`
+
+Todos en `staging` y **pusheados**. Ninguno tocó `main`.
+
+### Estado al cerrar
+
+- **Fase**: CRM etapa 3 (WhatsApp) casi cerrada; etapa 4 empezada.
+- **Próximo paso lógico**: el **procesamiento** del webhook de WhatsApp — de un
+  `change` de Meta a contacto + conversación + mensaje, con las tres defensas de
+  D4 y el ruteo por dueño del canal. Se prueba entero con payloads fabricados.
+- **Bloqueos**: la cuenta de Meta sigue en trámite. Sin eso no hay envío, ni
+  campañas (D21), ni el acompañamiento del alta (3.1).
+
+### Notas para el próximo agente
+
+**Lo que NO se verificó, y no hay que dar por hecho**:
+
+1. **El guardado de un audio y la burbuja con el reproductor** (3.5). El entorno
+   local no tiene credenciales de R2 —una imagen falla igual, así que no es del
+   cambio— y sin storage no hay adjunto que dibujar. Lo cierra **una nota de voz
+   al bot de Telegram desde staging**.
+2. **Que el borrado de la retención ande contra R2 de verdad** (4.1). En test y
+   en staging el driver es `local`. Primera corrida en **simulacro**.
+3. **El webhook de WhatsApp nunca vio un payload de Meta real.** Está probado
+   con firmas fabricadas, que es lo máximo posible sin la cuenta.
+
+**Lo que le falta a la etapa 2, y sólo lo puede hacer el dueño**: que **una
+segunda persona distinta** le escriba al bot. El bug 2.6 —la idempotencia por
+chat— **sólo se rompe con dos remitentes**, nunca con dos mensajes. Es el último
+agujero conocido de Telegram.
+
+**Variables de entorno pendientes**: `CHANNEL_SECRET_KEY` en producción (tiene
+que ser **distinta** a la de staging), y `WHATSAPP_APP_SECRET` +
+`WHATSAPP_VERIFY_TOKEN` cuando se registre la App. Las tres están documentadas
+en `apps/api/.env.example`.
