@@ -17752,3 +17752,9 @@ agujero conocido de Telegram.
 que ser **distinta** a la de staging), y `WHATSAPP_APP_SECRET` +
 `WHATSAPP_VERIFY_TOKEN` cuando se registre la App. Las tres están documentadas
 en `apps/api/.env.example`.
+
+> **Actualización del mismo día, después de cerrar**: el dueño probó el bot con
+> **una segunda persona distinta** y el mensaje llegó. Eso **cierra el 2.6**, que
+> esta entrada listaba como el último agujero conocido de la etapa 2. Lo único
+> que sigue sin correr con un bot real son los **adjuntos** (2.4 y 2.8) — y una
+> nota de voz los cubre casi enteros, de paso cerrando el **3.5**.

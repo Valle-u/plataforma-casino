@@ -211,21 +211,32 @@ código. De ahí salió el diagnóstico de la pantalla de Canales, que sigue sie
 útil: cuando algo falle, dice **qué** falla en vez de dejar una bandeja vacía
 idéntica a "todavía no escribió nadie".
 
-**Lo que esta prueba NO cubrió**, y sigue sin correr con un bot real:
+#### ✅ El 2.6 también se probó en vivo (2026-09-10, más tarde)
+
+**Le escribió una segunda persona distinta y el mensaje llegó.** Era *"el bug que
+la suite no veía"*, y era el último agujero conocido de la etapa 2.
+
+Por qué hacía falta **una segunda persona** y no bastaban dos mensajes: el
+`message_id` de Telegram es un contador **por chat**, así que el primer mensaje de
+cada persona nueva es `1`. Sin el chat en la clave de idempotencia, la segunda
+persona chocaba contra el índice único de `0113` y **su mensaje se descartaba en
+silencio** — quedaba en `crm_raw_events` con el error y no aparecía en ninguna
+bandeja, porque el fallo de procesamiento no se propaga a propósito.
+
+La suite nunca lo vio porque su helper usa `message_id` al azar: con ids al azar
+no hay colisión; con Telegram de verdad la hay el segundo día.
+
+**Lo que sigue sin correr con un bot real:**
 
 | | Qué falta probar | Cómo |
 |---|---|---|
-| **2.4** | Recibir una foto o un PDF | Mandarle un archivo al bot |
+| **2.4** | Recibir una foto, un PDF o una **nota de voz** | Mandarle un archivo al bot |
 | **2.8** | Mandar un archivo desde el panel | Responder con un adjunto |
-| **2.6** | 🔴 **La idempotencia por chat** | Que le escriba una **segunda persona distinta** |
 
-**El 2.6 es el que más vale de los tres.** Era *"el bug que la suite no veía"*:
-sin el chat en la clave de idempotencia, **la segunda persona nueva que le
-escribe al bot choca contra el índice único de `0113` y su mensaje se descarta en
-silencio**. Con una sola persona escribiendo no se ve nunca — el `message_id` de
-Telegram es un contador *por chat*, así que el primer mensaje de cada persona es
-`1`. Está arreglado y tiene su test, pero la prueba en vivo pide **dos remitentes
-distintos**, no dos mensajes.
+Los dos son adjuntos, así que **una sola prueba los cubre casi enteros**: mandarle
+una nota de voz al bot ejercita de paso el **3.5** (audio sí, video no), que es lo
+único de esa tanda que no se pudo verificar de punta a punta — el entorno local no
+tiene credenciales de R2 y sin storage no hay adjunto que guardar ni dibujar.
 
 **Lo que Telegram enseña y hay que reflejar:** casi nunca da el teléfono, así que
 **D4 no funciona ahí**. Un contacto de Telegram nace como **lead**, y eso va a ser

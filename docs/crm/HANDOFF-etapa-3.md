@@ -150,15 +150,19 @@ nunca por la API de Telegram de verdad.
 
 El dueño creó el bot y le escribió desde staging. **Anduvo en las dos
 direcciones a la primera**: los mensajes entraron a la bandeja y la respuesta
-del operador llegó a Telegram. El detalle está en `13-roadmap.md`, etapa 2.
+del operador llegó a Telegram.
 
-**Lo que sigue sin correr en vivo**, y conviene no darlo por hecho: los adjuntos
-(2.4 y 2.8) y —el que más importa— **la idempotencia por chat (2.6)**, que sólo
-se rompe cuando le escribe una **segunda persona distinta**. Con un solo
-remitente ese caso no aparece.
+Y después probó lo que faltaba: **le escribió una segunda persona distinta y el
+mensaje llegó**. Eso cierra el **2.6**, que era el único agujero conocido que
+quedaba — *"el bug que la suite no veía"*, el que descartaba en silencio el
+primer mensaje de cada persona nueva. El detalle está en `13-roadmap.md`, etapa
+2.
 
-Así que WhatsApp ya no se apila sobre un canal sin probar. Se apila sobre uno
-probado a medias, que es otra cosa.
+**Lo único que sigue sin correr en vivo son los adjuntos** (2.4 y 2.8). Y una
+sola prueba los cubre casi enteros: **mandarle una nota de voz al bot**, que de
+paso ejercita el **3.5**.
+
+Así que WhatsApp ya no se apila sobre un canal sin probar.
 
 ---
 
