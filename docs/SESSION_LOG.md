@@ -17776,3 +17776,10 @@ en `apps/api/.env.example`.
 > lista de MIMEs y un `<img>` se conforma con un 200 entero. Arreglado con 16
 > tests nuevos (`storage-servir-archivos.e2e.ts`), verificados rompiendo cada
 > mitad a propósito.
+>
+> **✅ Cerrado: la nota de voz suena.** Faltaba cargar
+> `STORAGE_PUBLIC_BASE_URL` en la app `api` de staging — nunca había estado
+> puesta. Con eso queda verificado el **3.5** (audio de punta a punta: bajado de
+> Telegram, validado por bytes, guardado, servido y reproducido) **y el 2.4**
+> (recibir adjuntos con un bot real). De Telegram sólo falta el **2.8**: mandar
+> un archivo *desde* el panel.

@@ -395,11 +395,36 @@ decisión, no un pendiente.
 FILE_TYPE_UNKNOWN`. Los tests del validador se probaron **rompiendo las dos
 comprobaciones de códec a propósito** para confirmar que fallan.
 
-> ⚠️ **Lo que NO se pudo verificar en local, y hay que mirar en staging:** el
-> **guardado** del audio y **la burbuja con el reproductor**. El entorno local no
-> tiene credenciales de R2 —una imagen falla igual, así que no es de este
-> cambio— y sin storage no hay adjunto que dibujar. La prueba que cierra esto es
-> **mandarle una nota de voz al bot de Telegram** desde staging.
+#### ✅ Probado con una nota de voz real (2026-09-10)
+
+El guardado y la burbuja no se podían verificar en local —el entorno no tiene
+credenciales de R2, y sin storage no hay adjunto que dibujar— así que se probó
+en staging: **el dueño le mandó una nota de voz al bot y suena**. Con eso queda
+cerrado el 3.5 **y el 2.4** (recibir adjuntos por Telegram con un bot real).
+
+**Costó tres vueltas, y las tres eran capas distintas del mismo síntoma.** El
+reproductor aparecía y no sonaba, sin un error en ningún lado. Vale la pena
+dejarlas escritas, porque ninguna era del CRM:
+
+1. **`STORAGE_PUBLIC_BASE_URL` no estaba cargada en staging.** El
+   `LocalDiskDriver` cae a `http://localhost:3000`, así que **todos los adjuntos
+   apuntan a la máquina de quien mira**. Falla dos veces callado: la URL no
+   existe para el cliente, y encima es `http` adentro de una página `https`.
+   Afecta a las imágenes igual — nadie lo había visto porque hasta ese día no
+   había entrado ningún adjunto por un canal externo.
+2. **El `.ogg` se servía sin `Content-Type` y sin `Content-Length`.**
+   `guessMime` conocía imágenes y PDF nada más; el audio entró con esta tanda y
+   ahí no se sumó. Sin tipo, el navegador no adivina para media. Sin largo ni
+   `Range`, el `<audio>` no sabe la duración: queda en `0:00 / 0:00`.
+3. **Cada deploy borra el disco de staging**, así que el archivo de una prueba
+   no sobrevive a la prueba siguiente.
+
+Lo 1 y lo 2 están arreglados (`storage-servir-archivos.e2e.ts`, 16 tests) y el
+driver ahora **avisa al arrancar** si la variable falta. Lo 3 es a propósito y
+sigue igual: ver la nota del deploy, abajo.
+
+> **Lo que sigue sin probarse con un bot real:** el **2.8**, mandar un archivo
+> *desde* el panel. Es contestar con el clip.
 
 ### 3.3 — El backend estaba y no lo llamaba nadie
 

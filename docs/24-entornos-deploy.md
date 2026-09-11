@@ -105,7 +105,7 @@ Aislado **a propósito**, no por omisión:
 |---|---|
 | **Postgres y Redis propios** | Contenedores y volúmenes separados. Una migración que traba tablas o una prueba de carga no puede tocar prod. |
 | **`JWT_ACCESS_SECRET` / `REFRESH` distintos** | Un token emitido en staging **no debe valer en producción**. Es la separación más importante de todas. |
-| **`STORAGE_DRIVER=local`** | Si apuntara a `casino-uploads`, los comprobantes de prueba se mezclarían con los reales (que son documentos financieros). En staging los archivos son efímeros. |
+| **`STORAGE_DRIVER=local`** | Si apuntara a `casino-uploads`, los comprobantes de prueba se mezclarían con los reales (que son documentos financieros). En staging los archivos son efímeros. ⚠️ **Necesita `STORAGE_PUBLIC_BASE_URL=https://api-staging.miamihub.vip`** (sólo el origen, sin `/storage/files`). Sin ella el driver cae a `http://localhost:3000` y **todos los adjuntos apuntan a la máquina de quien mira** — falla en silencio: una imagen no carga, un audio no suena, y encima el navegador lo bloquea por contenido mixto. Costó tres vueltas encontrarlo el 2026-09-10; desde entonces la API lo avisa al arrancar. **Y ojo: cada redeploy borra el disco**, así que ningún adjunto de staging sobrevive al build siguiente. |
 | **Sin `TELEGRAM_*`** | Staging no despierta al dueño a las 3 AM. Si algún día hay que probar las alertas, se agregan con **otro** `chat_id`. |
 | **`AXIOM_DATASET=casino-api-staging`** | Para no ensuciar los logs de prod. ⚠️ **Falta crear ese dataset en Axiom**: hasta entonces staging no envía logs (no rompe nada, sólo no llegan). |
 | **`SENTRY_ENVIRONMENT=staging`** | Mismo DSN, pero los errores quedan separados. |
