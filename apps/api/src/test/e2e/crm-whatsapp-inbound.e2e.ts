@@ -39,7 +39,6 @@ const NUM_LITORAL = `num-litoral-${SUITE}`;
 let ctx: TestApp;
 let controlDb: ControlDb;
 let adminToken = '';
-let adminId = '';
 let litoral: TestUser;
 let canalCentral = '';
 let canalLitoral = '';
@@ -150,14 +149,6 @@ describe('CRM · WhatsApp entrante (3.2)', () => {
     ctx = await bootstrapTestApp();
     controlDb = ctx.app.get<ControlDb>(CONTROL_DB);
     adminToken = await loginAsAdmin(ctx.request);
-
-    adminId = (
-      await una<{ id: string }>(
-        await ctx.tenantDb.execute(
-          sql`SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}`,
-        ),
-      )
-    ).id;
 
     litoral = await createTestUser(ctx.request, adminToken, {
       suite: SUITE, label: 'litoral', role: 'socio',
