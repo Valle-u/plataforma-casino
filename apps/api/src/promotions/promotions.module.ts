@@ -16,6 +16,7 @@ import { PromotionPrizeAwarder } from './prize-awarder.service';
 import { PromotionsController } from './promotions.controller';
 import { PromotionsService } from './promotions.service';
 import { WheelEligibilityService } from './wheel-eligibility.service';
+import { WheelFairnessService } from './wheel-fairness.service';
 
 @Module({
   // BonusesModule provee UserBonusesService que el PrizeAwarder usa para
@@ -32,6 +33,7 @@ import { WheelEligibilityService } from './wheel-eligibility.service';
     DailyWheelService,
     LoginStreakService,
     WheelEligibilityService,
+    WheelFairnessService,
   ],
   exports: [
     PromotionsService,
@@ -39,6 +41,7 @@ import { WheelEligibilityService } from './wheel-eligibility.service';
     DailyWheelService,
     LoginStreakService,
     WheelEligibilityService,
+    WheelFairnessService,
   ],
 })
 export class PromotionsModule {}

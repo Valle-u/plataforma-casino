@@ -329,18 +329,42 @@ El premio lo decide el servidor. Hoy el jugador tiene que creernos: guardamos el
 número aleatorio y lo puede auditar el dueño, pero él no tiene forma de
 verificarlo.
 
-**Se le da esa forma**, reusando el mecanismo de *provably fair* que ya existe
-para los juegos propios (`packages/games-shared/provably-fair`):
+> ⚠️ **Corrección al diseño original.** Acá decía que esto se resolvía
+> "reusando el mecanismo de *provably fair* que ya existe para los juegos
+> propios (`packages/games-shared/provably-fair`)". **Ese paquete no existe**:
+> `packages/` tiene sólo `db`, `eslint-config` y `typescript-config`. La ruta
+> aparece en la tabla de áreas sensibles de `START_HERE.md`, pero es
+> documentación de algo que nunca se construyó. Se tomó por código sin
+> verificarlo (2026-09-11).
+>
+> El dueño decidió construirlo igual, sabiendo el costo real.
 
-1. Antes de girar, el servidor le muestra una **huella** (hash) del resultado ya
-   decidido. La huella no revela el premio.
-2. Después del giro, le muestra la **semilla**.
-3. El jugador comprueba que la semilla produce esa huella y ese resultado.
+**Se le da esa forma** con un compromiso publicado antes del giro:
+
+1. Al abrir la ruleta, el servidor guarda una **semilla secreta** para el giro
+   de hoy y le muestra su **huella** (SHA-256). La huella no revela nada.
+2. Al girar, el resultado se deriva de esa semilla — no de `Math.random`.
+3. Terminado el giro, el servidor **revela la semilla**.
+4. El jugador comprueba dos cosas: que la semilla produce la huella que vio
+   antes, y que esa semilla produce el gajo que le salió.
 
 Es el equivalente a poner el resultado en un sobre cerrado antes de girar: no ve
 adentro, pero después verifica que el sobre nunca se cambió. Es el argumento más
-fuerte contra el "esto está arreglado" del que no gana en una semana, y acá es
-reusar, no inventar.
+fuerte contra el "esto está arreglado" del que no gana en una semana.
+
+**Lo que hace que sirva es el orden**: la semilla se guarda y su huella se
+publica **antes** de que el servidor sepa qué va a salir. Si se generara al
+girar, no probaría nada — nada impediría elegirla después de ver quién giró.
+
+**La semilla del jugador.** El compromiso incluye una `clientSeed` que el
+jugador puede fijar. Sin ella, el servidor podría generar muchas semillas y
+quedarse con la que da el peor premio; con ella, no puede, porque el resultado
+depende también de algo que él eligió. Se guarda en el compromiso y se usa en
+la derivación.
+
+**Se verifica con la rueda archivada** (§10). La huella del giro y la huella de
+la config se leen juntas: sin la segunda, saber que el sorteo dio 0,73 no dice
+qué premio correspondía.
 
 ---
 

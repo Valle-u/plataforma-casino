@@ -60,6 +60,10 @@ import {
 } from './wheel-config';
 import { WheelEligibilityService } from './wheel-eligibility.service';
 import {
+  WheelFairnessService,
+  type CompromisoPublico,
+} from './wheel-fairness.service';
+import {
   PromotionAlreadyClaimedError,
   PromotionNotActiveError,
   PromotionScheduleClosedError,
@@ -95,6 +99,7 @@ export class DailyWheelService {
     private readonly promotionsService: PromotionsService,
     private readonly prizeAwarder: PromotionPrizeAwarder,
     private readonly eligibility: WheelEligibilityService,
+    private readonly fairness: WheelFairnessService,
   ) {}
 
   /**
@@ -111,11 +116,16 @@ export class DailyWheelService {
       userId: string;
     },
     options: {
+      /**
+       * Sólo para tests: fuerza el valor del sorteo. En producción el valor
+       * sale del sobre cerrado (§8), que es el que el jugador puede verificar.
+       */
       rng?: WheelRng;
       now?: Date;
+      /** La semilla que aporta el jugador, si la manda. */
+      clientSeed?: string;
     } = {},
   ): Promise<SpinResult> {
-    const rng = options.rng ?? Math.random;
     const now = options.now ?? new Date();
 
     // 1. Cargar promotion + validar.
@@ -191,7 +201,17 @@ export class DailyWheelService {
     // El `FOR UPDATE` sobre la promoción serializa los giros de ESA ruleta. Es
     // un cuello de botella a propósito y acotado: dura lo que tarda una suma
     // indexada y un insert, no incluye ningún movimiento de plata.
-    const rngValue = rng();
+    // El sorteo sale del sobre cerrado, no de `Math.random` (docs/27 §8): la
+    // semilla ya estaba comprometida antes de que el servidor supiera quién
+    // iba a girar. `options.rng` sigue existiendo para los tests, que necesitan
+    // forzar un gajo concreto.
+    const compromiso = await this.fairness.obtenerOCrear(db, {
+      promotionId: promo.id,
+      userId: params.userId,
+      dayAnchor,
+      clientSeed: options.clientSeed,
+    });
+    const rngValue = options.rng ? options.rng() : this.fairness.valorDelSorteo(compromiso);
     let reward: PromotionReward;
     let winningSegment: WheelSegment;
     let frenadoPorTope = false;
@@ -250,6 +270,14 @@ export class DailyWheelService {
             segmentId: elegido.id,
             dayAnchor,
             rng: rngValue,
+            // La prueba viaja CON el premio, no sólo en la tabla de
+            // compromisos: el historial del jugador tiene que poder
+            // verificarse sin depender de otra consulta. Y `serverSeed` se
+            // guarda acá recién ahora, o sea después de que el resultado ya
+            // está decidido — antes habría sido filtrarlo.
+            serverSeed: compromiso.serverSeed,
+            serverSeedHash: compromiso.serverSeedHash,
+            clientSeed: compromiso.clientSeed,
             ...(porTope ? { frenadoPorTope: true } : {}),
           },
         };
@@ -262,6 +290,10 @@ export class DailyWheelService {
       reward = reservado.fila;
       winningSegment = reservado.segmento;
       frenadoPorTope = reservado.porTope;
+
+      // El sobre ya se abrió: el resultado está guardado y es inmutable. A
+      // partir de acá la semilla se puede publicar.
+      await this.fairness.revelar(db, compromiso.id);
     } catch (err: unknown) {
       // Race: otro request con la misma key ganó.
       if (isUniqueViolation(err)) {
@@ -422,6 +454,34 @@ export class DailyWheelService {
       );
     }
     return sinPremio;
+  }
+
+  /**
+   * El sobre cerrado de hoy para este jugador (`docs/27-ruleta-diaria.md` §8).
+   *
+   * Lo crea si no existe. Devuelve **sólo lo publicable**: la huella, nunca la
+   * semilla. Valida elegibilidad igual que el giro — no tiene sentido darle un
+   * compromiso a alguien que después no va a poder girar, y además evita que
+   * el endpoint sirva para averiguar si una ruleta existe.
+   */
+  async compromisoDeHoy(
+    db: TenantDb,
+    params: { promotionId: string; userId: string; clientSeed?: string },
+  ): Promise<CompromisoPublico> {
+    const promo = await this.promotionsService.findById(db, params.promotionId);
+    if (promo.type !== 'daily_wheel') {
+      throw new PromotionTypeMismatchError(promo.id, 'daily_wheel', promo.type);
+    }
+    await this.eligibility.assertCanSpin(db, params.userId);
+
+    const dayAnchor = this.dayAnchor(new Date(), zonaDeLaRueda(promo.config));
+    const compromiso = await this.fairness.obtenerOCrear(db, {
+      promotionId: promo.id,
+      userId: params.userId,
+      dayAnchor,
+      clientSeed: params.clientSeed,
+    });
+    return this.fairness.publico(compromiso);
   }
 
   /** Historial del user en una promotion. */

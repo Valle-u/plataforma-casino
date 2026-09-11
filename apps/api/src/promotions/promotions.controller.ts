@@ -384,13 +384,63 @@ export class PromotionsController {
         metadata: { severity: 'low', rng: result.rng },
         ...extractRequestContext(req),
       });
+      const prueba = result.reward.metadata as {
+        serverSeed?: string;
+        serverSeedHash?: string;
+        clientSeed?: string;
+        rng?: number;
+      };
       return {
         rewardId: result.reward.id,
         segmentId: result.segment.id,
         segmentLabel: result.segment.label,
         prize: result.reward.prize,
         grantedAt: result.reward.grantedAt,
+        // El sobre, ya abierto (docs/27 §8). Con esto el jugador comprueba que
+        // la semilla da la huella que vio ANTES de girar, y que esa semilla da
+        // el gajo que le salió. `configHash` dice contra qué rueda.
+        verificacion: {
+          serverSeed: prueba.serverSeed ?? null,
+          serverSeedHash: prueba.serverSeedHash ?? null,
+          clientSeed: prueba.clientSeed ?? null,
+          rng: prueba.rng ?? null,
+          configHash: result.reward.configHash,
+        },
       };
+    } catch (err) {
+      throw this.mapError(err);
+    }
+  }
+
+  /**
+   * GET /tenant/promotions/:id/commitment — el sobre cerrado de hoy.
+   *
+   * Devuelve la **huella** de la semilla con la que se va a sortear, antes de
+   * girar. Terminado el giro, el `POST /spin` devuelve la semilla y el jugador
+   * comprueba que produce esta huella y el gajo que le salió
+   * (`docs/27-ruleta-diaria.md` §8).
+   *
+   * Idempotente por día: pedirlo diez veces devuelve la misma huella. Es lo
+   * que impide pedir muchos compromisos y quedarse con el que más guste.
+   *
+   * ⚠️ **Nunca devuelve `serverSeed`.** Si se filtrara antes del giro, el
+   * jugador conocería el resultado sin girar.
+   */
+  @Get(':id/commitment')
+  @HttpCode(HttpStatus.OK)
+  async commitment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+    @Query('clientSeed') clientSeed?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    try {
+      return await this.wheelService.compromisoDeHoy(db, {
+        promotionId: id,
+        userId: actor.id,
+        clientSeed,
+      });
     } catch (err) {
       throw this.mapError(err);
     }

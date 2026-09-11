@@ -47,6 +47,7 @@ export * from './user-bonuses';
 export * from './promotions';
 export * from './promotion-rewards';
 export * from './promotion-config-snapshots';
+export * from './promotion-spin-commitments';
 export * from './promotion-participants';
 export * from './leagues';
 export * from './league-standings';
