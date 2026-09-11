@@ -99,6 +99,16 @@ export const promotionRewards = pgTable(
     /** Por qué falló la entrega. NULL si no falló. */
     deliveryError: text('delivery_error'),
 
+    /**
+     * Con qué rueda se jugó este giro — huella de la config, apunta a
+     * `promotion_config_snapshots`.
+     *
+     * NULL en las filas anteriores a la migración `0121`: de ésas no se sabe y
+     * **no se inventa**. Poner la config actual sería afirmar algo falso sobre
+     * un giro viejo, que es justo lo que esta columna viene a impedir.
+     */
+    configHash: text('config_hash'),
+
     grantedAt: timestamp('granted_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

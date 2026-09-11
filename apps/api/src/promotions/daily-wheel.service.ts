@@ -37,6 +37,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import {
+  promotionConfigSnapshots,
   promotionRewards,
   type NewPromotionReward,
   type Promotion,
@@ -50,9 +51,11 @@ import {
 } from './prize-awarder.service';
 import { PromotionsService } from './promotions.service';
 import {
+  huellaDeLaConfig,
   parseWheelConfig,
   topeDiarioDeLaRueda,
   zonaDeLaRueda,
+  type WheelConfig,
   type WheelSegment,
 } from './wheel-config';
 import { WheelEligibilityService } from './wheel-eligibility.service';
@@ -140,6 +143,7 @@ export class DailyWheelService {
     //    día, los wallet keys no colisionan).
     const zona = zonaDeLaRueda(promo.config);
     const topeDiario = topeDiarioDeLaRueda(promo.config);
+    const configHash = huellaDeLaConfig(promo.config);
     const dayAnchor = this.dayAnchor(now, zona);
     const idempotencyKey = `daily_spin:${promo.id}:${params.userId}:${dayAnchor}`;
 
@@ -156,10 +160,12 @@ export class DailyWheelService {
     if (existing[0]) {
       const reward = existing[0];
       const segId = (reward.metadata as { segmentId?: string }).segmentId;
-      const seg = segments.find((s) => s.id === segId);
-      // Si no encontramos el segment (e.g. config cambió post-spin),
-      // retornamos uno sintético inferido del prize guardado. Mejor que
-      // tirar — el reward histórico es la verdad.
+      // Se busca el gajo en la rueda CON LA QUE SE JUGÓ, no en la de ahora.
+      // Antes se buscaba en la actual y, si la config había cambiado, se
+      // devolvía un segmento sintético — o sea que el historial se degradaba
+      // solo cada vez que el admin editaba la rueda.
+      const historicos = await this.segmentosDelGiro(db, promo, reward);
+      const seg = historicos.find((s) => s.id === segId);
       return {
         reward,
         segment: seg ?? {
@@ -218,6 +224,19 @@ export class DailyWheelService {
           }
         }
 
+        // Con qué rueda se jugó. Va en la MISMA transacción que el reward:
+        // si el snapshot se guardara aparte, un giro podría quedar apuntando a
+        // una huella que no existe. `DO NOTHING` porque la misma config se
+        // guarda una sola vez — la segunda no es un error, es lo esperado.
+        await tx
+          .insert(promotionConfigSnapshots)
+          .values({
+            promotionId: promo.id,
+            configHash,
+            config: promo.config,
+          })
+          .onConflictDoNothing();
+
         // Se inserta SIN entregar: `deliveredAt` y `deliveryError` en NULL
         // quieren decir "pendiente". La entrega se marca abajo.
         const newRow: NewPromotionReward = {
@@ -225,6 +244,7 @@ export class DailyWheelService {
           userId: params.userId,
           prize: elegido.prize,
           idempotencyKey,
+          configHash,
           metadata: {
             kind: 'daily_wheel',
             segmentId: elegido.id,
@@ -304,6 +324,53 @@ export class DailyWheelService {
     }
 
     return { reward, segment: winningSegment, rng: rngValue, frenadoPorTope };
+  }
+
+  /**
+   * Los gajos de la rueda **tal como estaba cuando se jugó ese giro**.
+   *
+   * Es lo que permite contestar "¿qué premios había y con qué probabilidad el
+   * día que este jugador giró?" aunque la rueda se haya editado diez veces
+   * desde entonces.
+   *
+   * Cae a la config actual en dos casos, y los dos son honestos:
+   *   - el giro es anterior a la migración `0120` y no tiene huella;
+   *   - la huella está pero el snapshot no aparece (no debería pasar: se
+   *     escriben en la misma transacción).
+   *
+   * En esos casos lo que se devuelve es "la rueda de ahora", que puede no ser
+   * la que jugó. Se prefiere eso a fallar: el reward guardado sigue siendo la
+   * verdad sobre el premio, y es lo único que el jugador reclama.
+   */
+  private async segmentosDelGiro(
+    db: TenantDb,
+    promo: Promotion,
+    reward: PromotionReward,
+  ): Promise<WheelSegment[]> {
+    if (reward.configHash) {
+      const filas = await db
+        .select({ config: promotionConfigSnapshots.config })
+        .from(promotionConfigSnapshots)
+        .where(
+          and(
+            eq(promotionConfigSnapshots.promotionId, promo.id),
+            eq(promotionConfigSnapshots.configHash, reward.configHash),
+          ),
+        )
+        .limit(1);
+      if (filas[0]) {
+        try {
+          return parseWheelConfig(filas[0].config);
+        } catch {
+          // Una config histórica puede no pasar las validaciones de HOY: por
+          // ejemplo una con premio en fichas, que se guardó cuando eso estaba
+          // permitido. Que ya no se pueda configurar no la hace menos cierta.
+          const segs = (filas[0].config as Partial<WheelConfig>).segments;
+          if (Array.isArray(segs)) return segs;
+        }
+      }
+    }
+    return this.parseConfig(promo);
   }
 
   /**

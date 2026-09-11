@@ -10,6 +10,7 @@
  * si fueran dos, la del guardado sería la que se queda vieja.
  */
 
+import { createHash } from 'node:crypto';
 import type { PromotionPrize } from './prize-awarder.service';
 import {
   WheelConfigInvalidError,
@@ -73,6 +74,34 @@ export function topeDiarioDeLaRueda(raw: unknown): number | null {
     );
   }
   return tope;
+}
+
+/**
+ * Huella de una configuración de rueda — identifica **con qué rueda se jugó**
+ * un giro (`docs/27-ruleta-diaria.md` §10).
+ *
+ * Se calcula sobre el JSON **canonicalizado**: claves ordenadas
+ * recursivamente. Sin eso, la misma config guardada dos veces con las claves
+ * en distinto orden daría dos huellas distintas, y "la misma rueda" pasaría a
+ * verse como dos — que es justo lo contrario de lo que se busca.
+ *
+ * Los arreglos NO se ordenan: en una rueda el orden de los gajos es parte de
+ * la rueda, no un detalle de serialización.
+ */
+export function huellaDeLaConfig(config: unknown): string {
+  return createHash('sha256').update(canonicalizar(config)).digest('hex');
+}
+
+function canonicalizar(valor: unknown): string {
+  if (valor === null || typeof valor !== 'object') return JSON.stringify(valor) ?? 'null';
+  if (Array.isArray(valor)) {
+    return `[${valor.map(canonicalizar).join(',')}]`;
+  }
+  const obj = valor as Record<string, unknown>;
+  const partes = Object.keys(obj)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${canonicalizar(obj[k])}`);
+  return `{${partes.join(',')}}`;
 }
 
 function esZonaValida(zona: string): boolean {

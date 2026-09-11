@@ -855,6 +855,13 @@
       "when": 1789475500003,
       "tag": "0120_crm_avisos_al_operador",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1789476100002,
+      "tag": "0121_ruleta_config_versionada",
+      "breakpoints": true
     }
   ]
 }

@@ -367,9 +367,28 @@ tiene: la fila existe y se asume entregada.
 - **Configuran**: el admin del casino y los empleados con permiso de
   promociones. Nunca por encima del techo del admin (**P2**).
 - **Se puede editar en caliente**, con gente girando.
-- **Cada cambio guarda una versión.** Los giros viejos apuntan a la versión con
-  la que se jugaron. Sin esto, el historial y las auditorías quedan colgando de
-  segmentos que ya no existen — que es el bug 6 de §2.
+- **Cada configuración queda archivada, y el giro apunta a la suya.** Sin esto,
+  el historial y las auditorías quedan colgando de segmentos que ya no existen
+  — el bug 6 de §2 — y se pierde la única respuesta posible a *"¿qué
+  probabilidades regían el día que este jugador no ganó nunca?"*.
+
+  **Se identifica por la huella del contenido, no por un número de versión**
+  (decisión del dueño, 2026-09-11). Tres razones, en orden de peso: la huella
+  se deriva de la config misma y **no se puede desincronizar**; no hay contador
+  que leer e incrementar, así que **no hay carreras** entre dos ediciones
+  simultáneas; y editar y volver atrás **no crea una versión nueva**, porque es
+  la misma rueda. Lo que se pierde es legibilidad —"versión 3" se lee mejor que
+  un hash— y el orden histórico sale igual de `first_seen_at`.
+
+  El archivo se escribe **al girar**, no al guardar: así toda fila de
+  `promotion_rewards` tiene el suyo, incluidas las ruedas configuradas antes de
+  que esto existiera. Escribirlo sólo al guardar dejaría sin cobertura
+  exactamente los casos más viejos y más difíciles de reconstruir.
+
+  Los giros anteriores a la migración `0121` quedan **sin huella**, y ahí se
+  cae a la config actual. De ésos no se sabe con qué rueda se jugó y **no se
+  inventa**: rellenarlos con la config de hoy sería afirmar algo falso sobre un
+  giro viejo, que es justo lo que esta pieza viene a impedir.
 - **Apagarla no le saca nada a nadie**: se deja de poder girar, y los bonos ya
   otorgados siguen su curso hasta usarse o vencer.
 - **El premio grande se acredita solo** y le avisa al admin. El jugador lo cobra
