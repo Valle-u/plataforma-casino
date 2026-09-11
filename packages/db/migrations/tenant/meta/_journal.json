@@ -827,6 +827,13 @@
       "when": 1789474900000,
       "tag": "0116_telefono_normalizado",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1789475500000,
+      "tag": "0117_ruleta_entrega_y_tope",
+      "breakpoints": true
     }
   ]
 }

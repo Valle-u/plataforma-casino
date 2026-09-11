@@ -66,6 +66,39 @@ export const promotionRewards = pgTable(
 
     metadata: jsonb('metadata').notNull().default({}),
 
+    /**
+     * Estado de ENTREGA, que no es lo mismo que "el premio salió".
+     *
+     * Mismo par que usa el envío de Telegram desde la migración `0114`:
+     *
+     *   - las dos en NULL  → **pendiente**: la fila existe, el premio todavía
+     *     no se entregó;
+     *   - `deliveredAt`    → **entregado**;
+     *   - `deliveryError`  → **falló**, y dice por qué.
+     *
+     * Hasta el 2026-09-10 la fila existía y se asumía entregada. No lo estaba
+     * siempre: cuando el grant del bono fallaba, el awarder lo anotaba en el
+     * log y devolvía `bonusId: null` — la fila quedaba igual, la pantalla
+     * tiraba el confetti y el jugador no recibía nada. Un premio a medias se
+     * veía idéntico a uno entregado.
+     *
+     * **El lado seguro es el default**: una fila recién insertada no afirma
+     * ninguna entrega. Cualquier camino que se olvide de marcarla queda
+     * pendiente y visible, en vez de mentir en silencio.
+     *
+     * Además es lo que hace **atómico el tope diario**: el premio se inserta
+     * en la misma transacción en que se verifica el tope, y recién después se
+     * entrega. Sin una fila que exista antes de la entrega, dos giros
+     * simultáneos leen el mismo gasto y los dos se creen dentro del tope.
+     */
+    deliveredAt: timestamp('delivered_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+
+    /** Por qué falló la entrega. NULL si no falló. */
+    deliveryError: text('delivery_error'),
+
     grantedAt: timestamp('granted_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -77,6 +110,12 @@ export const promotionRewards = pgTable(
     ),
     index('promotion_rewards_user_granted_idx').on(table.userId, table.grantedAt),
     index('promotion_rewards_promotion_idx').on(table.promotionId),
+    // El tope diario suma los premios de HOY de una promo, en cada giro. El
+    // índice va sobre `metadata->>'dayAnchor'` y no sobre `granted_at`: el
+    // ancla es la misma que define la clave de idempotencia del giro, así que
+    // el tope y la regla de "un giro por día" no pueden discrepar sobre qué
+    // día es. Se crea en la migración `0117` porque Drizzle no expresa índices
+    // sobre expresiones JSON.
   ],
 );
 
