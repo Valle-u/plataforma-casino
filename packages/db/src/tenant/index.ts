@@ -88,3 +88,5 @@ export * from './crm';
 // El cierre de una red independiente (D14 + D24). Es la frontera de una
 // excepción autorizada a la LEY R6, así que vive en su propio archivo.
 export * from './crm-network-closures';
+// El Telegram de cada operador, para avisarle de un mensaje nuevo (4.5, D25).
+export * from './crm-operator-alerts';

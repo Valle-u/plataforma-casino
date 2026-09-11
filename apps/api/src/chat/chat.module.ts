@@ -20,6 +20,8 @@ import { CrmNetworkService } from './crm-network.service';
 import { CrmMetricasService } from './crm-metricas.service';
 import { CrmTimelineService } from './crm-timeline.service';
 import { CierreDeRedService } from './cierre-de-red.service';
+import { AvisosAlOperadorService } from './avisos-al-operador.service';
+import { AvisosWebhookController } from './avisos-webhook.controller';
 import { TelegramApiService } from './telegram/telegram-api.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
 import { TelegramDescargaService } from './telegram/telegram-descarga.service';
@@ -39,6 +41,7 @@ import { CrmAccessGuard } from './crm-access.guard';
     ChatCrmController,
     TelegramWebhookController,
     WhatsappWebhookController,
+    AvisosWebhookController,
   ],
   providers: [
     ChatGateway,
@@ -48,6 +51,7 @@ import { CrmAccessGuard } from './crm-access.guard';
     CrmMetricasService,
     CrmTimelineService,
     CierreDeRedService,
+    AvisosAlOperadorService,
     CrmAccessGuard,
     TelegramApiService,
     TelegramChannelsService,

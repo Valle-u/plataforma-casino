@@ -1261,3 +1261,86 @@ qué pasa con las notas y las etiquetas de cada una.
 **P2** (el permiso no es delegable: un empleado puede *leer* lo que se abrió, no
 *abrirlo*). **No** toca **E8** ni **P3**: cerrar una red no habilita a nadie a
 mover fichas.
+
+---
+
+### D25 · El aviso sale del panel: Telegram al operador
+
+**Decidido el 2026-09-11.** **Revierte la parte de D16 que dejaba el aviso
+encerrado en el panel.**
+
+D16 decidió que un mensaje nuevo se ve como badge y **no sale de ahí**, y dejó
+anotado el hueco que eso abre junto con D17:
+
+```
+03:14  Juan escribe.
+       → Juan no recibe nada     (D17: sin automáticos)
+       → Pérez no se entera      (D16: sólo el panel, y está cerrado)
+09:20  Pérez abre el panel y recién ahí existe el mensaje.
+```
+
+Seis horas sin señal para ninguna de las dos partes. Y si Pérez no abre el panel
+en dos días, **nadie en el sistema lo sabe**: por **D10** el socio tampoco lo ve.
+
+**Lo que cambió.** D16 ya había señalado esto como *"la primera mejora a agregar
+si el problema aparece"* y lo postergó por una sola razón: la infraestructura de
+Telegram no estaba probada. **El 2026-09-10 se probó** —vincular, recibir,
+responder, adjuntos, y con dos remitentes distintos—. El motivo dejó de existir.
+
+**Lo que NO cambia: D17 sigue entero.** D17 dice que el sistema no le escribe
+solo **al jugador**. Acá el destinatario es el **operador**, sobre su propia
+bandeja. El jugador sigue sin recibir nada automático: contesta un humano o nadie.
+
+---
+
+#### El aviso dice quién escribió, nunca qué dijo
+
+Llega *"Juan te escribió por Telegram"*. El texto no viaja.
+
+**Por qué.** No es por D8 —ahí el destinatario es *otra* bandeja y acá es el
+dueño, que puede leer lo suyo— sino por **dónde termina el texto**: el Telegram
+personal del operador es un dispositivo que no controlamos, y lo que llega ahí
+queda para siempre. Mismo criterio por el que el alta no manda la contraseña por
+el chat.
+
+Y tiene una consecuencia buena: **obliga a abrir el panel**, que es donde la
+conversación se puede atender de verdad.
+
+---
+
+#### Una conversación avisa una vez cada 15 minutos
+
+Un aviso por mensaje convierte el Telegram del operador en ruido, **y un canal
+que molesta se silencia** — y ahí el aviso deja de existir. El silencio es lo que
+hace que el mecanismo sobreviva.
+
+Se guarda en memoria, como `AlertsService`: un reinicio manda un aviso de más,
+que es el lado barato de equivocarse.
+
+---
+
+#### El operador tiene que escribirle al bot primero
+
+**No es una decisión nuestra**: un bot de Telegram sólo puede hablarle a quien le
+escribió a él. Por eso el código de un solo uso, que **vence a los 15 minutos** y
+**se quema al usarse**. Un código eterno tirado en una captura sirve para desviar
+los avisos de ese operador a otro Telegram.
+
+**Se descartó:**
+
+- *SMS.* Llega siempre y sin vincular nada, pero **se paga por mensaje** y con
+  varios cajeros recibiendo chats todo el día la cuenta sube rápido. Es la misma
+  razón por la que D16 ya lo había descartado.
+- *Un bot nuevo, dedicado.* Más limpio conceptualmente, pero un token más para
+  administrar y otro trámite para el dueño. El de alertas ya existe y anda.
+- *Usar el bot CRM de cada operador.* Cero máquinaria nueva, pero mezcla el bot
+  que atiende **jugadores** con las notificaciones del **operador**, y no sirve
+  para quien no tenga bot.
+- *Mandar todo al grupo de alertas, sin vínculo.* Resolvía el caso de hoy —donde
+  el único operador es el dueño— pero no el de D16, que es el cajero Pérez.
+
+**Consecuencia técnica:** el bot de alertas es **uno solo para toda la
+plataforma**, así que al llegar un `/start` hay que saber de qué casino es
+**antes de poder abrir su base**. Es el mismo problema que **D23**, resuelto más
+barato: el slug va adentro del código (`demo-A3F9K2`). No hace falta una tabla en
+la DB de control porque el código es efímero y lo tipea una persona.

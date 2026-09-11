@@ -533,7 +533,7 @@ Nada de esto está aprobado. Está acá para que se decida con el peso a la vist
 | 4.2 | Cierre de red auditado (**D14** + **D24**) | ✅ **Backend hecho**, sin pantalla a propósito |
 | 4.3 | Llenar `crm_timeline_events` **y mostrarla** | ✅ **Hecho** |
 | 4.4 | Métricas por tramos | ✅ **Hecho** (migración `0115`). Sin backfill: mide desde que se instaló |
-| 4.5 | Aviso al operador por Telegram | La mejora descartada en **D16**, si el hueco molesta |
+| 4.5 | Aviso al operador por Telegram | ✅ **Hecho** (**D25**, revierte esa parte de D16) |
 | 4.6 | Varios agentes en la misma bandeja | Se ofreció excluirlo y no se marcó |
 | 4.7 | Búsqueda global de mensajes | Ídem. Por **D6** hay que acotarla por bandeja. |
 | 4.8 | Campañas y mensajes masivos | ✅ **Adentro por D21** (D19 revertida) |

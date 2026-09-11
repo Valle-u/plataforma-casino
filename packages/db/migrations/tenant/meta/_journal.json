@@ -848,6 +848,13 @@
       "when": 1789475500002,
       "tag": "0119_crm_close_network_perm",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1789475500003,
+      "tag": "0120_crm_avisos_al_operador",
+      "breakpoints": true
     }
   ]
 }

@@ -17809,3 +17809,14 @@ en `apps/api/.env.example`.
 > **no delegable**, motivo obligatorio, **irreversible**, y **la plata sigue
 > oculta** (lectura angosta: D14 autoriza el historial, no el saldo). Backend y
 > 16 tests; **sin pantalla a propósito**.
+>
+> **Y el 4.5 · avisarle al operador por Telegram (D25).** Revierte la parte de
+> D16 que dejaba el aviso encerrado en el panel — D16 ya lo había señalado como
+> "la primera mejora si el problema aparece" y lo postergó porque la
+> infraestructura de Telegram no estaba probada. **Se probó el 2026-09-10**, así
+> que el motivo dejó de existir. El aviso dice **quién** escribió, nunca **qué**
+> dijo: el Telegram personal del operador es un dispositivo que no controlamos.
+> **D17 sigue entero**: el destinatario es el operador, no el jugador. Una
+> conversación avisa una vez cada 15 min — un aviso por mensaje se silencia, y
+> ahí el aviso deja de existir. 13 tests, verificados rompiendo el silencio y el
+> vencimiento del código.

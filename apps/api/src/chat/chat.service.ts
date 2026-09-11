@@ -79,6 +79,14 @@ import {
   type ChatAttachment,
 } from './chat.types';
 import { ventanaDe, type VentanaDe24h } from './ventana-24h';
+import { AvisosAlOperadorService } from './avisos-al-operador.service';
+
+/** Cómo se nombra cada canal en el aviso al operador. */
+function canalVisible(tipo: string): string {
+  if (tipo === 'telegram') return 'Telegram';
+  if (tipo === 'whatsapp') return 'WhatsApp';
+  return 'el chat de la plataforma';
+}
 
 const WEB_CHANNEL = 'web-livechat';
 
@@ -91,6 +99,7 @@ export class ChatService {
     private readonly tenantCache: TenantConnectionCache,
     private readonly hierarchy: UserHierarchyService,
     private readonly storage: StorageService,
+    private readonly avisos: AvisosAlOperadorService,
   ) {}
 
   /**
@@ -291,7 +300,61 @@ export class ChatService {
 
     await this.anotarElTramo(db, params.direction, params.conversationId, msg);
 
+    // El aviso por Telegram (**4.5**). Va acá porque éste es el punto único
+    // donde sube el contador del operador: engancharlo en cada camino de
+    // entrada —Telegram, WhatsApp, el widget— sería tres lugares donde
+    // olvidarse del cuarto.
+    //
+    // `void` a propósito: el aviso **no puede demorar ni voltear** el guardado
+    // del mensaje. Si Telegram no contesta, el mensaje ya está.
+    if (params.direction === 'inbound') {
+      void this.avisarAlOperador(db, params.conversationId);
+    }
+
     return this.hydrateMessage(msg);
+  }
+
+  /**
+   * Le avisa por Telegram al dueño de la bandeja que le entró algo (**4.5**).
+   *
+   * Nunca tira: lo llama `postMessage`, y un aviso que falla no puede hacer que
+   * se pierda lo que alguien escribió.
+   *
+   * Manda **quién** escribió, nunca **qué** dijo — ver `AvisosAlOperadorService`.
+   */
+  private async avisarAlOperador(
+    db: TenantDb,
+    conversationId: string,
+  ): Promise<void> {
+    try {
+      const fila = (
+        await db
+          .select({
+            operadorId: crmConversations.assignedOperatorId,
+            canal: crmChannels.type,
+            nombre: crmContacts.displayName,
+            username: users.username,
+          })
+          .from(crmConversations)
+          .innerJoin(crmChannels, eq(crmChannels.id, crmConversations.channelId))
+          .innerJoin(crmContacts, eq(crmContacts.id, crmConversations.contactId))
+          .leftJoin(users, eq(users.id, crmContacts.userId))
+          .where(eq(crmConversations.id, conversationId))
+          .limit(1)
+      )[0];
+
+      if (!fila?.operadorId) return;
+
+      await this.avisos.avisar(db, {
+        operadorId: fila.operadorId,
+        conversationId,
+        deQuien: fila.nombre ?? fila.username ?? 'Alguien',
+        canal: canalVisible(fila.canal),
+      });
+    } catch {
+      // Silencio: ya está cubierto adentro del servicio, y acá lo único que
+      // importa es que esto no llegue nunca al camino del mensaje.
+    }
   }
 
   /**

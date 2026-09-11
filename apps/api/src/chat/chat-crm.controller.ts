@@ -38,6 +38,7 @@ import {
 import { ChatService } from './chat.service';
 import { CrmTimelineService } from './crm-timeline.service';
 import { CierreDeRedService } from './cierre-de-red.service';
+import { AvisosAlOperadorService } from './avisos-al-operador.service';
 import { TelegramChannelsService } from './telegram/telegram-channels.service';
 
 /**
@@ -85,6 +86,7 @@ export class ChatCrmController {
     private readonly metricasDeAtencion: CrmMetricasService,
     private readonly timeline: CrmTimelineService,
     private readonly cierreDeRed: CierreDeRedService,
+    private readonly avisos: AvisosAlOperadorService,
   ) {}
 
   private db(req: RequestWithTenantUser) {
@@ -396,6 +398,50 @@ export class ChatCrmController {
       actorId,
     });
     return { id: actualizado.id, userId: actualizado.userId };
+  }
+
+  // ── Avisos por Telegram al operador (4.5, D25) ────────────────────────────
+
+  /**
+   * Cómo está el vínculo de avisos de quien pregunta.
+   *
+   * Es **por persona, no por bandeja**: cada uno vincula su propio Telegram. En
+   * la bandeja central pueden atender el admin y varios empleados, y el aviso le
+   * tiene que llegar a quien lo configuró, no a un chat compartido.
+   */
+  @Get('avisos')
+  async estadoDeAvisos(@Req() req: RequestWithTenantUser) {
+    const userId = req.tenantUser?.id;
+    if (!userId) throw new ForbiddenException('No tenés acceso al soporte.');
+    return this.avisos.estado(this.db(req), userId);
+  }
+
+  /**
+   * Genera el código para vincular el Telegram.
+   *
+   * Hace falta porque **un bot sólo puede hablarle a quien le escribió primero**
+   * — no hay forma de que inicie la conversación. El operador saca este código y
+   * le manda `/start <código>` al bot.
+   */
+  @Post('avisos/codigo')
+  @HttpCode(HttpStatus.OK)
+  async codigoDeAvisos(@Req() req: RequestWithTenantUser) {
+    const userId = req.tenantUser?.id;
+    if (!userId) throw new ForbiddenException('No tenés acceso al soporte.');
+    const slug = req.tenantContext?.tenant.slug;
+    if (!slug) throw new NotFoundException('Tenant no resuelto.');
+
+    return this.avisos.generarCodigo(this.db(req), { userId, tenantSlug: slug });
+  }
+
+  /** Corta los avisos sin desvincular: "ahora no", distinto de "ya no es mío". */
+  @Delete('avisos')
+  @HttpCode(HttpStatus.OK)
+  async apagarAvisos(@Req() req: RequestWithTenantUser) {
+    const userId = req.tenantUser?.id;
+    if (!userId) throw new ForbiddenException('No tenés acceso al soporte.');
+    await this.avisos.apagar(this.db(req), userId);
+    return { ok: true };
   }
 
   // ── Cerrar una red (D14 + D24) ────────────────────────────────────────────
