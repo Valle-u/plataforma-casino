@@ -22,6 +22,10 @@ export class LocalDiskDriver implements StorageDriver {
   /**
    * Base URL pública del API. El cliente la usa para acceder a los
    * archivos via `GET /storage/files/<key>`. Configurable via env.
+   *
+   * ⚠️ **Es SOLO EL ORIGEN**, sin path: el `/storage/files/` lo agrega este
+   * driver. Ponerle el path completo da URLs duplicadas
+   * (`/storage/files/storage/files/<key>`) que devuelven 404 sin decir por qué.
    */
   private readonly publicBaseUrl: string;
 
@@ -29,9 +33,37 @@ export class LocalDiskDriver implements StorageDriver {
     this.root = resolve(
       process.env.STORAGE_LOCAL_ROOT ?? './storage',
     );
-    this.publicBaseUrl = (
-      process.env.STORAGE_PUBLIC_BASE_URL ?? 'http://localhost:3000'
-    ).replace(/\/$/, '');
+    const configurada = process.env.STORAGE_PUBLIC_BASE_URL;
+    this.publicBaseUrl = (configurada ?? 'http://localhost:3000').replace(
+      /\/$/,
+      '',
+    );
+
+    // ⚠️ El default de localhost es un pie de plomo en cualquier entorno
+    // desplegado: las URLs de los adjuntos quedan apuntando a la máquina de
+    // **quien mira**, no al servidor. Y falla en silencio dos veces — una
+    // imagen no carga, un `<audio>` no suena, y encima el navegador lo bloquea
+    // por contenido mixto (`http` adentro de una página `https`) sin que nada
+    // aparezca en la pantalla.
+    //
+    // Pasó de verdad en staging el 2026-09-10, con la primera nota de voz que
+    // llegó por Telegram: el archivo se había guardado bien y el reproductor no
+    // sonaba. Se tardó más en encontrar que en arreglar.
+    if (!configurada && process.env.NODE_ENV !== 'development') {
+      this.logger.error(
+        'STORAGE_PUBLIC_BASE_URL no está configurada: los adjuntos van a ' +
+          'apuntar a http://localhost:3000 y NO van a cargar para nadie. ' +
+          'Poner el origen de la API (sin /storage/files).',
+      );
+    }
+
+    if (configurada?.includes('/storage/files')) {
+      this.logger.error(
+        `STORAGE_PUBLIC_BASE_URL ("${configurada}") ya trae /storage/files: ` +
+          'este driver lo agrega solo, así que las URLs van a salir con el ' +
+          'path duplicado y dar 404. Dejar sólo el origen.',
+      );
+    }
     // Crear el root si no existe (fire-and-forget; si falla, los
     // primeros uploads van a fallar con mensaje claro).
     fs.mkdir(this.root, { recursive: true }).catch((err) => {

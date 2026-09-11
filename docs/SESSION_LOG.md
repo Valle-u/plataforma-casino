@@ -17758,3 +17758,14 @@ en `apps/api/.env.example`.
 > esta entrada listaba como el último agujero conocido de la etapa 2. Lo único
 > que sigue sin correr con un bot real son los **adjuntos** (2.4 y 2.8) — y una
 > nota de voz los cubre casi enteros, de paso cerrando el **3.5**.
+>
+> **Y la nota de voz destapó un bug que no era del CRM.** El audio llegó, se
+> validó y se guardó bien (`…/chat/attachments/<uuid>.ogg`), pero el reproductor
+> no sonaba: `STORAGE_PUBLIC_BASE_URL` **no está seteada en staging**, así que el
+> driver de disco cae a su default `http://localhost:3000` y **todos los
+> adjuntos del chat apuntan a la máquina de quien mira**. Falla dos veces en
+> silencio — la URL no existe para el cliente, y encima es `http` adentro de una
+> página `https`, o sea contenido mixto bloqueado. Afecta a **imágenes también**;
+> nadie lo había visto porque nunca había entrado un adjunto por un canal
+> externo. **Se arregla con una variable en Dokploy**, sin tocar código. El
+> driver ahora lo grita al arrancar en vez de fallar callado.
