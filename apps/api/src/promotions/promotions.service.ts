@@ -39,6 +39,8 @@ import {
   PromotionCodeConflictError,
   PromotionNotFoundError,
 } from './promotions.errors';
+import { parseWheelConfig } from './wheel-config';
+import { WheelEligibilityService } from './wheel-eligibility.service';
 import type {
   CreatePromotionDto,
   UpdatePromotionDto,
@@ -71,7 +73,10 @@ export interface ListRewardsFilters {
 
 @Injectable()
 export class PromotionsService {
-  constructor(private readonly actorRole: ActorRoleService) {}
+  constructor(
+    private readonly actorRole: ActorRoleService,
+    private readonly wheelEligibility: WheelEligibilityService,
+  ) {}
 
   async create(
     db: TenantDb,
@@ -80,10 +85,20 @@ export class PromotionsService {
   ): Promise<Promotion> {
     // Sprint 51.2: gate de rol — promotions son "servicio plataforma".
     // Solo admin_tenant crea, su wallet paga los premios (funder=actor).
-    // Aplica a TODOS los players, incluso bajo socios independent.
+    //
+    // ⚠️ Acá decía "aplica a TODOS los players, incluso bajo socios
+    // independent". **Ya no.** Desde el 2026-09-10, la ruleta diaria excluye a
+    // los jugadores de sub-redes independientes: los premios los paga la Casa y
+    // fondear una red independiente viola la LEY **E8**. El filtro vive en
+    // `WheelEligibilityService`. Los demás tipos de promo siguen sin acotar —
+    // cuando se les agregue premio real habrá que hacerles la misma pregunta.
     const isAdmin = await this.actorRole.isAdminTenant(db, actorUserId);
     if (!isAdmin) {
       throw new PromotionActorRoleError(actorUserId);
+    }
+
+    if (dto.type === 'daily_wheel') {
+      parseWheelConfig(dto.config ?? {});
     }
 
     const values: NewPromotion = {
@@ -162,21 +177,33 @@ export class PromotionsService {
   }
 
   /**
-   * Listing player-facing: solo promociones `status='active'` y dentro de su
-   * ventana (`startsAt..endsAt`). Sin permission especial — cualquier user
-   * logueado puede descubrir qué promos tiene disponibles.
+   * Las promos activas que este jugador puede ver: `status='active'` y dentro
+   * de su ventana (`startsAt..endsAt`). Sin permission especial — cualquier
+   * user logueado descubre acá qué tiene disponible.
    *
    * Filtro opcional por `type` (e.g. 'daily_wheel') para que el frontend
    * traiga solo lo que va a renderizar. Cap a 50 — un tenant no debería
    * tener más de un puñado de promos activas simultáneas.
    *
+   * ⚠️ **`viewerUserId` no es un parámetro de comodidad.** Hasta el 2026-09-10
+   * este método no recibía al jugador y no filtraba nada: devolvía todas las
+   * promos activas del casino a cualquiera, incluidos los jugadores de
+   * sub-redes independientes, a los que la ruleta les llegaba **pagada por la
+   * Casa** (LEY **E8**). El filtro de elegibilidad es el mismo del giro —
+   * `WheelEligibilityService`— para que la pantalla y el endpoint no puedan
+   * decir cosas distintas.
+   *
+   * Sólo se filtra `daily_wheel`, que es el tipo cuyas reglas están definidas
+   * (`docs/27-ruleta-diaria.md`). Los otros tipos pasan como antes: el día que
+   * tengan premio real hay que hacerles la misma pregunta.
+   *
    * NOTE: targeting/visibility por segmento se evalúa cuando el player
-   * interactúa (spin/claim) — acá devolvemos TODAS las activas. Si emerge
-   * necesidad de filtrar por audience en el listing, sumar acá un join
-   * con user_segments.
+   * interactúa (spin/claim). Si emerge necesidad de filtrar por audience en el
+   * listing, sumar acá un join con user_segments.
    */
   async listActiveForPlayer(
     db: TenantDb,
+    viewerUserId: string,
     filters: { type?: string } = {},
   ): Promise<Promotion[]> {
     const now = new Date();
@@ -193,12 +220,21 @@ export class PromotionsService {
       or(isNull(promotions.endsAt), gte(promotions.endsAt, now))!,
     );
 
-    return db
+    const activas = await db
       .select()
       .from(promotions)
       .where(and(...conditions))
       .orderBy(asc(promotions.createdAt))
       .limit(50);
+
+    // La elegibilidad no depende de la promo sino del jugador, así que se
+    // resuelve UNA vez y no una por ruleta. Y sólo si hay alguna ruleta: para
+    // un casino sin ruleta activa, esto no cuesta nada.
+    if (!activas.some((p) => p.type === 'daily_wheel')) return activas;
+
+    const puedeGirar = await this.wheelEligibility.canSpin(db, viewerUserId);
+    if (puedeGirar) return activas;
+    return activas.filter((p) => p.type !== 'daily_wheel');
   }
 
   /**
@@ -260,7 +296,7 @@ export class PromotionsService {
     dto: UpdatePromotionDto,
     actorUserId?: string,
   ): Promise<Promotion> {
-    await this.findById(db, id); // 404 si no existe
+    const actual = await this.findById(db, id); // 404 si no existe
 
     // Sprint 51.2: si nos pasan actor, validar que es admin_tenant.
     // El controller llama con actor — la firma optional mantiene compat
@@ -270,6 +306,13 @@ export class PromotionsService {
       if (!isAdmin) {
         throw new PromotionActorRoleError(actorUserId);
       }
+    }
+
+    // La config de una ruleta se valida al GUARDAR, no sólo al girar. Antes
+    // sólo se validaba al girar: una config rota se guardaba sin chistar y
+    // explotaba en la cara del primer jugador.
+    if (dto.config !== undefined && actual.type === 'daily_wheel') {
+      parseWheelConfig(dto.config);
     }
 
     const patch: Partial<NewPromotion> = { updatedAt: new Date() };

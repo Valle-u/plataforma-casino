@@ -15,10 +15,15 @@ import { LoginStreakService } from './login-streak.service';
 import { PromotionPrizeAwarder } from './prize-awarder.service';
 import { PromotionsController } from './promotions.controller';
 import { PromotionsService } from './promotions.service';
+import { WheelEligibilityService } from './wheel-eligibility.service';
 
 @Module({
   // BonusesModule provee UserBonusesService que el PrizeAwarder usa para
   // dispatchear premios kind=bonus desde wheel/streak.
+  //
+  // `UserHierarchyService` y `ResponsibleGamingService`, que usa
+  // WheelEligibilityService, vienen de módulos @Global: no hace falta
+  // importarlos acá.
   imports: [WalletModule, BonusesModule],
   controllers: [PromotionsController],
   providers: [
@@ -26,12 +31,14 @@ import { PromotionsService } from './promotions.service';
     PromotionPrizeAwarder,
     DailyWheelService,
     LoginStreakService,
+    WheelEligibilityService,
   ],
   exports: [
     PromotionsService,
     PromotionPrizeAwarder,
     DailyWheelService,
     LoginStreakService,
+    WheelEligibilityService,
   ],
 })
 export class PromotionsModule {}

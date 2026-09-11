@@ -62,7 +62,12 @@ import {
   PromotionNotFoundError,
   PromotionScheduleClosedError,
   PromotionTypeMismatchError,
+  WheelAccountNotActiveError,
+  WheelActorNotPlayerError,
   WheelConfigInvalidError,
+  WheelFreeSpinsNotSupportedError,
+  WheelIndependentNetworkError,
+  WheelSelfExcludedError,
 } from './promotions.errors';
 import {
   PromotionsService,
@@ -164,10 +169,11 @@ export class PromotionsController {
   @Get('active')
   async listActive(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('type') type?: string,
   ) {
     const db = req.tenantContext!.db;
-    const data = await this.service.listActiveForPlayer(db, { type });
+    const data = await this.service.listActiveForPlayer(db, actor.id, { type });
     return { data };
   }
 
@@ -496,6 +502,49 @@ export class PromotionsController {
       return new ConflictException({
         message: 'Promotion mal configurada — contactá al admin.',
         error: 'WHEEL_CONFIG_INVALID',
+      });
+    }
+
+    // ── Elegibilidad para girar (docs/27 §3) ──────────────────────────────
+    //
+    // Los cuatro dan 403 y no 404: el jugador conoce su propia cuenta y su
+    // propia red, así que no hay nada que ocultarle. Códigos separados para
+    // que la pantalla diga la verdad en cada caso, en vez de un "no podés"
+    // genérico que manda a todo el mundo a soporte.
+    if (err instanceof WheelActorNotPlayerError) {
+      // Que un operador intente girar no es un error del sistema, pero sí algo
+      // que conviene poder ver: hasta hoy podía, y funcionaba.
+      this.logger.warn(`Intento de giro de un no-jugador: ${err.message}`);
+      return new ForbiddenException({
+        message: 'La ruleta es sólo para jugadores.',
+        error: 'WHEEL_NOT_A_PLAYER',
+      });
+    }
+    if (err instanceof WheelAccountNotActiveError) {
+      return new ForbiddenException({
+        message: 'Tu cuenta no está activa. Escribinos y lo vemos.',
+        error: 'WHEEL_ACCOUNT_NOT_ACTIVE',
+      });
+    }
+    if (err instanceof WheelIndependentNetworkError) {
+      return new ForbiddenException({
+        message: 'La ruleta no está disponible para tu operador.',
+        error: 'WHEEL_NOT_FOR_YOUR_NETWORK',
+      });
+    }
+    if (err instanceof WheelSelfExcludedError) {
+      return new ForbiddenException({
+        message: 'Tenés una autoexclusión activa.',
+        error: 'WHEEL_SELF_EXCLUDED',
+      });
+    }
+    if (err instanceof WheelFreeSpinsNotSupportedError) {
+      // Llega acá sólo si una config vieja tenía un segmento de tiradas
+      // gratis: las nuevas no se pueden guardar. Es del admin, no del jugador.
+      this.logger.error(`Premio no entregable: ${err.message}`);
+      return new ConflictException({
+        message: 'Promotion mal configurada — contactá al admin.',
+        error: 'WHEEL_FREE_SPINS_NOT_SUPPORTED',
       });
     }
     if (err instanceof FunderInsufficientBalanceError) {

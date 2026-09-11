@@ -7,8 +7,9 @@
  *   - `chips`: debit funder (tipo bonus_funding source=promo_funding) +
  *     credit user (tipo promo_reward). Retorna walletTxId del credit.
  *   - `try_again`: no-op.
- *   - `bonus`: TODO (futuro: wireup con UserBonusesService).
- *   - `free_spins`: TODO (necesita game engine).
+ *   - `bonus`: grant vía UserBonusesService.
+ *   - `free_spins`: **no soportado, tira**. Ver `WheelFreeSpinsNotSupportedError`
+ *     y `docs/27-ruleta-diaria.md` §15.
  *
  * Idempotency keys derivadas del key base que provee el caller (cada
  * type construye su key según su lógica de "una vez por X").
@@ -37,6 +38,7 @@ import {
 import {
   FunderInsufficientBalanceError,
   PromotionAlreadyClaimedError,
+  WheelFreeSpinsNotSupportedError,
 } from './promotions.errors';
 
 export type PromotionPrize =
@@ -200,11 +202,18 @@ export class PromotionPrizeAwarder {
       }
     }
 
-    // free_spins → TODO. Log + skip awarding (necesita engine de juegos).
-    this.logger.warn(
-      `Premio kind=${prize.kind} aún no implementado — promo=${context.code} user=${userId}`,
-    );
-    return { walletTxId: null, bonusId: null };
+    // `free_spins` no está implementado (docs/27 §15) y **tira**, no loguea.
+    //
+    // Antes devolvía `{ walletTxId: null, bonusId: null }` con un warning: el
+    // caller escribía el reward igual, la pantalla tiraba el confetti y el
+    // jugador no recibía la tirada. Un premio que no se puede pagar tiene que
+    // romper el giro, no completarlo a medias — si rompe se ve en el acto, si
+    // se completa a medias no se entera nadie.
+    //
+    // La primera defensa es `parseWheelConfig`, que impide guardar un segmento
+    // así. Esto es la segunda, para las configs que ya existan y para cualquier
+    // otro origen de premios que no pase por esa validación (ligas, misiones).
+    throw new WheelFreeSpinsNotSupportedError();
   }
 
   private numericAsString(v: number | string): string {

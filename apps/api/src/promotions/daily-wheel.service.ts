@@ -17,13 +17,15 @@
  *     ± epsilon — auto-detectado por escala).
  *   - 1 spin/día/user enforced via idempotency key
  *     `daily_spin:<userId>:<dayAnchor>`. dayAnchor = UTC date YYYY-MM-DD.
+ *   - **Quién puede girar** lo decide `WheelEligibilityService` (rol, estado de
+ *     la cuenta, red y autoexclusión). Ver `docs/27-ruleta-diaria.md` §3.
  *   - El service NO valida la elegibilidad del user contra
  *     `targetSegment` por ahora (igual que bonos — sprint futuro).
- *   - Premios MVP soportados:
+ *   - Premios soportados:
  *     - `chips`: debit funder + credit user via wallet_tx `promo_reward`.
  *     - `try_again`: no chips, registra el spin igual.
- *     - `bonus`: TODO (futuro) — link a definitionId via UserBonusesService.
- *     - `free_spins`: TODO — necesita engine de juegos.
+ *     - `bonus`: grant vía UserBonusesService.
+ *     - `free_spins`: **no soportado** — no se puede configurar ni entregar.
  *
  * Diseño:
  *   - El sorteo se hace IN-SERVICE (no en DB). RNG seedeable para tests
@@ -47,24 +49,14 @@ import {
   type PromotionPrize,
 } from './prize-awarder.service';
 import { PromotionsService } from './promotions.service';
+import { parseWheelConfig, type WheelSegment } from './wheel-config';
+import { WheelEligibilityService } from './wheel-eligibility.service';
 import {
   PromotionAlreadyClaimedError,
   PromotionNotActiveError,
   PromotionScheduleClosedError,
   PromotionTypeMismatchError,
-  WheelConfigInvalidError,
 } from './promotions.errors';
-
-interface WheelSegment {
-  id: string;
-  label?: string;
-  probability: number;
-  prize: PromotionPrize;
-}
-
-interface WheelConfig {
-  segments: WheelSegment[];
-}
 
 export interface SpinResult {
   reward: PromotionReward;
@@ -81,6 +73,7 @@ export class DailyWheelService {
   constructor(
     private readonly promotionsService: PromotionsService,
     private readonly prizeAwarder: PromotionPrizeAwarder,
+    private readonly eligibility: WheelEligibilityService,
   ) {}
 
   /**
@@ -112,6 +105,13 @@ export class DailyWheelService {
     if (promo.status !== 'active') {
       throw new PromotionNotActiveError(promo.id, promo.status);
     }
+
+    // 1b. ¿Este usuario puede girar? (docs/27 §3)
+    //
+    // Va ANTES de la idempotencia a propósito. Si fuera después, el que ya giró
+    // hoy y desde entonces quedó suspendido —o se autoexcluyó— recibiría su
+    // premio replayado como si nada. El chequeo es sobre el estado de AHORA.
+    await this.eligibility.assertCanSpin(db, params.userId);
     this.assertWithinSchedule(promo, now);
 
     const segments = this.parseConfig(promo);
@@ -240,31 +240,7 @@ export class DailyWheelService {
   // ──────────────────────────────────────────────────────────────────────
 
   private parseConfig(promo: Promotion): WheelSegment[] {
-    const config = promo.config as Partial<WheelConfig>;
-    if (!Array.isArray(config.segments) || config.segments.length === 0) {
-      throw new WheelConfigInvalidError('config.segments vacío o ausente');
-    }
-    const segments = config.segments;
-    let total = 0;
-    for (const s of segments) {
-      if (typeof s.probability !== 'number' || s.probability <= 0) {
-        throw new WheelConfigInvalidError(`segment '${s.id}' probability inválida`);
-      }
-      total += s.probability;
-    }
-    // Aceptamos suma=1 o suma=100 (auto-detect). Tolerancia 1% para
-    // permitir redondeos del admin.
-    if (Math.abs(total - 1) > 0.01 && Math.abs(total - 100) > 1) {
-      throw new WheelConfigInvalidError(
-        `sum(probability)=${total} (esperado ~1.0 o ~100)`,
-      );
-    }
-    // Normalizamos a escala 1.0.
-    const scale = total > 5 ? 100 : 1;
-    return segments.map((s) => ({
-      ...s,
-      probability: s.probability / scale,
-    }));
+    return parseWheelConfig(promo.config);
   }
 
   /** Weighted random pick. `rngValue` ∈ [0,1). */
