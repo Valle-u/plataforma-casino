@@ -1,24 +1,16 @@
 /**
  * WheelConfigEditor — editor visual del config de daily_wheel.
  *
- * Versión 2: orientado al admin no-técnico.
+ * Premios soportados por el backend (docs/27 §5.1):
+ *   - `bonus`: acredita un bono al jugador (requiere planilla de bono).
+ *   - `try_again`: sin premio. Es donde cae la rueda cuando se agota el día.
  *
- * - Probabilidades en % (0-100), más intuitivo que 0-1.
- * - Presets con 1 clic para arrancar rápido.
- * - Auto-balance: distribuye equitativamente.
- * - Mini preview SVG de la rueda en tiempo real.
- * - Prize editor simplificado: Fichas / Probá de nuevo / Bono.
- * - Barra visual de distribución.
+ * PROHIBIDOS en backend (tiran error al guardar):
+ *   - `chips`: la ruleta no entrega fichas retirables.
+ *   - `free_spins`: no implementado.
  *
  * Controlled: `value: WheelConfig` → `onChange(next)`.
  * El caller (form) es la source of truth.
- *
- * Validación visual (no bloqueante):
- *   - Suma de probabilities ≈ 100 (tolerancia ±1).
- *   - Al menos 1 segmento.
- *   - Por segmento: probability > 0, prize.kind requerido.
- *
- * La validación dura la hace el backend al PATCH.
  */
 
 'use client';
@@ -33,7 +25,7 @@ import { cn } from '@/lib/cn';
 
 /* ── Types (exportados para reuso) ─────────────────────────────────── */
 
-export type WheelPrizeKind = 'chips' | 'try_again' | 'bonus' | 'free_spins';
+export type WheelPrizeKind = 'bonus' | 'try_again' | 'chips' | 'free_spins';
 
 export interface WheelPrize {
   kind: WheelPrizeKind;
@@ -74,29 +66,29 @@ interface WheelPreset {
 const PRESETS: WheelPreset[] = [
   {
     label: 'Simple',
-    description: '2 gajos',
+    description: '2 gajos: bono o sin premio',
     segments: [
-      { probability: 50, label: '100 fichas', prize: { kind: 'chips', amount: 100 } },
+      { probability: 50, label: 'Bono 100', prize: { kind: 'bonus', amount: 100 } },
       { probability: 50, label: 'Sin premio', prize: { kind: 'try_again' } },
     ],
   },
   {
     label: 'Estándar',
-    description: '4 gajos',
+    description: '4 gajos con distintos montos',
     segments: [
-      { probability: 30, label: '50 fichas', prize: { kind: 'chips', amount: 50 } },
-      { probability: 30, label: '100 fichas', prize: { kind: 'chips', amount: 100 } },
-      { probability: 25, label: '200 fichas', prize: { kind: 'chips', amount: 200 } },
+      { probability: 30, label: 'Bono 50', prize: { kind: 'bonus', amount: 50 } },
+      { probability: 30, label: 'Bono 100', prize: { kind: 'bonus', amount: 100 } },
+      { probability: 25, label: 'Bono 200', prize: { kind: 'bonus', amount: 200 } },
       { probability: 15, label: 'Sin premio', prize: { kind: 'try_again' } },
     ],
   },
   {
     label: 'Generosa',
-    description: '4 gajos, más fichas',
+    description: '4 gajos, montos más altos',
     segments: [
-      { probability: 40, label: '100 fichas', prize: { kind: 'chips', amount: 100 } },
-      { probability: 30, label: '200 fichas', prize: { kind: 'chips', amount: 200 } },
-      { probability: 20, label: '500 fichas', prize: { kind: 'chips', amount: 500 } },
+      { probability: 40, label: 'Bono 100', prize: { kind: 'bonus', amount: 100 } },
+      { probability: 30, label: 'Bono 200', prize: { kind: 'bonus', amount: 200 } },
+      { probability: 20, label: 'Bono 500', prize: { kind: 'bonus', amount: 500 } },
       { probability: 10, label: 'Sin premio', prize: { kind: 'try_again' } },
     ],
   },
@@ -105,10 +97,8 @@ const PRESETS: WheelPreset[] = [
 /* ── Prize kinds ───────────────────────────────────────────────────── */
 
 const PRIZE_KINDS: { value: WheelPrizeKind; label: string; hint: string }[] = [
-  { value: 'chips', label: 'Fichas', hint: 'Se acreditan al saldo del jugador.' },
-  { value: 'try_again', label: 'Probá de nuevo', hint: 'Sin premio. El jugador puede volver a girar mañana.' },
-  { value: 'bonus', label: 'Bono', hint: 'Requiere una plantilla de bono creada previamente.' },
-  { value: 'free_spins', label: 'Free spins', hint: 'Tiradas gratis en slots.' },
+  { value: 'bonus', label: 'Bono', hint: 'Acredita un bono al jugador. Requiere monto y planilla de bono.' },
+  { value: 'try_again', label: 'Sin premio', hint: 'Sin bono. Es donde cae la rueda cuando se agota el día.' },
 ];
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
@@ -207,7 +197,7 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
       id: makeId(),
       label: '',
       probability: Math.min(remaining, 10),
-      prize: { kind: 'chips', amount: 100 },
+      prize: { kind: 'bonus', amount: 100 },
     };
     onChange({ segments: [...segments, newSeg] });
   }, [segments, probabilitySum, onChange]);
@@ -399,8 +389,8 @@ function SegmentEditor({
   onRemove: () => void;
   canRemove: boolean;
 }) {
-  const kind = segment.prize?.kind ?? 'chips';
-  const needsAmount = kind === 'chips' || kind === 'free_spins';
+  const kind = segment.prize?.kind ?? 'bonus';
+  const needsAmount = kind === 'bonus';
   const needsBonusId = kind === 'bonus';
 
   return (
@@ -601,8 +591,8 @@ export function PrizeEditor({
   prize: WheelPrize;
   onChange: (patch: Partial<WheelPrize>) => void;
 }) {
-  const kind = prize?.kind ?? 'chips';
-  const needsAmount = kind === 'chips' || kind === 'free_spins';
+  const kind = prize?.kind ?? 'bonus';
+  const needsAmount = kind === 'bonus';
   const needsBonusId = kind === 'bonus';
   return (
     <div className="flex flex-col gap-2 p-3 rounded-[var(--radius)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
@@ -699,7 +689,7 @@ function normalizeSegment(raw: unknown, index: number): WheelSegment {
       kind:
         typeof prize.kind === 'string'
           ? (prize.kind as WheelPrizeKind)
-          : 'chips',
+          : 'bonus',
       amount: typeof prize.amount === 'number' ? prize.amount : undefined,
       bonusDefinitionId:
         typeof prize.bonusDefinitionId === 'string'
