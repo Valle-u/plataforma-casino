@@ -214,6 +214,7 @@ export const SECTIONS: NavSection[] = [
     title: 'Promociones',
     icon: Gift,
     items: [
+      { href: '/promotions', label: 'Promociones', icon: Gift, anyPerm: ['promotions.view'] },
       { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Ticket, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
       { href: '/referrals', label: 'Referidos', icon: UserPlus, anyPerm: ['referrals.view_own', 'referrals.view_any'] },
     ],
