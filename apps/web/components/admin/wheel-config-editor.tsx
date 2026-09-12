@@ -22,6 +22,10 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/cn';
+import {
+  canonicalBonusAmount,
+  type BonusDefinition,
+} from '@/lib/hooks/use-bonuses';
 
 /* ── Types (exportados para reuso) ─────────────────────────────────── */
 
@@ -68,7 +72,7 @@ const PRESETS: WheelPreset[] = [
     label: 'Simple',
     description: '2 gajos: bono o sin premio',
     segments: [
-      { probability: 50, label: 'Bono 100', prize: { kind: 'bonus', amount: 100 } },
+      { probability: 50, label: 'Bono', prize: { kind: 'bonus', amount: 100 } },
       { probability: 50, label: 'Sin premio', prize: { kind: 'try_again' } },
     ],
   },
@@ -76,9 +80,9 @@ const PRESETS: WheelPreset[] = [
     label: 'Estándar',
     description: '4 gajos con distintos montos',
     segments: [
-      { probability: 30, label: 'Bono 50', prize: { kind: 'bonus', amount: 50 } },
-      { probability: 30, label: 'Bono 100', prize: { kind: 'bonus', amount: 100 } },
-      { probability: 25, label: 'Bono 200', prize: { kind: 'bonus', amount: 200 } },
+      { probability: 30, label: 'Bono', prize: { kind: 'bonus', amount: 50 } },
+      { probability: 30, label: 'Bono', prize: { kind: 'bonus', amount: 100 } },
+      { probability: 25, label: 'Bono', prize: { kind: 'bonus', amount: 200 } },
       { probability: 15, label: 'Sin premio', prize: { kind: 'try_again' } },
     ],
   },
@@ -86,19 +90,12 @@ const PRESETS: WheelPreset[] = [
     label: 'Generosa',
     description: '4 gajos, montos más altos',
     segments: [
-      { probability: 40, label: 'Bono 100', prize: { kind: 'bonus', amount: 100 } },
-      { probability: 30, label: 'Bono 200', prize: { kind: 'bonus', amount: 200 } },
-      { probability: 20, label: 'Bono 500', prize: { kind: 'bonus', amount: 500 } },
+      { probability: 40, label: 'Bono', prize: { kind: 'bonus', amount: 100 } },
+      { probability: 30, label: 'Bono', prize: { kind: 'bonus', amount: 200 } },
+      { probability: 20, label: 'Bono', prize: { kind: 'bonus', amount: 500 } },
       { probability: 10, label: 'Sin premio', prize: { kind: 'try_again' } },
     ],
   },
-];
-
-/* ── Prize kinds ───────────────────────────────────────────────────── */
-
-const PRIZE_KINDS: { value: WheelPrizeKind; label: string; hint: string }[] = [
-  { value: 'bonus', label: 'Bono', hint: 'Acredita un bono al jugador. Requiere monto y planilla de bono.' },
-  { value: 'try_again', label: 'Sin premio', hint: 'Sin bono. Es donde cae la rueda cuando se agota el día.' },
 ];
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
@@ -111,14 +108,27 @@ function segmentColor(i: number): string {
   return SEGMENT_COLORS[i % SEGMENT_COLORS.length] ?? '#888';
 }
 
+/** Label legible de un bonus para el dropdown. */
+function bonusLabel(def: BonusDefinition): string {
+  const amount = canonicalBonusAmount(def);
+  const suffix = amount ? ` — ${amount} fichas` : '';
+  return `${def.name}${suffix}`;
+}
+
 /* ── Main component ────────────────────────────────────────────────── */
 
 interface WheelConfigEditorProps {
   value: WheelConfig;
   onChange: (next: WheelConfig) => void;
+  /** Planillas de bono disponibles para elegir como premio. */
+  bonusDefinitions?: BonusDefinition[];
 }
 
-export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
+export function WheelConfigEditor({
+  value,
+  onChange,
+  bonusDefinitions = [],
+}: WheelConfigEditorProps) {
   const segments = value.segments ?? [];
 
   const probabilitySum = useMemo(
@@ -160,7 +170,6 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
   const autoFixSum = useCallback(() => {
     if (segments.length === 0) return;
     const diff = 100 - probabilitySum;
-    // Find the segment with highest probability and adjust it
     let maxIdx = 0;
     let maxVal = 0;
     segments.forEach((s, i) => {
@@ -311,7 +320,6 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
               </span>
             )}
           </div>
-          {/* Visual bar */}
           <div className="flex h-2 rounded-full overflow-hidden bg-[var(--color-bg-subtle)]">
             {segments.map((seg, i) => {
               const pct = probabilitySum > 0 ? (seg.probability / probabilitySum) * 100 : 0;
@@ -348,6 +356,7 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
               key={seg.id || i}
               segment={seg}
               color={segmentColor(i)}
+              bonusDefinitions={bonusDefinitions}
               onUpdate={(patch) => updateSegment(i, patch)}
               onUpdatePrize={(patch) => updatePrize(i, patch)}
               onRemove={() => removeSegment(i)}
@@ -377,6 +386,7 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
 function SegmentEditor({
   segment,
   color,
+  bonusDefinitions,
   onUpdate,
   onUpdatePrize,
   onRemove,
@@ -384,14 +394,40 @@ function SegmentEditor({
 }: {
   segment: WheelSegment;
   color: string;
+  bonusDefinitions: BonusDefinition[];
   onUpdate: (patch: Partial<WheelSegment>) => void;
   onUpdatePrize: (patch: Partial<WheelPrize>) => void;
   onRemove: () => void;
   canRemove: boolean;
 }) {
   const kind = segment.prize?.kind ?? 'bonus';
-  const needsAmount = kind === 'bonus';
-  const needsBonusId = kind === 'bonus';
+  const isBonus = kind === 'bonus';
+
+  // Buscar el bonus seleccionado para mostrar info
+  const selectedBonus = useMemo(
+    () =>
+      isBonus && segment.prize.bonusDefinitionId
+        ? bonusDefinitions.find((d) => d.id === segment.prize.bonusDefinitionId)
+        : undefined,
+    [isBonus, segment.prize.bonusDefinitionId, bonusDefinitions],
+  );
+
+  const handleBonusChange = useCallback(
+    (defId: string) => {
+      const def = bonusDefinitions.find((d) => d.id === defId);
+      if (def) {
+        const amount = canonicalBonusAmount(def);
+        onUpdatePrize({
+          bonusDefinitionId: def.id,
+          amount: amount ? Number(amount) : undefined,
+          label: def.name,
+        });
+      } else {
+        onUpdatePrize({ bonusDefinitionId: undefined });
+      }
+    },
+    [bonusDefinitions, onUpdatePrize],
+  );
 
   return (
     <li className="flex flex-col gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
@@ -408,7 +444,7 @@ function SegmentEditor({
               type="text"
               value={segment.label ?? ''}
               onChange={(e) => onUpdate({ label: e.target.value })}
-              placeholder="Ej: 100 fichas"
+              placeholder="Ej: Bono 100"
             />
           </FormField>
           <FormField id={`seg-prob-${segment.id}`} label="Probabilidad %">
@@ -451,53 +487,67 @@ function SegmentEditor({
           Premio
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-2">
-          <FormField id="prize-kind" label="Tipo">
+          <FormField id={`prize-kind-${segment.id}`} label="Tipo">
             <Select
-              id="prize-kind"
+              id={`prize-kind-${segment.id}`}
               value={kind}
               onChange={(e) =>
                 onUpdatePrize({ kind: e.target.value as WheelPrizeKind })
-            }
+              }
             >
-              {PRIZE_KINDS.map((k) => (
-                <option key={k.value} value={k.value}>
-                  {k.label}
-                </option>
-              ))}
+              <option value="bonus">Bono</option>
+              <option value="try_again">Sin premio</option>
             </Select>
           </FormField>
-          {needsAmount && (
-            <FormField id="prize-amount" label="Cantidad">
-              <Input
-                id="prize-amount"
-                type="number"
-                inputMode="numeric"
-                value={segment.prize.amount ?? 0}
-                onChange={(e) =>
-                  onUpdatePrize({ amount: Number(e.target.value) })
-                }
-                min={0}
-                className="font-mono"
-              />
+
+          {isBonus && (
+            <FormField
+              id={`prize-bonus-${segment.id}`}
+              label="Elegí un bono"
+              hint="La planilla define monto y condiciones."
+            >
+              {bonusDefinitions.length > 0 ? (
+                <Select
+                  id={`prize-bonus-${segment.id}`}
+                  value={segment.prize.bonusDefinitionId ?? ''}
+                  onChange={(e) => handleBonusChange(e.target.value)}
+                >
+                  <option value="">— Seleccionar bono —</option>
+                  {bonusDefinitions.map((def) => (
+                    <option key={def.id} value={def.id}>
+                      {bonusLabel(def)}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  id={`prize-bonus-${segment.id}`}
+                  type="text"
+                  value={segment.prize.bonusDefinitionId ?? ''}
+                  onChange={(e) =>
+                    onUpdatePrize({ bonusDefinitionId: e.target.value })
+                  }
+                  placeholder="ID de plantilla de bono"
+                  className="font-mono text-[11px]"
+                />
+              )}
             </FormField>
           )}
-          {needsBonusId && (
-            <FormField
-              id="prize-bonus-id"
-              label="ID de plantilla de bono"
-              hint="Código de la plantilla creada en 'Plantillas de bono'."
-            >
-              <Input
-                id="prize-bonus-id"
-                type="text"
-                value={segment.prize.bonusDefinitionId ?? ''}
-                onChange={(e) =>
-                  onUpdatePrize({ bonusDefinitionId: e.target.value })
-                }
-                placeholder="Ej: no_deposit_500"
-                className="font-mono text-[11px]"
-              />
-            </FormField>
+
+          {isBonus && selectedBonus && (
+            <div className="col-span-full flex items-center gap-2 text-[10px] text-[var(--color-fg-muted)] bg-[var(--color-bg-subtle)] px-2 py-1.5 rounded">
+              <span className="font-medium text-[var(--color-fg)]">
+                {selectedBonus.name}
+              </span>
+              <span>·</span>
+              <span>Tipo: {selectedBonus.type}</span>
+              {canonicalBonusAmount(selectedBonus) && (
+                <>
+                  <span>·</span>
+                  <span>{canonicalBonusAmount(selectedBonus)} fichas</span>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -515,7 +565,7 @@ function WheelPreview({ segments }: { segments: WheelSegment[] }) {
   const CENTER = SIZE / 2;
   const R = SIZE / 2 - 2;
 
-  let cumulativeAngle = -90; // start from top
+  let cumulativeAngle = -90;
 
   const arcs = segments.map((seg, i) => {
     const pct = seg.probability / total;
@@ -582,18 +632,45 @@ function WheelPreview({ segments }: { segments: WheelSegment[] }) {
   );
 }
 
-/* ── PrizeEditor (exportado para reuso) ────────────────────────────── */
+/* ── PrizeEditor (exportado para reuso en streak) ──────────────────── */
 
 export function PrizeEditor({
   prize,
   onChange,
+  bonusDefinitions = [],
 }: {
   prize: WheelPrize;
   onChange: (patch: Partial<WheelPrize>) => void;
+  bonusDefinitions?: BonusDefinition[];
 }) {
   const kind = prize?.kind ?? 'bonus';
-  const needsAmount = kind === 'bonus';
-  const needsBonusId = kind === 'bonus';
+  const isBonus = kind === 'bonus';
+
+  const selectedBonus = useMemo(
+    () =>
+      isBonus && prize.bonusDefinitionId
+        ? bonusDefinitions.find((d) => d.id === prize.bonusDefinitionId)
+        : undefined,
+    [isBonus, prize.bonusDefinitionId, bonusDefinitions],
+  );
+
+  const handleBonusChange = useCallback(
+    (defId: string) => {
+      const def = bonusDefinitions.find((d) => d.id === defId);
+      if (def) {
+        const amount = canonicalBonusAmount(def);
+        onChange({
+          bonusDefinitionId: def.id,
+          amount: amount ? Number(amount) : undefined,
+          label: def.name,
+        });
+      } else {
+        onChange({ bonusDefinitionId: undefined });
+      }
+    },
+    [bonusDefinitions, onChange],
+  );
+
   return (
     <div className="flex flex-col gap-2 p-3 rounded-[var(--radius)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
       <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
@@ -608,42 +685,57 @@ export function PrizeEditor({
               onChange({ kind: e.target.value as WheelPrizeKind })
             }
           >
-            {PRIZE_KINDS.map((k) => (
-              <option key={k.value} value={k.value}>
-                {k.label}
-              </option>
-            ))}
+            <option value="bonus">Bono</option>
+            <option value="try_again">Sin premio</option>
           </Select>
         </FormField>
-        {needsAmount && (
-          <FormField id="prize-amount" label="Cantidad">
-            <Input
-              id="prize-amount"
-              type="number"
-              inputMode="numeric"
-              value={prize.amount ?? 0}
-              onChange={(e) => onChange({ amount: Number(e.target.value) })}
-              min={0}
-              className="font-mono"
-            />
-          </FormField>
-        )}
-        {needsBonusId && (
-          <FormField
-            id="prize-bonus-id"
-            label="Bonus definition ID"
-          >
-            <Input
-              id="prize-bonus-id"
-              type="text"
-              value={prize.bonusDefinitionId ?? ''}
-              onChange={(e) =>
-                onChange({ bonusDefinitionId: e.target.value })
-              }
-              placeholder="uuid de bonus_definition"
-              className="font-mono text-[11px]"
-            />
-          </FormField>
+        {isBonus && (
+          <>
+            {bonusDefinitions.length > 0 ? (
+              <FormField id="prize-bonus" label="Elegí un bono">
+                <Select
+                  id="prize-bonus"
+                  value={prize.bonusDefinitionId ?? ''}
+                  onChange={(e) => handleBonusChange(e.target.value)}
+                >
+                  <option value="">— Seleccionar bono —</option>
+                  {bonusDefinitions.map((def) => (
+                    <option key={def.id} value={def.id}>
+                      {bonusLabel(def)}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            ) : (
+              <FormField id="prize-bonus-id" label="Bonus definition ID">
+                <Input
+                  id="prize-bonus-id"
+                  type="text"
+                  value={prize.bonusDefinitionId ?? ''}
+                  onChange={(e) =>
+                    onChange({ bonusDefinitionId: e.target.value })
+                  }
+                  placeholder="uuid de bonus_definition"
+                  className="font-mono text-[11px]"
+                />
+              </FormField>
+            )}
+            {selectedBonus && (
+              <div className="col-span-full flex items-center gap-2 text-[10px] text-[var(--color-fg-muted)] bg-[var(--color-bg-subtle)] px-2 py-1.5 rounded">
+                <span className="font-medium text-[var(--color-fg)]">
+                  {selectedBonus.name}
+                </span>
+                <span>·</span>
+                <span>Tipo: {selectedBonus.type}</span>
+                {canonicalBonusAmount(selectedBonus) && (
+                  <>
+                    <span>·</span>
+                    <span>{canonicalBonusAmount(selectedBonus)} fichas</span>
+                  </>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -662,7 +754,6 @@ export function parseWheelConfig(raw: unknown): WheelConfig {
     const segs = (raw as { segments?: unknown }).segments;
     if (Array.isArray(segs)) {
       const parsed = segs.map((s, i) => normalizeSegment(s, i));
-      // Auto-detect scale: if all probabilities are <= 1, treat as fraction → convert to %
       const maxProb = Math.max(...parsed.map((s) => s.probability), 0);
       if (maxProb <= 1 && maxProb > 0) {
         return {

@@ -32,6 +32,7 @@ import {
   type PromotionStatus,
   type PromotionType,
 } from '@/lib/hooks/use-promotions';
+import { useActiveBonusDefinitions } from '@/lib/hooks/use-bonuses';
 import { cn } from '@/lib/cn';
 import { arDatetimeLocalToIso } from '@/lib/format-date';
 import {
@@ -144,6 +145,7 @@ export function CreatePromotionModal({
   onOpenChange,
 }: CreatePromotionModalProps) {
   const create = useCreatePromotion();
+  const bonusDefs = useActiveBonusDefinitions();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [codeManuallyEdited, setCodeManuallyEdited] = useState(false);
 
@@ -403,6 +405,7 @@ export function CreatePromotionModal({
               <WheelConfigEditor
                 value={parsedWheel}
                 onChange={(c) => commitConfig(c)}
+                bonusDefinitions={bonusDefs.data?.data ?? []}
               />
             ) : (
               <StreakConfigEditor

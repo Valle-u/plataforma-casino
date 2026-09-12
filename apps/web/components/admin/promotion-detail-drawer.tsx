@@ -51,6 +51,7 @@ import {
   type PromotionRow,
   type PromotionStatus,
 } from '@/lib/hooks/use-promotions';
+import { useActiveBonusDefinitions } from '@/lib/hooks/use-bonuses';
 import { cn } from '@/lib/cn';
 import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 import {
@@ -363,6 +364,7 @@ function EditMode({
     prizes?: Record<string, unknown>;
   }) => void | Promise<void>;
 }) {
+  const bonusDefs = useActiveBonusDefinitions();
   const defaults = useMemo<FormValues>(
     () => ({
       name: promo.name,
@@ -515,6 +517,7 @@ function EditMode({
             <WheelConfigEditor
               value={parsedWheel}
               onChange={(c) => commitConfig(c)}
+              bonusDefinitions={bonusDefs.data?.data ?? []}
             />
           ) : (
             <StreakConfigEditor
