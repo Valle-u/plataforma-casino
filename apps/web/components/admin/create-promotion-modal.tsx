@@ -1,16 +1,13 @@
 /**
  * CreatePromotionModal — crear una promotion nueva.
  *
- * Validación cliente:
- *   - code: regex backend (`^[a-z0-9][a-z0-9_-]{1,49}$`).
- *   - name: 3-120 chars.
- *   - type: enum cerrado.
- *   - status: default 'draft' (recomendado para nuevas; cambiar a 'scheduled'
- *     o 'active' después de configurar prizes via Edit drawer).
- *   - dates: ISO opcionales.
- *   - config / prizes: JSON crudo (textarea). Para MVP no validamos shape
- *     por type — la validación fina ocurre en cada service del backend
- *     cuando el type lo necesita.
+ * Versión 2: más didáctico, especialmente para daily_wheel.
+ *
+ * - Defaults inteligentes por type (wheel → status active).
+ * - Code auto-generado del nombre.
+ * - Fechas colapsadas en "Avanzado" para types perpetuos (wheel).
+ * - drawAt oculto para wheel.
+ * - Card explicativa para daily_wheel.
  *
  * Funder: el backend usa al actor como funder (igual pattern que bonuses).
  */
@@ -18,8 +15,8 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Sparkles } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { Sparkles, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -46,13 +43,13 @@ import {
   WheelConfigEditor,
 } from './wheel-config-editor';
 
-const PROMOTION_TYPES: { value: PromotionType; label: string }[] = [
-  { value: 'daily_wheel', label: 'Ruleta diaria' },
-  { value: 'login_streak', label: 'Racha de login' },
-  { value: 'lottery_tickets', label: 'Lotería (tickets)' },
-  { value: 'lottery_ranking', label: 'Lotería (ranking)' },
-  { value: 'missions', label: 'Misiones' },
-  { value: 'level_chests', label: 'Cofres por nivel' },
+const PROMOTION_TYPES: { value: PromotionType; label: string; hint: string }[] = [
+  { value: 'daily_wheel', label: 'Ruleta diaria', hint: '1 giro/día. Vos fondeás los premios.' },
+  { value: 'login_streak', label: 'Racha de login', hint: 'Premios por días consecutivos.' },
+  { value: 'lottery_tickets', label: 'Lotería (tickets)', hint: 'Tickets que se sortean.' },
+  { value: 'lottery_ranking', label: 'Lotería (ranking)', hint: 'Ranking por score.' },
+  { value: 'missions', label: 'Misiones', hint: 'Objetivos con reward.' },
+  { value: 'level_chests', label: 'Cofres por nivel', hint: 'Cofres al subir nivel.' },
 ];
 
 const PROMOTION_STATUSES: { value: PromotionStatus; label: string }[] = [
@@ -126,6 +123,17 @@ function toIso(local?: string): string | undefined {
   return arDatetimeLocalToIso(local);
 }
 
+/** Slugifica el nombre para generar el code automáticamente. */
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 50);
+}
+
 interface CreatePromotionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -136,6 +144,9 @@ export function CreatePromotionModal({
   onOpenChange,
 }: CreatePromotionModalProps) {
   const create = useCreatePromotion();
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [codeManuallyEdited, setCodeManuallyEdited] = useState(false);
+
   const {
     register,
     handleSubmit,
@@ -149,7 +160,7 @@ export function CreatePromotionModal({
       code: '',
       name: '',
       type: 'daily_wheel',
-      status: 'draft',
+      status: 'active',
       startsAt: '',
       endsAt: '',
       drawAt: '',
@@ -159,12 +170,33 @@ export function CreatePromotionModal({
   });
 
   useEffect(() => {
-    if (!open) reset();
+    if (!open) {
+      reset();
+      setShowAdvanced(false);
+      setCodeManuallyEdited(false);
+    }
   }, [open, reset]);
 
   const selectedType = watch('type');
+  const watchedName = watch('name');
   const useVisualEditor =
     selectedType === 'daily_wheel' || selectedType === 'login_streak';
+  const isWheel = selectedType === 'daily_wheel';
+  const showDrawAt = selectedType === 'lottery_tickets' || selectedType === 'lottery_ranking';
+
+  // Auto-generate code from name
+  useEffect(() => {
+    if (!codeManuallyEdited && watchedName) {
+      setValue('code', slugify(watchedName), { shouldValidate: true });
+    }
+  }, [watchedName, codeManuallyEdited, setValue]);
+
+  // Auto-set status for wheel
+  useEffect(() => {
+    if (isWheel) {
+      setValue('status', 'active', { shouldValidate: true });
+    }
+  }, [isWheel, setValue]);
 
   const watchedConfig = watch('configJson');
   const parsedRaw = useMemo<unknown>(() => {
@@ -260,121 +292,101 @@ export function CreatePromotionModal({
         className="flex flex-col gap-4"
         noValidate
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            id="cp-code"
-            label="Código"
-            required
-            error={errors.code?.message}
-            hint="lowercase + [a-z0-9_-]. Único intra-tenant."
-          >
-            <Input
-              id="cp-code"
-              type="text"
-              invalid={!!errors.code}
-              placeholder="ruleta_diaria_2026"
-              {...register('code')}
-              className="font-mono"
-            />
-          </FormField>
+        {/* Tipo */}
+        <FormField
+          id="cp-type"
+          label="Tipo de promoción"
+          required
+          error={errors.type?.message}
+        >
+          <Select id="cp-type" invalid={!!errors.type} {...register('type')}>
+            {PROMOTION_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        </FormField>
 
+        {/* Card explicativa para wheel */}
+        {isWheel && (
+          <div className="flex gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)]">
+            <Info className="size-4 text-[var(--color-accent-text)] shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-1 text-[12px] text-[var(--color-fg)]">
+              <span className="font-medium">Ruleta diaria</span>
+              <span className="text-[var(--color-fg-muted)]">
+                Cada jugador puede girar <strong>1 vez por día</strong>. Los premios salen de tu saldo (como funder). Elegí los gajos y sus probabilidades en la configuración de abajo.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Nombre + Code */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             id="cp-name"
             label="Nombre visible"
             required
             error={errors.name?.message}
-            hint="El nombre que ven los users (3-120 chars)."
+            hint="El nombre que ven los jugadores."
           >
             <Input
               id="cp-name"
               type="text"
               invalid={!!errors.name}
-              placeholder="Ruleta diaria"
+              placeholder={isWheel ? 'Ruleta diaria' : 'Nombre de la promo'}
               {...register('name')}
             />
           </FormField>
+
+          <FormField
+            id="cp-code"
+            label="Código interno"
+            required
+            error={errors.code?.message}
+            hint="Único. Se genera del nombre, pero podés editarlo."
+          >
+            <Input
+              id="cp-code"
+              type="text"
+              invalid={!!errors.code}
+              placeholder="ruleta_diaria"
+              {...register('code')}
+              className="font-mono"
+              onChange={(e) => {
+                setCodeManuallyEdited(true);
+                register('code').onChange(e);
+              }}
+            />
+          </FormField>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            id="cp-type"
-            label="Tipo"
-            required
-            error={errors.type?.message}
-            hint={describeType(selectedType)}
-          >
-            <Select id="cp-type" invalid={!!errors.type} {...register('type')}>
-              {PROMOTION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-
-          <FormField
-            id="cp-status"
-            label="Estado inicial"
-            required
-            error={errors.status?.message}
-            hint="Recomendado 'draft' — activá cuando esté configurada."
-          >
-            <Select
+        {/* Status (solo se muestra si NO es wheel, porque wheel siempre es active) */}
+        {!isWheel && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
               id="cp-status"
-              invalid={!!errors.status}
-              {...register('status')}
+              label="Estado inicial"
+              required
+              error={errors.status?.message}
+              hint="Recomendado 'draft' — activá cuando esté configurada."
             >
-              {PROMOTION_STATUSES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        </div>
+              <Select
+                id="cp-status"
+                invalid={!!errors.status}
+                {...register('status')}
+              >
+                {PROMOTION_STATUSES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FormField
-            id="cp-starts"
-            label="Empieza"
-            error={errors.startsAt?.message}
-            hint="Opcional. Local time."
-          >
-            <Input
-              id="cp-starts"
-              type="datetime-local"
-              invalid={!!errors.startsAt}
-              {...register('startsAt')}
-            />
-          </FormField>
-          <FormField
-            id="cp-ends"
-            label="Termina"
-            error={errors.endsAt?.message}
-            hint="Opcional. NULL = perpetua."
-          >
-            <Input
-              id="cp-ends"
-              type="datetime-local"
-              invalid={!!errors.endsAt}
-              {...register('endsAt')}
-            />
-          </FormField>
-          <FormField
-            id="cp-draw"
-            label="Sorteo"
-            error={errors.drawAt?.message}
-            hint="Para lottery_*."
-          >
-            <Input
-              id="cp-draw"
-              type="datetime-local"
-              invalid={!!errors.drawAt}
-              {...register('drawAt')}
-            />
-          </FormField>
-        </div>
-
+        {/* Config visual */}
         {useVisualEditor ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
@@ -387,7 +399,7 @@ export function CreatePromotionModal({
                 </span>
               )}
             </div>
-            {selectedType === 'daily_wheel' ? (
+            {isWheel ? (
               <WheelConfigEditor
                 value={parsedWheel}
                 onChange={(c) => commitConfig(c)}
@@ -405,7 +417,7 @@ export function CreatePromotionModal({
               id="cp-config"
               label="Config (JSON)"
               error={errors.configJson?.message}
-              hint="Estructura libre por tipo (todavía sin editor visual)."
+              hint="Estructura libre por tipo."
             >
               <textarea
                 id="cp-config"
@@ -421,7 +433,7 @@ export function CreatePromotionModal({
               id="cp-prizes"
               label="Prizes (JSON)"
               error={errors.prizesJson?.message}
-              hint="Estructura libre. Algunos tipos lo usan, otros lo tienen dentro de config."
+              hint="Estructura libre."
             >
               <textarea
                 id="cp-prizes"
@@ -434,26 +446,70 @@ export function CreatePromotionModal({
             </FormField>
           </>
         )}
+
+        {/* Avanzado: fechas */}
+        <div className="border border-[var(--color-border)] rounded-[var(--radius)]">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center justify-between w-full px-3 py-2 text-[12px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+          >
+            <span>Opciones avanzadas (fechas)</span>
+            {showAdvanced ? (
+              <ChevronUp className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+          </button>
+          {showAdvanced && (
+            <div className="px-3 pb-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                id="cp-starts"
+                label="Empieza"
+                error={errors.startsAt?.message}
+                hint="Opcional. Si no se setea, la promo empieza ya."
+              >
+                <Input
+                  id="cp-starts"
+                  type="datetime-local"
+                  invalid={!!errors.startsAt}
+                  {...register('startsAt')}
+                />
+              </FormField>
+              <FormField
+                id="cp-ends"
+                label="Termina"
+                error={errors.endsAt?.message}
+                hint="Opcional. Si no se setea, corre siempre."
+              >
+                <Input
+                  id="cp-ends"
+                  type="datetime-local"
+                  invalid={!!errors.endsAt}
+                  {...register('endsAt')}
+                />
+              </FormField>
+              {showDrawAt && (
+                <FormField
+                  id="cp-draw"
+                  label="Sorteo"
+                  error={errors.drawAt?.message}
+                  hint="Fecha del sorteo (solo lotería)."
+                >
+                  <Input
+                    id="cp-draw"
+                    type="datetime-local"
+                    invalid={!!errors.drawAt}
+                    {...register('drawAt')}
+                  />
+                </FormField>
+              )}
+            </div>
+          )}
+        </div>
       </form>
     </Modal>
   );
-}
-
-function describeType(t: PromotionType): string {
-  switch (t) {
-    case 'daily_wheel':
-      return 'Ruleta diaria — el user gira 1 vez/día.';
-    case 'login_streak':
-      return 'Premios por días consecutivos de login.';
-    case 'lottery_tickets':
-      return 'Tickets que se sortean en draw_at.';
-    case 'lottery_ranking':
-      return 'Ranking por score; premios al close.';
-    case 'missions':
-      return 'Objetivos discretos con reward al cumplir.';
-    case 'level_chests':
-      return 'Cofres al subir de nivel.';
-  }
 }
 
 function textareaClass(invalid: boolean): string {

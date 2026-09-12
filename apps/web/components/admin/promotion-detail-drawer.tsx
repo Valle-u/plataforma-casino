@@ -487,14 +487,16 @@ function EditMode({
             {...register('endsAt')}
           />
         </FormField>
-        <FormField id="pd-draw" label="Sorteo" error={errors.drawAt?.message}>
-          <Input
-            id="pd-draw"
-            type="datetime-local"
-            invalid={!!errors.drawAt}
-            {...register('drawAt')}
-          />
-        </FormField>
+        {promo.type !== 'daily_wheel' && (
+          <FormField id="pd-draw" label="Sorteo" error={errors.drawAt?.message}>
+            <Input
+              id="pd-draw"
+              type="datetime-local"
+              invalid={!!errors.drawAt}
+              {...register('drawAt')}
+            />
+          </FormField>
+        )}
       </div>
 
       {useVisualEditor ? (

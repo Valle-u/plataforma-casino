@@ -1,31 +1,37 @@
 /**
  * WheelConfigEditor — editor visual del config de daily_wheel.
  *
- * Controlled component: recibe `value: WheelConfig` y emite el config
- * completo en `onChange`. NO mantiene estado interno — el caller (form)
- * es la source of truth. Esto permite integrar con react-hook-form via
- * watch/setValue sin reimplementar dirty tracking.
+ * Versión 2: orientado al admin no-técnico.
+ *
+ * - Probabilidades en % (0-100), más intuitivo que 0-1.
+ * - Presets con 1 clic para arrancar rápido.
+ * - Auto-balance: distribuye equitativamente.
+ * - Mini preview SVG de la rueda en tiempo real.
+ * - Prize editor simplificado: Fichas / Probá de nuevo / Bono.
+ * - Barra visual de distribución.
+ *
+ * Controlled: `value: WheelConfig` → `onChange(next)`.
+ * El caller (form) es la source of truth.
  *
  * Validación visual (no bloqueante):
- *   - Suma de probabilities ≈ 1.0 (acepta 0.99-1.01 por flotantes) o
- *     ≈ 100 (98-102) — el backend acepta ambos formatos.
+ *   - Suma de probabilities ≈ 100 (tolerancia ±1).
  *   - Al menos 1 segmento.
  *   - Por segmento: probability > 0, prize.kind requerido.
  *
- * La validación dura la hace el backend al PATCH (WHEEL_CONFIG_INVALID
- * → 409). Acá solo damos feedback visual para que el admin entienda
- * antes de guardar.
+ * La validación dura la hace el backend al PATCH.
  */
 
 'use client';
 
-import { Plus, Trash2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { Plus, Trash2, Shuffle, RotateCcw } from 'lucide-react';
+import { useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/cn';
+
+/* ── Types (exportados para reuso) ─────────────────────────────────── */
 
 export type WheelPrizeKind = 'chips' | 'try_again' | 'bonus' | 'free_spins';
 
@@ -48,12 +54,74 @@ export interface WheelConfig {
   segments: WheelSegment[];
 }
 
-const PRIZE_KINDS: { value: WheelPrizeKind; label: string }[] = [
-  { value: 'chips', label: 'Fichas' },
-  { value: 'bonus', label: 'Bono' },
-  { value: 'free_spins', label: 'Free spins' },
-  { value: 'try_again', label: 'Probá de nuevo' },
+/* ── Presets ───────────────────────────────────────────────────────── */
+
+const SEGMENT_COLORS = [
+  '#eab308', // gold
+  '#06b6d4', // cyan
+  '#a855f7', // purple
+  '#ec4899', // magenta
+  '#22c55e', // green
+  '#f97316', // orange
 ];
+
+interface WheelPreset {
+  label: string;
+  description: string;
+  segments: Omit<WheelSegment, 'id'>[];
+}
+
+const PRESETS: WheelPreset[] = [
+  {
+    label: 'Simple',
+    description: '2 gajos',
+    segments: [
+      { probability: 50, label: '100 fichas', prize: { kind: 'chips', amount: 100 } },
+      { probability: 50, label: 'Sin premio', prize: { kind: 'try_again' } },
+    ],
+  },
+  {
+    label: 'Estándar',
+    description: '4 gajos',
+    segments: [
+      { probability: 30, label: '50 fichas', prize: { kind: 'chips', amount: 50 } },
+      { probability: 30, label: '100 fichas', prize: { kind: 'chips', amount: 100 } },
+      { probability: 25, label: '200 fichas', prize: { kind: 'chips', amount: 200 } },
+      { probability: 15, label: 'Sin premio', prize: { kind: 'try_again' } },
+    ],
+  },
+  {
+    label: 'Generosa',
+    description: '4 gajos, más fichas',
+    segments: [
+      { probability: 40, label: '100 fichas', prize: { kind: 'chips', amount: 100 } },
+      { probability: 30, label: '200 fichas', prize: { kind: 'chips', amount: 200 } },
+      { probability: 20, label: '500 fichas', prize: { kind: 'chips', amount: 500 } },
+      { probability: 10, label: 'Sin premio', prize: { kind: 'try_again' } },
+    ],
+  },
+];
+
+/* ── Prize kinds ───────────────────────────────────────────────────── */
+
+const PRIZE_KINDS: { value: WheelPrizeKind; label: string; hint: string }[] = [
+  { value: 'chips', label: 'Fichas', hint: 'Se acreditan al saldo del jugador.' },
+  { value: 'try_again', label: 'Probá de nuevo', hint: 'Sin premio. El jugador puede volver a girar mañana.' },
+  { value: 'bonus', label: 'Bono', hint: 'Requiere una plantilla de bono creada previamente.' },
+  { value: 'free_spins', label: 'Free spins', hint: 'Tiradas gratis en slots.' },
+];
+
+/* ── Helpers ───────────────────────────────────────────────────────── */
+
+function makeId(): string {
+  return `seg_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+}
+
+function segmentColor(i: number): string {
+  return SEGMENT_COLORS[i % SEGMENT_COLORS.length] ?? '#888';
+}
+
+/* ── Main component ────────────────────────────────────────────────── */
 
 interface WheelConfigEditorProps {
   value: WheelConfig;
@@ -67,92 +135,221 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
     () => segments.reduce((acc, s) => acc + (Number(s.probability) || 0), 0),
     [segments],
   );
-  // El backend acepta probabilities en escala 0-1 O 0-100. Detectamos
-  // cuál usa el admin por el orden de magnitud de la suma.
-  const scale: 'percent' | 'fraction' =
-    probabilitySum > 5 ? 'percent' : 'fraction';
-  const targetSum = scale === 'percent' ? 100 : 1;
-  const tolerance = scale === 'percent' ? 1 : 0.01;
+
   const isValid =
     segments.length > 0 &&
-    Math.abs(probabilitySum - targetSum) <= tolerance &&
+    Math.abs(probabilitySum - 100) <= 1 &&
     segments.every((s) => s.probability > 0 && !!s.prize?.kind);
 
-  function updateSegment(index: number, patch: Partial<WheelSegment>): void {
-    const next = segments.map((s, i) => (i === index ? { ...s, ...patch } : s));
-    onChange({ ...value, segments: next });
-  }
+  const sumError = Math.abs(probabilitySum - 100) > 1;
 
-  function updatePrize(index: number, patch: Partial<WheelPrize>): void {
-    const cur = segments[index]!;
-    updateSegment(index, { prize: { ...cur.prize, ...patch } });
-  }
+  /* ── Actions ───────────────────────────────────────────────────── */
 
-  function addSegment(): void {
-    const id = `seg_${Date.now().toString(36)}${Math.random()
-      .toString(36)
-      .slice(2, 5)}`;
+  const applyPreset = useCallback(
+    (preset: WheelPreset) => {
+      const segs: WheelSegment[] = preset.segments.map((s) => ({
+        ...s,
+        id: makeId(),
+      }));
+      onChange({ segments: segs });
+    },
+    [onChange],
+  );
+
+  const autoBalance = useCallback(() => {
+    if (segments.length === 0) return;
+    const each = Math.floor(100 / segments.length);
+    const remainder = 100 - each * segments.length;
+    const next = segments.map((s, i) => ({
+      ...s,
+      probability: i < remainder ? each + 1 : each,
+    }));
+    onChange({ segments: next });
+  }, [segments, onChange]);
+
+  const autoFixSum = useCallback(() => {
+    if (segments.length === 0) return;
+    const diff = 100 - probabilitySum;
+    // Find the segment with highest probability and adjust it
+    let maxIdx = 0;
+    let maxVal = 0;
+    segments.forEach((s, i) => {
+      if (s.probability > maxVal) {
+        maxVal = s.probability;
+        maxIdx = i;
+      }
+    });
+    const next = segments.map((s, i) =>
+      i === maxIdx ? { ...s, probability: Math.max(0, s.probability + diff) } : s,
+    );
+    onChange({ segments: next });
+  }, [segments, probabilitySum, onChange]);
+
+  const updateSegment = useCallback(
+    (index: number, patch: Partial<WheelSegment>) => {
+      const next = segments.map((s, i) => (i === index ? { ...s, ...patch } : s));
+      onChange({ segments: next });
+    },
+    [segments, onChange],
+  );
+
+  const updatePrize = useCallback(
+    (index: number, patch: Partial<WheelPrize>) => {
+      const cur = segments[index]!;
+      updateSegment(index, { prize: { ...cur.prize, ...patch } });
+    },
+    [segments, updateSegment],
+  );
+
+  const addSegment = useCallback(() => {
+    const remaining = Math.max(0, 100 - probabilitySum);
     const newSeg: WheelSegment = {
-      id,
+      id: makeId(),
       label: '',
-      probability: scale === 'percent' ? 10 : 0.1,
+      probability: Math.min(remaining, 10),
       prize: { kind: 'chips', amount: 100 },
     };
-    onChange({ ...value, segments: [...segments, newSeg] });
-  }
+    onChange({ segments: [...segments, newSeg] });
+  }, [segments, probabilitySum, onChange]);
 
-  function removeSegment(index: number): void {
-    onChange({
-      ...value,
-      segments: segments.filter((_, i) => i !== index),
-    });
-  }
+  const removeSegment = useCallback(
+    (index: number) => {
+      onChange({ segments: segments.filter((_, i) => i !== index) });
+    },
+    [segments, onChange],
+  );
+
+  /* ── Render ────────────────────────────────────────────────────── */
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header + add */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-            Segmentos de la rueda
+      {/* Presets */}
+      {segments.length === 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] font-medium text-[var(--color-fg)]">
+            Elegí una plantilla para arrancar
           </span>
-          <span className="text-[11px] text-[var(--color-fg-muted)]">
-            {segments.length} segmento{segments.length === 1 ? '' : 's'} ·
-            escala {scale === 'percent' ? '0-100' : '0-1'}
-          </span>
+          <div className="flex gap-2 flex-wrap">
+            {PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p)}
+                className={cn(
+                  'flex flex-col gap-0.5 px-3 py-2 rounded-[var(--radius)]',
+                  'border border-[var(--color-border)]',
+                  'bg-[var(--color-bg-elevated)]',
+                  'hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)]',
+                  'transition-colors text-left',
+                )}
+              >
+                <span className="text-[12px] font-medium text-[var(--color-fg)]">
+                  {p.label}
+                </span>
+                <span className="text-[10px] text-[var(--color-fg-muted)]">
+                  {p.description}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          type="button"
-          onClick={addSegment}
+      )}
+
+      {/* Header + actions */}
+      {segments.length > 0 && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-[var(--color-fg)]">
+              Gajos de la rueda
+            </span>
+            <span className="text-[10px] text-[var(--color-fg-muted)]">
+              {segments.length} gajo{segments.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={autoBalance}
+              title="Distribuir equitativamente"
+            >
+              <Shuffle className="size-3.5" />
+              <span className="hidden sm:inline">Repartir</span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={addSegment}
+            >
+              <Plus className="size-3.5" />
+              Agregar
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Sum indicator + bar */}
+      {segments.length > 0 && (
+        <div
+          className={cn(
+            'flex flex-col gap-2 px-3 py-2 border text-[12px]',
+            isValid
+              ? 'border-[var(--color-success-border,var(--color-border))] bg-[var(--color-success-bg,var(--color-bg-elevated))]'
+              : 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]',
+          )}
         >
-          <Plus className="size-3.5" />
-          Agregar
-        </Button>
-      </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--color-fg)]">
+              Probabilidades:{' '}
+              <span className="font-mono font-medium">
+                {probabilitySum.toFixed(1)}%
+              </span>
+            </span>
+            {sumError ? (
+              <button
+                type="button"
+                onClick={autoFixSum}
+                className="text-[11px] text-[var(--color-accent-text)] hover:underline cursor-pointer"
+              >
+                Auto-ajustar
+              </button>
+            ) : (
+              <span className="text-[10px] text-[var(--color-fg-muted)]">
+                ✓ suma 100%
+              </span>
+            )}
+          </div>
+          {/* Visual bar */}
+          <div className="flex h-2 rounded-full overflow-hidden bg-[var(--color-bg-subtle)]">
+            {segments.map((seg, i) => {
+              const pct = probabilitySum > 0 ? (seg.probability / probabilitySum) * 100 : 0;
+              return (
+                <div
+                  key={seg.id || i}
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: segmentColor(i),
+                  }}
+                  className="transition-all duration-200"
+                  title={`${seg.label || `Gajo ${i + 1}`}: ${seg.probability}%`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      {/* Sum indicator */}
-      <div
-        className={cn(
-          'flex items-center justify-between gap-3 px-3 py-2 border text-[12px]',
-          isValid
-            ? 'border-[var(--color-success-border,var(--color-border))] bg-[var(--color-success-bg,var(--color-bg-elevated))]'
-            : 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]',
-        )}
-      >
-        <span className="text-[var(--color-fg)]">
-          Suma de probabilidades: <span className="font-mono">{probabilitySum.toFixed(scale === 'percent' ? 1 : 3)}</span>
-        </span>
-        <span className="font-mono text-[var(--color-fg-muted)]">
-          esperado ≈ {targetSum}
-        </span>
-      </div>
+      {/* Mini preview */}
+      {segments.length > 0 && (
+        <WheelPreview segments={segments} />
+      )}
 
-      {/* Lista */}
+      {/* Segment list */}
       {segments.length === 0 ? (
-        <div className="p-4 border border-dashed border-[var(--color-border-strong)] text-center text-[12px] text-[var(--color-fg-subtle)]">
-          Sin segmentos. Agregá al menos uno.
+        <div className="p-6 border border-dashed border-[var(--color-border-strong)] text-center text-[12px] text-[var(--color-fg-subtle)]">
+          Elegí una plantilla de arriba o agregá gajos manualmente.
         </div>
       ) : (
         <ul className="flex flex-col gap-3">
@@ -160,7 +357,7 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
             <SegmentEditor
               key={seg.id || i}
               segment={seg}
-              scale={scale}
+              color={segmentColor(i)}
               onUpdate={(patch) => updateSegment(i, patch)}
               onUpdatePrize={(patch) => updatePrize(i, patch)}
               onRemove={() => removeSegment(i)}
@@ -169,57 +366,73 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
           ))}
         </ul>
       )}
+
+      {/* Reset button when segments exist */}
+      {segments.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange({ segments: [] })}
+          className="self-start text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-accent-text)] transition-colors"
+        >
+          <RotateCcw className="size-3 inline mr-1" />
+          Empezar de nuevo
+        </button>
+      )}
     </div>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// SegmentEditor — una fila de segmento (label + prob + prize).
-// ──────────────────────────────────────────────────────────────────────
+/* ── SegmentEditor ─────────────────────────────────────────────────── */
 
 function SegmentEditor({
   segment,
-  scale,
+  color,
   onUpdate,
   onUpdatePrize,
   onRemove,
   canRemove,
 }: {
   segment: WheelSegment;
-  scale: 'percent' | 'fraction';
+  color: string;
   onUpdate: (patch: Partial<WheelSegment>) => void;
   onUpdatePrize: (patch: Partial<WheelPrize>) => void;
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const kind = segment.prize?.kind ?? 'chips';
+  const needsAmount = kind === 'chips' || kind === 'free_spins';
+  const needsBonusId = kind === 'bonus';
+
   return (
     <li className="flex flex-col gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      {/* Color dot + label + probability */}
       <div className="flex items-start gap-3">
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_110px] gap-3">
-          <FormField id={`seg-${segment.id}-label`} label="Label (visible al player)">
+        <div
+          className="mt-2.5 size-3 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+        />
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_100px] gap-3">
+          <FormField id={`seg-label-${segment.id}`} label="Nombre del gajo">
             <Input
-              id={`seg-${segment.id}-label`}
+              id={`seg-label-${segment.id}`}
               type="text"
               value={segment.label ?? ''}
               onChange={(e) => onUpdate({ label: e.target.value })}
-              placeholder="100 fichas"
+              placeholder="Ej: 100 fichas"
             />
           </FormField>
-          <FormField
-            id={`seg-${segment.id}-prob`}
-            label={`Prob (${scale === 'percent' ? '%' : '0-1'})`}
-          >
+          <FormField id={`seg-prob-${segment.id}`} label="Probabilidad %">
             <Input
-              id={`seg-${segment.id}-prob`}
+              id={`seg-prob-${segment.id}`}
               type="number"
               inputMode="decimal"
               value={Number.isFinite(segment.probability) ? segment.probability : 0}
               onChange={(e) =>
                 onUpdate({ probability: Number(e.target.value) })
               }
-              step={scale === 'percent' ? 1 : 0.01}
+              step={1}
               min={0}
-              max={scale === 'percent' ? 100 : 1}
+              max={100}
               className="font-mono"
             />
           </FormField>
@@ -228,9 +441,9 @@ function SegmentEditor({
           type="button"
           onClick={onRemove}
           disabled={!canRemove}
-          aria-label="Eliminar segmento"
+          aria-label="Eliminar gajo"
           className={cn(
-            'mt-6 size-8 flex items-center justify-center',
+            'mt-2.5 size-8 flex items-center justify-center',
             'border border-[var(--color-border)]',
             'text-[var(--color-fg-subtle)]',
             'hover:border-[var(--color-accent)] hover:text-[var(--color-accent-text)]',
@@ -242,14 +455,144 @@ function SegmentEditor({
         </button>
       </div>
 
-      <PrizeEditor prize={segment.prize} onChange={onUpdatePrize} />
+      {/* Prize */}
+      <div className="flex flex-col gap-2 ml-6">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
+          Premio
+        </span>
+        <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-2">
+          <FormField id="prize-kind" label="Tipo">
+            <Select
+              id="prize-kind"
+              value={kind}
+              onChange={(e) =>
+                onUpdatePrize({ kind: e.target.value as WheelPrizeKind })
+            }
+            >
+              {PRIZE_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>
+                  {k.label}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          {needsAmount && (
+            <FormField id="prize-amount" label="Cantidad">
+              <Input
+                id="prize-amount"
+                type="number"
+                inputMode="numeric"
+                value={segment.prize.amount ?? 0}
+                onChange={(e) =>
+                  onUpdatePrize({ amount: Number(e.target.value) })
+                }
+                min={0}
+                className="font-mono"
+              />
+            </FormField>
+          )}
+          {needsBonusId && (
+            <FormField
+              id="prize-bonus-id"
+              label="ID de plantilla de bono"
+              hint="Código de la plantilla creada en 'Plantillas de bono'."
+            >
+              <Input
+                id="prize-bonus-id"
+                type="text"
+                value={segment.prize.bonusDefinitionId ?? ''}
+                onChange={(e) =>
+                  onUpdatePrize({ bonusDefinitionId: e.target.value })
+                }
+                placeholder="Ej: no_deposit_500"
+                className="font-mono text-[11px]"
+              />
+            </FormField>
+          )}
+        </div>
+      </div>
     </li>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// PrizeEditor — exportado para reuso desde streak editor también.
-// ──────────────────────────────────────────────────────────────────────
+/* ── WheelPreview — mini SVG ───────────────────────────────────────── */
+
+function WheelPreview({ segments }: { segments: WheelSegment[] }) {
+  const total = segments.reduce((acc, s) => acc + (s.probability || 0), 0);
+  if (total <= 0 || segments.length === 0) return null;
+
+  const SIZE = 120;
+  const CENTER = SIZE / 2;
+  const R = SIZE / 2 - 2;
+
+  let cumulativeAngle = -90; // start from top
+
+  const arcs = segments.map((seg, i) => {
+    const pct = seg.probability / total;
+    const startAngle = cumulativeAngle;
+    const sweepAngle = pct * 360;
+    cumulativeAngle += sweepAngle;
+
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = ((startAngle + sweepAngle) * Math.PI) / 180;
+
+    const x1 = CENTER + R * Math.cos(startRad);
+    const y1 = CENTER + R * Math.sin(startRad);
+    const x2 = CENTER + R * Math.cos(endRad);
+    const y2 = CENTER + R * Math.sin(endRad);
+
+    const largeArc = sweepAngle > 180 ? 1 : 0;
+
+    const d = [
+      `M ${CENTER} ${CENTER}`,
+      `L ${x1} ${y1}`,
+      `A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2}`,
+      'Z',
+    ].join(' ');
+
+    return (
+      <path
+        key={seg.id || i}
+        d={d}
+        fill={segmentColor(i)}
+        stroke="var(--color-bg)"
+        strokeWidth="1.5"
+      />
+    );
+  });
+
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
+      <svg
+        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        className="size-[80px] shrink-0"
+      >
+        {arcs}
+        <circle cx={CENTER} cy={CENTER} r="12" fill="var(--color-bg)" />
+        <circle cx={CENTER} cy={CENTER} r="10" fill="var(--color-bg-elevated)" stroke="var(--color-border)" strokeWidth="1" />
+      </svg>
+      <div className="flex flex-col gap-1 text-[10px] text-[var(--color-fg-muted)]">
+        <span className="font-medium text-[var(--color-fg)] text-[11px]">Preview</span>
+        {segments.map((seg, i) => (
+          <div key={seg.id || i} className="flex items-center gap-1.5">
+            <div
+              className="size-2 rounded-full shrink-0"
+              style={{ backgroundColor: segmentColor(i) }}
+            />
+            <span className="truncate max-w-[120px]">
+              {seg.label || `Gajo ${i + 1}`}
+            </span>
+            <span className="font-mono text-[var(--color-fg-subtle)]">
+              {seg.probability}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── PrizeEditor (exportado para reuso) ────────────────────────────── */
 
 export function PrizeEditor({
   prize,
@@ -317,21 +660,29 @@ export function PrizeEditor({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Helpers públicos para parsear el config del jsonb.
-// ──────────────────────────────────────────────────────────────────────
+/* ── Helpers públicos ──────────────────────────────────────────────── */
 
 /**
  * Convierte el `config` jsonb crudo del backend a `WheelConfig` tipado.
- * Si el config no tiene `segments` o no es array, devuelve `{ segments: [] }`.
+ * Soporta escala 0-1 (fracción) y 0-100 (%). Si detecta fracciones,
+ * las convierte a porcentaje para el editor.
  */
 export function parseWheelConfig(raw: unknown): WheelConfig {
   if (raw && typeof raw === 'object' && 'segments' in raw) {
     const segs = (raw as { segments?: unknown }).segments;
     if (Array.isArray(segs)) {
-      return {
-        segments: segs.map((s, i) => normalizeSegment(s, i)),
-      };
+      const parsed = segs.map((s, i) => normalizeSegment(s, i));
+      // Auto-detect scale: if all probabilities are <= 1, treat as fraction → convert to %
+      const maxProb = Math.max(...parsed.map((s) => s.probability), 0);
+      if (maxProb <= 1 && maxProb > 0) {
+        return {
+          segments: parsed.map((s) => ({
+            ...s,
+            probability: Math.round(s.probability * 100 * 100) / 100,
+          })),
+        };
+      }
+      return { segments: parsed };
     }
   }
   return { segments: [] };
