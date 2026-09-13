@@ -188,11 +188,50 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
               Sin segmentos configurados
             </div>
           ) : (
-            <WheelSvg
-              segments={segments}
-              groupRef={setWheelGroup}
-              className="w-full max-w-[560px] drop-shadow-[0_0_40px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
-            />
+            <div className="relative w-full max-w-[560px]">
+              <WheelSvg
+                segments={segments}
+                groupRef={setWheelGroup}
+                className="w-full drop-shadow-[0_0_40px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
+              />
+              {/* Botón de girar en el centro de la rueda */}
+              <button
+                type="button"
+                onClick={handleSpin}
+                disabled={!canSpin}
+                className={cn(
+                  'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+                  'size-[18%] min-w-[64px] min-h-[64px] max-w-[110px] max-h-[110px]',
+                  'rounded-full flex items-center justify-center',
+                  'text-[var(--color-accent-fg)] font-bold uppercase tracking-[0.08em]',
+                  'transition-all duration-200',
+                  'hover:scale-105 hover:brightness-110',
+                  'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100',
+                  spinning && 'animate-pulse',
+                )}
+                style={{
+                  background: 'var(--gradient-accent)',
+                  boxShadow: canSpin
+                    ? '0 0 28px color-mix(in srgb, var(--color-accent) 50%, transparent), inset 0 1px 0 rgba(255,255,255,0.2)'
+                    : 'none',
+                  fontSize: 'clamp(11px, 2.5vw, 14px)',
+                }}
+              >
+                {spinning ? (
+                  <span className="size-5 animate-spin rounded-full border-2 border-current border-r-transparent" />
+                ) : spunToday ? (
+                  <span className="flex flex-col items-center gap-0.5 leading-none">
+                    <CheckCircle2 className="size-5" />
+                    <span className="text-[9px]">Listo</span>
+                  </span>
+                ) : (
+                  <span className="flex flex-col items-center gap-0.5 leading-none">
+                    <Sparkles className="size-5" />
+                    <span>{commitment.isLoading ? '…' : 'Girar'}</span>
+                  </span>
+                )}
+              </button>
+            </div>
           )}
 
           {/* Premios posibles — chips reales de la config */}

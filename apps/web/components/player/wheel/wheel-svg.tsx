@@ -245,11 +245,10 @@ function WedgeLabel({
   const fallbackSub = subRaw || (prizeKind === 'try_again' ? 'LA PRÓXIMA' : '');
   const mid = (index + 0.5) * segAngle;
   const p = polar(mid, R_LABEL);
-  const flip = mid > 90 && mid < 270 ? 180 : 0;
-  const frameRot = mid - 90 + flip;
+  const flip = mid > 90 && mid < 270;
+  const frameRot = flip ? mid + 90 : mid - 90;
   const fs = mainFontSize(fallbackMain);
   const subFs = Math.min(15, Math.max(10, Math.floor(150 / Math.max(fallbackSub.length, 1))));
-  const spread = fs * 0.58;
   const fill =
     prizeKind === 'try_again' ? '#c2b4da' : isJackpot ? '#ffffff' : '#2a1a33';
   const fontWeight = isJackpot ? 800 : 700;
@@ -268,11 +267,9 @@ function WedgeLabel({
         fontSize={fs}
         opacity="0.96"
       >
-        <tspan x={-spread} dy="0">
-          {fallbackMain}
-        </tspan>
+        {fallbackMain}
         {fallbackSub && (
-          <tspan x={spread} dy="0" fontSize={subFs} opacity="0.82">
+          <tspan x={0} dy={fs + 2} fontSize={subFs} opacity="0.82">
             {fallbackSub}
           </tspan>
         )}
