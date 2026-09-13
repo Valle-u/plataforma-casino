@@ -311,9 +311,9 @@ function normalizePrize(raw: unknown): StreakPrize {
         ? r.kind
         : 'chips',
     amount: typeof r.amount === 'number' ? r.amount : undefined,
-    bonusDefinitionId:
-      typeof r.bonusDefinitionId === 'string'
-        ? r.bonusDefinitionId
+    definitionId:
+      typeof r.definitionId === 'string'
+        ? r.definitionId
         : undefined,
     description:
       typeof r.description === 'string' ? r.description : undefined,

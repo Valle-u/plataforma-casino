@@ -34,7 +34,8 @@ export type WheelPrizeKind = 'bonus' | 'try_again' | 'chips' | 'free_spins';
 export interface WheelPrize {
   kind: WheelPrizeKind;
   amount?: number;
-  bonusDefinitionId?: string;
+  /** Para kind='bonus': id de la bonus_definition a otorgar. */
+  definitionId?: string;
   description?: string;
   label?: string;
 }
@@ -406,10 +407,10 @@ function SegmentEditor({
   // Buscar el bonus seleccionado para mostrar info
   const selectedBonus = useMemo(
     () =>
-      isBonus && segment.prize.bonusDefinitionId
-        ? bonusDefinitions.find((d) => d.id === segment.prize.bonusDefinitionId)
+      isBonus && segment.prize.definitionId
+        ? bonusDefinitions.find((d) => d.id === segment.prize.definitionId)
         : undefined,
-    [isBonus, segment.prize.bonusDefinitionId, bonusDefinitions],
+    [isBonus, segment.prize.definitionId, bonusDefinitions],
   );
 
   const handleBonusChange = useCallback(
@@ -418,12 +419,12 @@ function SegmentEditor({
       if (def) {
         const amount = canonicalBonusAmount(def);
         onUpdatePrize({
-          bonusDefinitionId: def.id,
+          definitionId: def.id,
           amount: amount ? Number(amount) : undefined,
           label: def.name,
         });
       } else {
-        onUpdatePrize({ bonusDefinitionId: undefined });
+        onUpdatePrize({ definitionId: undefined });
       }
     },
     [bonusDefinitions, onUpdatePrize],
@@ -509,7 +510,7 @@ function SegmentEditor({
               {bonusDefinitions.length > 0 ? (
                 <Select
                   id={`prize-bonus-${segment.id}`}
-                  value={segment.prize.bonusDefinitionId ?? ''}
+                  value={segment.prize.definitionId ?? ''}
                   onChange={(e) => handleBonusChange(e.target.value)}
                 >
                   <option value="">— Seleccionar bono —</option>
@@ -523,9 +524,9 @@ function SegmentEditor({
                 <Input
                   id={`prize-bonus-${segment.id}`}
                   type="text"
-                  value={segment.prize.bonusDefinitionId ?? ''}
+                  value={segment.prize.definitionId ?? ''}
                   onChange={(e) =>
-                    onUpdatePrize({ bonusDefinitionId: e.target.value })
+                    onUpdatePrize({ definitionId: e.target.value })
                   }
                   placeholder="ID de plantilla de bono"
                   className="font-mono text-[11px]"
@@ -648,10 +649,10 @@ export function PrizeEditor({
 
   const selectedBonus = useMemo(
     () =>
-      isBonus && prize.bonusDefinitionId
-        ? bonusDefinitions.find((d) => d.id === prize.bonusDefinitionId)
+      isBonus && prize.definitionId
+        ? bonusDefinitions.find((d) => d.id === prize.definitionId)
         : undefined,
-    [isBonus, prize.bonusDefinitionId, bonusDefinitions],
+    [isBonus, prize.definitionId, bonusDefinitions],
   );
 
   const handleBonusChange = useCallback(
@@ -660,12 +661,12 @@ export function PrizeEditor({
       if (def) {
         const amount = canonicalBonusAmount(def);
         onChange({
-          bonusDefinitionId: def.id,
+          definitionId: def.id,
           amount: amount ? Number(amount) : undefined,
           label: def.name,
         });
       } else {
-        onChange({ bonusDefinitionId: undefined });
+        onChange({ definitionId: undefined });
       }
     },
     [bonusDefinitions, onChange],
@@ -695,7 +696,7 @@ export function PrizeEditor({
               <FormField id="prize-bonus" label="Elegí un bono">
                 <Select
                   id="prize-bonus"
-                  value={prize.bonusDefinitionId ?? ''}
+                  value={prize.definitionId ?? ''}
                   onChange={(e) => handleBonusChange(e.target.value)}
                 >
                   <option value="">— Seleccionar bono —</option>
@@ -707,13 +708,13 @@ export function PrizeEditor({
                 </Select>
               </FormField>
             ) : (
-              <FormField id="prize-bonus-id" label="Bonus definition ID">
+              <FormField id="prize-definition-id" label="Bonus definition ID">
                 <Input
-                  id="prize-bonus-id"
+                  id="prize-definition-id"
                   type="text"
-                  value={prize.bonusDefinitionId ?? ''}
+                  value={prize.definitionId ?? ''}
                   onChange={(e) =>
-                    onChange({ bonusDefinitionId: e.target.value })
+                    onChange({ definitionId: e.target.value })
                   }
                   placeholder="uuid de bonus_definition"
                   className="font-mono text-[11px]"
@@ -782,9 +783,9 @@ function normalizeSegment(raw: unknown, index: number): WheelSegment {
           ? (prize.kind as WheelPrizeKind)
           : 'bonus',
       amount: typeof prize.amount === 'number' ? prize.amount : undefined,
-      bonusDefinitionId:
-        typeof prize.bonusDefinitionId === 'string'
-          ? prize.bonusDefinitionId
+      definitionId:
+        typeof prize.definitionId === 'string'
+          ? prize.definitionId
           : undefined,
       description:
         typeof prize.description === 'string'

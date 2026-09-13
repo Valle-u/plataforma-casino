@@ -40,7 +40,7 @@ export interface WheelPrize {
   kind: WheelPrizeKind;
   amount?: number;
   /** Para kind='bonus': id de la bonus_definition a otorgar. */
-  bonusDefinitionId?: string;
+  definitionId?: string;
   /** Texto adicional opcional para el reveal modal. */
   description?: string;
 }
